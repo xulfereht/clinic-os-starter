@@ -1,0 +1,19 @@
+{
+  "name": "clinic-os-client",
+  "version": "1.0.34",
+  "type": "module",
+  "description": "Clinic-OS 클라이언트",
+  "scripts": {
+    "setup": "node scripts/setup-clinic.js",
+    "update:starter": "git pull origin main && npm install",
+    "core:pull": "node .docking/engine/fetch.js",
+    "fetch": "node .docking/engine/fetch.js",
+    "dev": "node scripts/dev-preflight.js && npm run dev --prefix core",
+    "build": "npm run build --prefix core",
+    "deploy": "node scripts/deploy-guard.js"
+  },
+  "dependencies": {
+    "fs-extra": "^11.2.0",
+    "js-yaml": "^4.1.0"
+  }
+}
