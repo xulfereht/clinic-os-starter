@@ -18,10 +18,16 @@ description: 도움이 필요할 때 Antigravity에게 질문하기
 
 ## 자주 묻는 질문 (FAQ)
 
-### 🔧 설치/설정 관련
+### 🚀 설치/설정 관련
 
 **Q: 처음 시작하려면 어떻게 해야 하나요?**
-→ `/setup-clinic` 워크플로우를 실행하세요.
+→ `/setup-clinic` 워크플로우를 실행하거나:
+```bash
+npm install
+npm run setup
+npm run fetch
+npm run dev
+```
 
 **Q: 한의원 이름/정보를 바꾸고 싶어요**
 → `/admin/settings`에서 변경하거나, DB 직접 업데이트:
@@ -31,10 +37,35 @@ npx wrangler d1 execute clinic-os-dev --local --command "UPDATE site_settings SE
 
 ---
 
+### 📦 업데이트 관련
+
+**Q: 새 기능을 받고 싶어요 (앱 업데이트)**
+→ HQ에서 최신 앱 패키지를 가져옵니다:
+```bash
+npm run core:pull
+```
+
+**Q: Starter Kit 업데이트가 있다고 해요**
+→ Git에서 최신 변경사항을 가져옵니다:
+```bash
+npm run update:starter
+```
+
+**Q: zip 파일로 패키지를 받았어요**
+→ 프로젝트 루트에 zip을 놓고:
+```bash
+npm run upgrade
+```
+
+**Q: 현재 버전을 확인하고 싶어요**
+→ `.docking/config.yaml` 또는 `package.json` 확인
+
+---
+
 ### 📝 콘텐츠 관련
 
 **Q: 홈페이지 내용을 수정하고 싶어요**
-→ 현재는 `src/pages/index.astro` 파일 직접 수정 필요
+→ `src/content/pages/home.ko.md` 파일 수정 또는 `/admin/pages`
 
 **Q: 진료 프로그램을 추가하고 싶어요**
 → `/admin/programs`에서 "새 프로그램 추가"
@@ -49,7 +80,8 @@ npx wrangler d1 execute clinic-os-dev --local --command "UPDATE site_settings SE
 **Q: "no such table" 오류가 나요**
 → DB 초기화 필요:
 ```bash
-npx wrangler d1 execute clinic-os-dev --local --file migrations/0001_initial_schema.sql
+npm run db:init
+npm run db:seed
 ```
 
 **Q: 화면이 안 나와요**
@@ -61,15 +93,44 @@ npm run dev
 **Q: 로그인이 안 돼요**
 → 기본 계정: admin@sample-clinic.com / admin123
 
+**Q: npm 명령이 안 돼요**
+→ Node.js 설치 확인:
+```bash
+node --version
+```
+
 ---
 
-### 📦 업데이트 관련
+### 🚢 배포 관련
 
-**Q: 새 기능을 받았는데 어떻게 적용하나요?**
-→ `.zip` 파일을 프로젝트 폴더에 넣고 `/unpack-docking` 실행
+**Q: 사이트를 배포하고 싶어요**
+→ 가드레일 포함 배포:
+```bash
+npm run deploy
+```
 
-**Q: 적용된 업데이트 목록을 보고 싶어요**
-→ `.docking/.applied` 파일 확인
+**Q: 배포가 실패해요**
+→ 로컬 테스트 먼저 확인:
+```bash
+npm run build
+npm run preview
+```
+
+---
+
+## 명령어 모음
+
+| 명령어 | 용도 |
+|--------|------|
+| `npm run setup` | 초기 설정 마법사 |
+| `npm run dev` | 로컬 개발 서버 |
+| `npm run core:pull` | 앱 패키지 업데이트 |
+| `npm run update:starter` | Starter Kit 업데이트 |
+| `npm run upgrade` | 수동 패키지 적용 |
+| `npm run deploy` | 프로덕션 배포 |
+| `npm run doctor` | 시스템 건전성 체크 |
+| `npm run db:init` | DB 스키마 초기화 |
+| `npm run db:seed` | 샘플 데이터 삽입 |
 
 ---
 
@@ -77,8 +138,9 @@ npm run dev
 
 1. **오류 메시지 확인**: 정확한 오류 내용 파악
 2. **로그 확인**: 터미널 출력 확인
-3. **GEMINI.md 참조**: 프로젝트 가이드 확인
-4. **워크플로우 실행**: 해당하는 `/워크플로우` 실행
+3. **시스템 체크**: `npm run doctor` 실행
+4. **GEMINI.md 참조**: 프로젝트 가이드 확인
+5. **워크플로우 실행**: 해당하는 `/워크플로우` 실행
 
 ---
 
@@ -87,12 +149,20 @@ npm run dev
 ### DB 완전 초기화
 ```bash
 rm -rf .wrangler
-npx wrangler d1 execute clinic-os-dev --local --file migrations/0001_initial_schema.sql
-npx wrangler d1 execute clinic-os-dev --local --file seeds/sample_clinic.sql
+npm run db:init
+npm run db:seed
 ```
 
 ### 패키지 재설치
 ```bash
 rm -rf node_modules
 npm install
+```
+
+### 전체 리셋
+```bash
+rm -rf node_modules .wrangler
+npm install
+npm run setup
+npm run fetch
 ```

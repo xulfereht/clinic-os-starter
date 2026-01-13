@@ -1,5 +1,5 @@
 ---
-description: 프로젝트 루트에 있는 도킹 패키지(.zip)를 찾아서 적용합니다
+description: 도킹 패키지(.zip)를 프로젝트에 적용합니다
 ---
 
 # 패키지 적용 워크플로우
@@ -7,133 +7,130 @@ description: 프로젝트 루트에 있는 도킹 패키지(.zip)를 찾아서 �
 이 워크플로우는 다운로드된 패키지를 지능적으로 적용합니다.
 **중요**: 단순 덮어쓰기가 아닌, 클라이언트 커스터마이징을 고려한 융합입니다.
 
-## 1단계: 패키지 확인
+---
 
-`.docking/incoming/` 폴더에서 최신 `.zip` 파일을 찾습니다.
+## 빠른 시작
+
+대부분의 경우 다음 명령어만으로 충분합니다:
+
+// turbo
+```bash
+npm run upgrade
+```
+
+이 명령은 `scripts/unpack-docking.js`를 실행하여:
+1. 프로젝트 루트의 `.zip` 파일 자동 감지
+2. 스테이징 영역에 압축 해제
+3. 충돌 분석 및 사용자 확인
+4. 안전한 파일 적용
+5. 적용 기록 저장
+
+---
+
+## 상세 프로세스
+
+### 1단계: 패키지 확인
+
+프로젝트 루트 또는 `.docking/incoming/`에서 `.zip` 파일을 찾습니다.
 
 패키지가 없으면:
 ```
-패키지가 없습니다. 먼저 다운로드를 실행하세요:
-node .docking/engine/fetch.js
+패키지가 없습니다. 먼저 다운로드하세요:
+- HQ에서: npm run core:pull
+- 또는 zip 파일을 프로젝트 루트에 배치
 ```
 
-## 2단계: 스테이징
+### 2단계: 스테이징
 
-패키지를 `.docking/staging/`에 압축 해제합니다:
-// turbo
-```bash
-unzip -o .docking/incoming/[패키지파일].zip -d .docking/staging/
-```
+패키지를 `.docking/staging/`에 압축 해제합니다.
 
-## 3단계: 매니페스트 분석
+### 3단계: 매니페스트 분석
 
 `staging/manifest.yaml`을 읽어서 다음을 파악합니다:
 - **버전 정보**: 현재 버전과 새 버전
 - **패키지 유형**: full 또는 patch
-- **변경된 파일 목록**: instructions.md 참조
+- **변경된 파일 목록**
 
-## 4단계: 클라이언트 컨텍스트 확인
+### 4단계: 충돌 분석
 
-`.client/CONTEXT.md`를 읽어서:
-- 현재 설치된 버전
-- **커스터마이징된 파일 목록**
-- 특별 주의사항
+패키지의 변경된 파일과 로컬에서 수정한 파일을 비교합니다.
 
-이 정보는 충돌 분석에 필수입니다.
+**충돌 없는 경우**
+→ 자동으로 패키지 적용
 
-## 5단계: 충돌 분석
-
-패키지의 변경된 파일과 클라이언트가 수정한 파일을 비교합니다.
-
-### 충돌 없는 경우
-"충돌이 없습니다. 패키지를 적용합니다."
-
-### 충돌 있는 경우
-사용자에게 보고합니다:
+**충돌 있는 경우**
+→ 사용자에게 선택 요청:
 ```
 ⚠️ 다음 파일에서 충돌이 감지되었습니다:
 
-1. core/src/pages/index.astro
-   - 클라이언트 변경: [변경 내용 요약]
+1. src/pages/index.astro
+   - 로컬 변경: [변경 내용 요약]
    - 패키지 변경: [변경 내용 요약]
-   
+
 해결 방법:
 A) 두 변경을 병합 (권장)
-B) 패키지 버전으로 교체 (클라이언트 변경 손실)
-C) 클라이언트 버전 유지 (패키지 변경 무시)
-
-어떻게 하시겠습니까?
+B) 패키지 버전으로 교체 (로컬 변경 손실)
+C) 로컬 버전 유지 (패키지 변경 무시)
 ```
 
-## 6단계: 백업 생성
+### 5단계: 백업 생성
 
-적용 전 현재 `core/` 상태를 백업합니다:
-// turbo
+적용 전 현재 상태를 백업합니다:
 ```bash
-mkdir -p archive/backups
-zip -r archive/backups/core-backup-$(date +%Y%m%d-%H%M%S).zip core/
+git add -A && git commit -m "Backup before package apply"
 ```
 
-## 7단계: 패키지 적용
+### 6단계: 패키지 적용
 
-충돌 해결 후, 패키지 내용을 `core/`에 적용합니다:
 - **새 파일**: 복사
-- **변경된 파일**: 교체 또는 머지 (5단계 결정에 따라)
+- **변경된 파일**: 교체 또는 머지 (4단계 결정에 따라)
 - **삭제된 파일**: 사용자 확인 후 삭제
 
-### Full Package 적용
+### 7단계: 마이그레이션 확인
+
+새 마이그레이션이 있으면:
 ```bash
-cp -r .docking/staging/core/* core/
+npx wrangler d1 migrations apply clinic-os-dev --local
 ```
 
-### Patch Package 적용
-매니페스트의 `target_files` 목록에 있는 파일만 복사합니다.
+### 8단계: 기록 업데이트
 
-## 8단계: 마이그레이션 확인
-
-`staging/core/migrations/` 폴더에 새 마이그레이션이 있는지 확인합니다.
-있으면 사용자에게 알립니다:
-
-```
-📋 새 마이그레이션이 있습니다:
-- 0150_add_new_feature.sql
-
-로컬 DB에 적용하시겠습니까? (프로덕션은 deploy 시 적용됩니다)
-```
-
-// turbo
-```bash
-cd core && npx wrangler d1 migrations apply [db-name] --local
-```
-
-## 9단계: 기록 업데이트
-
-### `.docking/.applied`에 추가
+`.docking/.applied`에 적용 기록 추가:
 ```
 [날짜] v[버전] [유형] 적용 완료
 ```
 
-### `.client/CONTEXT.md` 업데이트
-- 현재 버전 정보 갱신
-- 업데이트 이력에 추가
+### 9단계: 정리 & 완료
 
-## 10단계: 정리 & 완료
-
-스테이징 폴더 정리:
-// turbo
-```bash
-rm -rf .docking/staging/*
-```
-
-사용자에게 완료 안내:
 ```
 ✅ v[버전]으로 업데이트되었습니다!
-
-변경 사항:
-- [instructions.md에서 주요 변경 요약]
 
 다음 단계:
 - npm install (의존성이 변경된 경우)
 - npm run dev (로컬 테스트)
 - npm run deploy (프로덕션 반영)
+```
+
+---
+
+## 업데이트 방법 비교
+
+| 방법 | 명령어 | 용도 |
+|------|--------|------|
+| **Core 업데이트** | `npm run core:pull` | HQ에서 최신 앱 패키지 |
+| **Starter 업데이트** | `npm run update:starter` | Git에서 인프라 업데이트 |
+| **수동 패키지** | `npm run upgrade` | zip 파일 직접 적용 |
+
+---
+
+## 롤백
+
+문제 발생 시:
+```bash
+git checkout HEAD~1
+```
+
+또는 백업 브랜치로:
+```bash
+git checkout backup-[날짜]
 ```
