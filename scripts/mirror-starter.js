@@ -54,8 +54,21 @@ function mirrorStarter() {
     console.log(`📦 Version: ${tagName}`);
 
     try {
-        // 1. Prepare Staging Area
-        if (fs.existsSync(STAGING_DIR)) fs.removeSync(STAGING_DIR);
+        // 1. Prepare Staging Area (Incremental)
+        let isIncremental = false;
+        if (fs.existsSync(path.join(STAGING_DIR, '.git'))) {
+            console.log("   🔄 Detected existing staging area. Attempting incremental update...");
+            isIncremental = true;
+            // Clean everything except .git
+            const files = fs.readdirSync(STAGING_DIR);
+            for (const file of files) {
+                if (file !== '.git') {
+                    fs.removeSync(path.join(STAGING_DIR, file));
+                }
+            }
+        } else {
+            if (fs.existsSync(STAGING_DIR)) fs.removeSync(STAGING_DIR);
+        }
         fs.ensureDirSync(STAGING_DIR);
 
         console.log("   📂 Preparing staging area...");
@@ -127,17 +140,54 @@ node scripts/setup-clinic.js
         // For now, we keep it as is, but ensure 'dev' works (whch we did with preflight)
 
         // 2. Initialize and Push
-        console.log("   🔗 Initializing Git in staging area...");
-        execSync(`git init`, { cwd: STAGING_DIR });
+        if (!isIncremental) {
+            console.log("   🔗 Initializing Git in staging area...");
+            execSync(`git init`, { cwd: STAGING_DIR });
+            execSync(`git config http.postBuffer 524288000`, { cwd: STAGING_DIR });
+            try {
+                execSync(`git remote add origin ${mirrorUrl}`, { cwd: STAGING_DIR });
+            } catch (e) {
+                execSync(`git remote set-url origin ${mirrorUrl}`, { cwd: STAGING_DIR });
+            }
+
+            // Try to fetch existing history
+            try {
+                console.log("   📥 Fetching existing history...");
+                execSync(`git fetch origin main --depth 1`, { cwd: STAGING_DIR, stdio: 'pipe' });
+                execSync(`git reset --soft origin/main`, { cwd: STAGING_DIR });
+            } catch (e) {
+                console.log("   ⚠️  No remote history found. Starting fresh.");
+            }
+        } else {
+            console.log("   🔗 Reusing Git in staging area...");
+            try {
+                execSync(`git remote set-url origin ${mirrorUrl}`, { cwd: STAGING_DIR });
+            } catch (e) {
+                execSync(`git remote add origin ${mirrorUrl}`, { cwd: STAGING_DIR });
+            }
+
+            // Sync with remote to enable delta push
+            try {
+                console.log("   📥 Syncing with remote...");
+                execSync(`git fetch origin main`, { cwd: STAGING_DIR, stdio: 'pipe' });
+                execSync(`git reset --soft origin/main`, { cwd: STAGING_DIR });
+            } catch (e) {
+                console.log("   ⚠️  Remote sync failed, will force push.");
+            }
+        }
         execSync(`git config http.postBuffer 524288000`, { cwd: STAGING_DIR });
 
-        execSync(`git remote add origin ${mirrorUrl}`, { cwd: STAGING_DIR });
         execSync(`git add .`, { cwd: STAGING_DIR });
         execSync(`git commit -m "Release ${tagName}"`, { cwd: STAGING_DIR });
-        execSync(`git branch -M main`, { cwd: STAGING_DIR });
+        try { execSync(`git branch -M main`, { cwd: STAGING_DIR }); } catch (e) { }
 
         console.log("   📤 Pushing to mirror repository...");
-        execSync(`git push origin main --force`, { cwd: STAGING_DIR });
+        try {
+            execSync(`git push origin main`, { cwd: STAGING_DIR, stdio: 'pipe' });
+        } catch (e) {
+            console.log("   ⚠️  Normal push failed, trying force push...");
+            execSync(`git push origin main --force`, { cwd: STAGING_DIR });
+        }
 
         console.log(`   🏷️  Tagging with ${tagName}...`);
         execSync(`git tag ${tagName}`, { cwd: STAGING_DIR });
@@ -149,8 +199,8 @@ node scripts/setup-clinic.js
         console.error("\n❌ Starter Mirroring Failed:");
         console.error(error.message);
     } finally {
-        console.log("   🧹 Cleaning up...");
-        fs.removeSync(STAGING_DIR);
+        console.log("   🧹 Cleaning up (Keeping staging for incremental updates)...");
+        // fs.removeSync(STAGING_DIR);
     }
 }
 

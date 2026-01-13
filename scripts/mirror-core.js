@@ -69,11 +69,38 @@ async function mirrorCore() {
     console.log(`📦 Version: ${tagName}`);
 
     try {
-        // 1. Prepare Staging Area
-        if (fs.existsSync(STAGING_DIR)) fs.removeSync(STAGING_DIR);
+        // 1. Prepare Staging Area (Incremental)
+        let isIncremental = false;
+        if (fs.existsSync(path.join(STAGING_DIR, '.git'))) {
+            console.log("   🔄 Detected existing staging area. Attempting incremental update...");
+            try {
+                // Reset staging area to match remote HEAD to avoid conflicts
+                // We don't fetch here to save time, assuming we are the source of truth, 
+                // but if we want to be safe we could fetch. 
+                // Since this is a one-way mirror, we just treat local artifacts as truth.
+                // But to reuse the .git folder, we need to be careful not to delete it.
+                isIncremental = true;
+            } catch (e) {
+                console.warn("   ⚠️  Existing staging area corrupt, resetting...");
+                fs.removeSync(STAGING_DIR);
+            }
+        } else {
+            if (fs.existsSync(STAGING_DIR)) fs.removeSync(STAGING_DIR);
+        }
+
         fs.ensureDirSync(STAGING_DIR);
 
-        console.log("   📂 Preparing staging area...");
+        // If incremental, we clean everything EXCEPT .git
+        if (isIncremental) {
+            const files = fs.readdirSync(STAGING_DIR);
+            for (const file of files) {
+                if (file !== '.git') {
+                    fs.removeSync(path.join(STAGING_DIR, file));
+                }
+            }
+        }
+
+        console.log("   📂 Copying files to staging...");
         for (const item of CORE_FILES) {
             const src = path.join(PROJECT_ROOT, item);
             let destSubPath = item;
@@ -96,8 +123,41 @@ async function mirrorCore() {
         }
 
         // 2. Initialize and Push
-        console.log("   🔗 Initializing Git in staging area...");
-        execSync(`git init`, { cwd: STAGING_DIR });
+        if (!isIncremental) {
+            console.log("   🔗 Initializing Git in staging area...");
+            execSync(`git init`, { cwd: STAGING_DIR });
+            execSync(`git config http.postBuffer 524288000`, { cwd: STAGING_DIR });
+            try {
+                execSync(`git remote add origin ${mirrorUrl}`, { cwd: STAGING_DIR });
+            } catch (e) {
+                execSync(`git remote set-url origin ${mirrorUrl}`, { cwd: STAGING_DIR });
+            }
+
+            // Try to fetch existing history to avoid force push of entire repo
+            try {
+                console.log("   📥 Fetching existing history...");
+                execSync(`git fetch origin main --depth 1`, { cwd: STAGING_DIR });
+                execSync(`git reset --soft origin/main`, { cwd: STAGING_DIR });
+            } catch (e) {
+                console.log("   ⚠️  No remote history found or fetch failed. Starting fresh.");
+            }
+        } else {
+            console.log("   🔗 Reusing Git in staging area...");
+            try {
+                execSync(`git remote set-url origin ${mirrorUrl}`, { cwd: STAGING_DIR });
+            } catch (e) {
+                execSync(`git remote add origin ${mirrorUrl}`, { cwd: STAGING_DIR });
+            }
+
+            // Sync with remote to enable delta push
+            try {
+                console.log("   📥 Syncing with remote...");
+                execSync(`git fetch origin main`, { cwd: STAGING_DIR, stdio: 'pipe' });
+                execSync(`git reset --soft origin/main`, { cwd: STAGING_DIR });
+            } catch (e) {
+                console.log("   ⚠️  Remote sync failed, will force push.");
+            }
+        }
         execSync(`git config http.postBuffer 524288000`, { cwd: STAGING_DIR }); // 500MB
 
         console.log("   📊 Staging area size:");
@@ -105,13 +165,21 @@ async function mirrorCore() {
             console.log(execSync(`du -sh .`, { cwd: STAGING_DIR }).toString());
         } catch (e) { }
 
-        execSync(`git remote add origin ${mirrorUrl}`, { cwd: STAGING_DIR });
         execSync(`git add .`, { cwd: STAGING_DIR });
         execSync(`git commit -m "Release ${tagName}"`, { cwd: STAGING_DIR });
-        execSync(`git branch -M main`, { cwd: STAGING_DIR });
+
+        // No forceful branch move if we are properly synced
+        // But to be safe with local branch naming:
+        try { execSync(`git branch -M main`, { cwd: STAGING_DIR }); } catch (e) { }
 
         console.log("   📤 Pushing to mirror repository...");
-        execSync(`git push origin main --force`, { cwd: STAGING_DIR });
+        // Try normal push first, fallback to force if needed
+        try {
+            execSync(`git push origin main`, { cwd: STAGING_DIR, stdio: 'pipe' });
+        } catch (e) {
+            console.log("   ⚠️  Normal push failed, trying force push...");
+            execSync(`git push origin main --force`, { cwd: STAGING_DIR });
+        }
 
         console.log(`   🏷️  Tagging with ${tagName}...`);
         execSync(`git tag ${tagName}`, { cwd: STAGING_DIR });
@@ -122,9 +190,10 @@ async function mirrorCore() {
     } catch (error) {
         console.error("\n❌ Mirroring Failed:");
         console.error(error.message);
+        process.exit(1);
     } finally {
-        console.log("   🧹 Cleaning up...");
-        fs.removeSync(STAGING_DIR);
+        console.log("   🧹 Cleaning up (Keeping staging for incremental updates)...");
+        // fs.removeSync(STAGING_DIR); 
     }
 }
 

@@ -552,6 +552,7 @@ CLINIC_NAME = "${clinicName}"
             'seeds/terms_versions.sql',
             'seeds/default_pages.sql',
             'seeds/prepare_samples.sql',
+            'seeds/program_translations_sample.sql',
             'seeds/seed_manuals.sql',
             'seeds/seed_templates.sql',
             'seeds/sample_ops_data.sql',
