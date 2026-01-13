@@ -584,10 +584,10 @@ CLINIC_NAME = "${clinicName}"
             'seeds/seed_templates.sql',
             'seeds/sample_ops_data.sql',
             'seeds/sample_patients.sql',
+            'seeds/sample_faqs.sql',
             'seeds/dummy_posts.sql',
             'seeds/dummy_reviews.sql',
             'seeds/sample_notices.sql',
-            'seeds/generated_faqs.sql',
             'seeds/knowledge_seed.sql'
         ];
 
