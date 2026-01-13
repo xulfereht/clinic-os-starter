@@ -190,6 +190,9 @@ async function mirrorCore() {
         }
 
         console.log(`   🏷️  Tagging with ${tagName}...`);
+        try {
+            execSync(`git tag -d ${tagName}`, { cwd: STAGING_DIR, stdio: 'pipe' });
+        } catch (e) { /* tag doesn't exist locally */ }
         execSync(`git tag ${tagName}`, { cwd: STAGING_DIR });
         execSync(`git push origin ${tagName} --force`, { cwd: STAGING_DIR });
 
