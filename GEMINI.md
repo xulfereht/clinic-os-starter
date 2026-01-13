@@ -33,7 +33,7 @@
 | 기본 버전 | 1.0.0 |
 | 한의원 이름 | (site_settings에서 로드) |
 | 배포 환경 | Cloudflare Pages + D1 |
-| 개발 권장 환경 | Windows Native (CMD/PowerShell) 또는 macOS |
+| 개발 권장 환경 | WSL + Antigravity App |
 | 커스터마이징 | 기본 |
 
 ### 적용된 도킹 패키지
@@ -42,6 +42,11 @@
 ### 주요 커스터마이징 사항
 - (클라이언트가 직접 수정한 부분을 여기에 기록)
 
+### 환경 설정 (Node/NPM Path)
+시스템 실행 시 Node/NPM 경로가 잡히지 않을 경우, 다음 명령어로 경로를 잡아주세요.
+```bash
+export PATH=/Users/amu/.nvm/versions/node/v24.11.0/bin:$PATH
+```
 ---
 
 ## 🤖 Antigravity 작업 지침
@@ -98,14 +103,13 @@ clinic-os/
 ## 🎯 주요 워크플로우
 
 ### 처음 사용자용 퀵스타트
-1. **필수 설치**: Node.js (v18+) 및 Git
-   - *Windows 사용자도 Native Node.js 설치를 권장합니다.*
-2. **의존성 설치**: `npm install`
-3. **초기 설정**: `node scripts/setup-clinic.js`
-   - 패키지 다운로드, 로컬 DB 초기화가 자동으로 진행됩니다.
-   - Cloudflare 배포 설정은 선택 사항이므로 건너뛰고 **로컬 개발부터 시작**할 수 있습니다.
-4. **로컬 실행**: `npm run dev`
-   - 브라우저에서 `http://localhost:4321` 접속 확인
+1.  **필수 환경 (Windows)**: 반드시 **WSL2**가 설치되어 있어야 합니다. (Node.js v20+)
+    - *윈도우 네이티브(C:)에서의 실행은 권장하지 않습니다.*
+2.  **프로젝트 열기**: **Antigravity 앱**에서 `\\wsl$\Ubuntu\home\...` 경로의 프로젝트를 엽니다.
+3.  **초기 설정**: `/setup-clinic` (앱 내 채팅으로 요청)
+    - Node.js(v20), 패키지 설치, DB 초기화가 자동으로 진행됩니다.
+4.  **로컬 실행**: `npm run dev` (앱 내 터미널 사용)
+    - 브라우저에서 `http://localhost:4321` 접속 확인
 
 | 명령 | 용도 | 언제 사용 |
 |------|------|----------|
