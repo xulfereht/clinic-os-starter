@@ -543,6 +543,26 @@ CLINIC_NAME = "${clinicName}"
         console.log(`   🚀 스키마 생성 중 (${wranglerCmd.includes('node_modules') ? 'Local binary' : 'npx'})...`);
         const initOk = await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file=core/migrations/0000_initial_schema.sql --yes`);
 
+        // Additional migrations (for new tables/columns added after initial schema)
+        const additionalMigrations = [
+            'migrations/0500_add_is_sample_column.sql',
+            'migrations/0510_init_navigation_settings.sql',
+            'migrations/0511_add_is_sample_to_ops.sql',
+            'migrations/0800_create_system_manuals.sql',
+            'migrations/0801_add_translations_column.sql'
+        ];
+
+        console.log("   🚀 추가 마이그레이션 적용 중...");
+        for (const migFile of additionalMigrations) {
+            let finalPath = path.join(PROJECT_ROOT, migFile);
+            if (!fs.existsSync(finalPath)) {
+                finalPath = path.join(PROJECT_ROOT, 'core', migFile);
+            }
+            if (fs.existsSync(finalPath)) {
+                await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file=${finalPath} --yes`);
+            }
+        }
+
         console.log("   🚀 샘플 데이터 삽입 중...");
         const seedOk = await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file=core/seeds/sample_clinic.sql --yes`);
 
