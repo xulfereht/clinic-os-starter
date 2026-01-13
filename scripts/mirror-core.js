@@ -19,6 +19,7 @@ const CORE_FILES = [
     'public',
     'migrations',
     'seeds',
+    'docs',
     'package.json',
     'GEMINI.md',
     'astro.config.mjs',
