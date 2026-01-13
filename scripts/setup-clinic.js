@@ -546,8 +546,14 @@ CLINIC_NAME = "${clinicName}"
         // Additional migrations (for new tables/columns added after initial schema)
         const additionalMigrations = [
             'migrations/0500_add_is_sample_column.sql',
+            'migrations/0501_add_password_change_required.sql',
+            'migrations/0503_add_payment_method.sql',
+            'migrations/0505_add_is_sample_to_leads.sql',
             'migrations/0510_init_navigation_settings.sql',
             'migrations/0511_add_is_sample_to_ops.sql',
+            'migrations/0600_performance_optimization.sql',
+            'migrations/0601_additional_indexes.sql',
+            'migrations/0602_internal_component_indexes.sql',
             'migrations/0800_create_system_manuals.sql',
             'migrations/0801_add_translations_column.sql'
         ];
