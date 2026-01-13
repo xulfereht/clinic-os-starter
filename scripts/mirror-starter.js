@@ -178,7 +178,19 @@ node scripts/setup-clinic.js
         execSync(`git config http.postBuffer 524288000`, { cwd: STAGING_DIR });
 
         execSync(`git add .`, { cwd: STAGING_DIR });
-        execSync(`git commit -m "Release ${tagName}"`, { cwd: STAGING_DIR });
+
+        // Check if there are changes to commit
+        try {
+            const status = execSync(`git status --porcelain`, { cwd: STAGING_DIR }).toString().trim();
+            if (status) {
+                execSync(`git commit -m "Release ${tagName}"`, { cwd: STAGING_DIR });
+            } else {
+                console.log("   ℹ️  No changes to commit.");
+            }
+        } catch (e) {
+            // Commit anyway if status check fails
+            execSync(`git commit -m "Release ${tagName}"`, { cwd: STAGING_DIR });
+        }
         try { execSync(`git branch -M main`, { cwd: STAGING_DIR }); } catch (e) { }
 
         console.log("   📤 Pushing to mirror repository...");

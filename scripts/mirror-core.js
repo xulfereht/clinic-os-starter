@@ -166,6 +166,14 @@ async function mirrorCore() {
         } catch (e) { }
 
         execSync(`git add .`, { cwd: STAGING_DIR });
+
+        // Check if there are changes to commit
+        const status = execSync(`git status --porcelain`, { cwd: STAGING_DIR }).toString().trim();
+        if (!status) {
+            console.log("   ℹ️  No changes to commit. Skipping push.");
+            console.log(`\n✅ Already up to date!`);
+            return;
+        }
         execSync(`git commit -m "Release ${tagName}"`, { cwd: STAGING_DIR });
 
         // No forceful branch move if we are properly synced
