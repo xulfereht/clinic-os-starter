@@ -1,0 +1,15 @@
+# Docking Configuration
+# Generated during initial setup
+
+# HQ Server URL
+hq_url: "https://clinic-hq.your-domain.workers.dev"
+
+# Device Token (obtained during setup via browser authentication)
+# This replaces the old license_key approach
+device_token: ""
+
+# Clinic Information (filled during setup)
+clinic_name: ""
+
+# Legacy field - deprecated, use device_token instead
+# license_key: "YOUR-LICENSE-KEY"

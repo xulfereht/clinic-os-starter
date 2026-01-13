@@ -1,0 +1,88 @@
+UPDATE posts SET 
+    content = '이 시기는 호르몬 변화가 시작되고, 사회생활과 가정에서 오는 스트레스가 가중되며, 수십 년간 축적된 식습관과 생활 방식이 몸의 균형을 흔들기 시작하는 때이기 때문입니다.
+
+<img src="https://barun-static.s3.ap-northeast-2.amazonaws.com/blog/snowhitebambi/2025/11/24155686479386b279e0d3ced7bf66ca3658012474604773a1da8662ec596848.png" alt="40대 여성 만성 소화불량" style="width:100%; border-radius:12px; margin:2rem 0;" />
+
+---
+
+## 선영님의 이야기
+
+제가 진료실에서 자주 뵙는 선영님(가명)의 사례를 소개해 드립니다.
+
+선영님은 40대 초반의 직장인이었습니다. 수년 전부터 위 내시경 검사에서는 늘 <strong>''정상''</strong> 소견이 나왔지만, 아침에 일어나면 명치가 답답하고 속이 메스꺼웠습니다.
+
+점심 식사 후에는 배가 가스로 가득 찬 듯 빵빵해지고, 늘어지는 피로감에 오후 업무는 고통 그 자체였습니다. 밤에는 소화가 안 된 느낌 때문에 잠들기 어려워 <u>불면증까지 겹친 상태</u>였습니다.
+
+<blockquote style="border-left:4px solid #0f52ba; padding-left:1rem; margin:1.5rem 0; color:#475569;">
+선영님은 잠들기 전마다 ''오늘도 제대로 소화시키지 못했어''라는 생각에 죄책감까지 느낀다고 고백했습니다.
+</blockquote>
+
+과도한 업무 스트레스와 불규칙한 식사, 그리고 이른 폐경 전조증상으로 인한 호르몬 변화가 복합적으로 작용하고 있었습니다.
+
+---
+
+## 만성 소화불량의 복합적 원인
+
+선영님의 사례처럼, 40대 여성의 소화불량은 단순한 위장 문제를 넘어 다양한 요인들이 유기적으로 연결되어 있습니다:
+
+<table style="width:100%; border-collapse:collapse; margin:1.5rem 0;">
+<tr style="background:#f0f4f8;">
+<th style="padding:12px; text-align:left; border-bottom:2px solid #0f52ba;">원인</th>
+<th style="padding:12px; text-align:left; border-bottom:2px solid #0f52ba;">영향</th>
+</tr>
+<tr><td style="padding:12px; border-bottom:1px solid #e2e8f0;"><strong>호르몬 불균형</strong></td><td style="padding:12px; border-bottom:1px solid #e2e8f0;">자율신경계 교란</td></tr>
+<tr><td style="padding:12px; border-bottom:1px solid #e2e8f0;"><strong>만성 스트레스</strong></td><td style="padding:12px; border-bottom:1px solid #e2e8f0;">위장 운동성 저해</td></tr>
+<tr><td style="padding:12px; border-bottom:1px solid #e2e8f0;"><strong>부적절한 식습관</strong></td><td style="padding:12px; border-bottom:1px solid #e2e8f0;">소화액 분비 교란</td></tr>
+<tr><td style="padding:12px; border-bottom:1px solid #e2e8f0;"><strong>활력 저하</strong></td><td style="padding:12px; border-bottom:1px solid #e2e8f0;">장내 미생물 불균형</td></tr>
+</table>
+
+<img src="https://barun-static.s3.ap-northeast-2.amazonaws.com/blog/snowhitebambi/2025/11/1682c4531278585a7948bfa8cc73947da77c1469347537f67ba89459e947042b.png" alt="소화 과정 다이어그램" style="width:100%; border-radius:12px; margin:2rem 0;" />
+
+우리 몸의 소화 과정은 마치 <strong>정교한 시계</strong>와 같습니다. 하나의 톱니바퀴가 고장 나면 전체 시계가 멈추거나 느려지듯이, 소화 역시 다양한 요소들이 복합적으로 작용합니다.
+
+---
+
+## 한의학적 관점
+
+저는 환자분과의 대화를 통해 단순히 ''더부룩하다''는 증상 너머에 숨겨진 이야기를 주의 깊게 듣습니다.
+
+한의학에서는 만성 소화불량을 <strong>전신적인 관점</strong>에서 접근합니다.
+
+특히 40대 여성의 경우, 다음과 같은 상태를 흔히 발견합니다:
+
+### 간기울결(肝氣鬱結)
+정신적 스트레스와 긴장이 간의 기운 소통을 방해하여 발생하는 상태입니다.
+- 명치 답답함
+- 옆구리 통증
+- 신경과민
+
+### 비위허약(脾胃虛弱)
+소화 기능 자체가 약해져 음식물을 제대로 소화, 흡수하지 못하는 상태입니다.
+- 속이 더부룩함
+- 기운이 없음
+
+---
+
+## 맞춤형 치료 접근
+
+저는 환자분 개개인의 체질과 생활 습관, 현재 증상들을 종합적으로 고려하여 <strong>맞춤형 한약 처방</strong>을 설계합니다.
+
+이는 단순히 소화제를 쓰는 것이 아니라, 몸 전체의 균형을 회복시키고 <u>스스로 회복력을 가질 수 있도록</u> 돕는 과정입니다.
+
+---
+
+## 함께 걸어가는 치료 여정
+
+만성 소화불량은 단기간에 해결되기 어려운 고질적인 문제입니다.
+
+하지만 그렇다고 해서 <strong>평생 고통 속에서 살아가야 하는 것은 결코 아닙니다.</strong>
+
+저는 환자분과의 꾸준한 소통과 세심한 진료를 통해 질환의 근본 원인을 찾아내고, 증상 완화를 넘어 <strong>지속 가능한 건강</strong>을 되찾는 여정에 동반자가 되고 싶습니다.
+
+<blockquote style="border-left:4px solid #0f52ba; padding-left:1rem; margin:1.5rem 0; color:#475569;">
+소화 기능이 회복되면 음식의 맛을 온전히 느끼고, 숙면을 취하며, 일상의 활력을 되찾을 수 있습니다.
+</blockquote>
+
+몸이 보내는 작은 신호들에 귀 기울이고, 그 목소리를 해석하여 온전한 나 자신으로 돌아오는 길을 함께 걸어갈 수 있기를 바랍니다.',
+    featured_image = 'https://barun-static.s3.ap-northeast-2.amazonaws.com/blog/snowhitebambi/2025/11/3135487a3224384d8493c8db5e742b5bbe0fd1471f3bef332cd9134afc38c6ff.png'
+WHERE id = 118;
