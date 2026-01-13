@@ -551,6 +551,7 @@ CLINIC_NAME = "${clinicName}"
             'migrations/0505_add_is_sample_to_leads.sql',
             'migrations/0510_init_navigation_settings.sql',
             'migrations/0511_add_is_sample_to_ops.sql',
+            'migrations/0512_add_is_sample_to_faq.sql',
             'migrations/0600_performance_optimization.sql',
             'migrations/0601_additional_indexes.sql',
             'migrations/0602_internal_component_indexes.sql',
