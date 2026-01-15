@@ -48,21 +48,10 @@ async function mirrorCore() {
         process.exit(1);
     }
 
-    // 0. Auto Bump Version
+    // Read current version from package.json (no auto-bump, version is managed by total-release)
     const pkgPath = path.join(PROJECT_ROOT, 'package.json');
     const pkg = fs.readJsonSync(pkgPath);
-
-    // Parse and Increment Version
-    const oldVersion = pkg.version;
-    const [program, major, minor, patch] = oldVersion.match(/(\d+)\.(\d+)\.(\d+)/);
-    const newVersion = `${major}.${minor}.${parseInt(patch) + 1}`;
-    pkg.version = newVersion;
-
-    // Save new version to package.json
-    fs.writeJsonSync(pkgPath, pkg, { spaces: 4 });
-    console.log(`🆙 Bumped version: ${oldVersion} -> ${newVersion}`);
-
-    const version = newVersion;
+    const version = pkg.version;
     const tagName = `v${version}`;
     const STAGING_DIR = path.join(PROJECT_ROOT, '.mirror-staging');
 
