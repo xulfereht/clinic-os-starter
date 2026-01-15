@@ -556,7 +556,8 @@ CLINIC_NAME = "${clinicName}"
             'migrations/0601_additional_indexes.sql',
             'migrations/0602_internal_component_indexes.sql',
             'migrations/0800_create_system_manuals.sql',
-            'migrations/0801_add_translations_column.sql'
+            'migrations/0801_add_translations_column.sql',
+            'migrations/0802_add_posts_deleted_at.sql'
         ];
 
         console.log("   🚀 추가 마이그레이션 적용 중...");
