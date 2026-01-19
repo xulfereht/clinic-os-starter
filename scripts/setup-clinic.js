@@ -469,7 +469,7 @@ CLINIC_NAME = "${clinicName}"
 
             await runCommand(`git init`);
             await runCommand(`git remote add origin ${STARTER_REPO}`);
-            await runCommand(`git fetch origin main`);
+            await runCommand(`git fetch --depth=1 origin main`);
 
             // Hard reset to sync with remote (local-only files protected by .gitignore)
             await runCommand(`git branch -M main`);
