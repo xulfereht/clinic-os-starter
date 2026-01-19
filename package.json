@@ -1,12 +1,14 @@
 {
   "name": "clinic-os-client",
-  "version": "1.0.80",
+  "version": "1.0.81",
   "type": "module",
   "description": "Clinic-OS 클라이언트",
   "scripts": {
     "setup": "node scripts/setup-clinic.js",
     "update:starter": "git pull origin main && npm install",
     "core:pull": "node .docking/engine/fetch.js",
+    "core:pull:beta": "node .docking/engine/fetch.js --beta",
+    "core:pull:stable": "node .docking/engine/fetch.js --stable",
     "fetch": "node .docking/engine/fetch.js",
     "dev": "node scripts/dev-preflight.js && npm run dev --prefix core",
     "build": "npm run build --prefix core",

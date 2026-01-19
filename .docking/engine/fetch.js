@@ -93,20 +93,20 @@ async function checkForUpdates(config, channel = 'stable') {
     return response.json();
 }
 
-function runCommand(cmd, cwd = PROJECT_ROOT) {
+function runCommand(cmd, cwd = PROJECT_ROOT, silent = false) {
     return new Promise((resolve) => {
-        exec(cmd, { cwd, shell: true }, (error) => {
+        exec(cmd, { cwd, shell: true, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
             if (error) {
-                console.error(`   ❌ Error: ${error.message}`);
-                resolve(false);
+                if (!silent) console.error(`   ❌ Error: ${error.message}`);
+                resolve({ success: false, stdout: '', stderr: stderr || error.message });
                 return;
             }
-            resolve(true);
+            resolve({ success: true, stdout: stdout?.trim() || '', stderr: stderr?.trim() || '' });
         });
     });
 }
 
-async function updateViaGit(config, updateInfo) {
+async function updateViaGit(config, updateInfo, currentVersion) {
     const corePath = path.join(PROJECT_ROOT, 'core');
     const version = updateInfo.latest_version;
     const gitUrl = updateInfo.git_url;
@@ -115,14 +115,54 @@ async function updateViaGit(config, updateInfo) {
         throw new Error('Git 저장소가 감지되지 않았습니다. setup-clinic을 다시 실행하세요.');
     }
 
-    console.log(`   🚀 업데이트 패치 중: ${version}...`);
+    console.log(`   🚀 업데이트 중: ${currentVersion} → ${version}`);
     await runCommand(`git remote set-url origin ${gitUrl}`, corePath);
 
     console.log("   📥 변경사항을 가져오는 중...");
-    if (!(await runCommand(`git fetch --tags --force`, corePath))) throw new Error('Git fetch 실패');
+    const fetchResult = await runCommand(`git fetch --tags --force`, corePath);
+    if (!fetchResult.success) throw new Error('Git fetch 실패');
 
-    console.log(`   🛠️  버전 전환 (Checkout): ${version}...`);
-    if (!(await runCommand(`git checkout v${version} || git checkout ${version}`, corePath))) throw new Error('Git checkout 실패');
+    // Get current commit before checkout
+    const beforeCommit = await runCommand(`git rev-parse HEAD`, corePath, true);
+
+    console.log(`   🛠️  버전 전환: v${version}...`);
+    const checkoutResult = await runCommand(`git checkout v${version} || git checkout ${version}`, corePath);
+    if (!checkoutResult.success) throw new Error('Git checkout 실패');
+
+    // Get commit after checkout
+    const afterCommit = await runCommand(`git rev-parse HEAD`, corePath, true);
+
+    // Show change statistics
+    if (beforeCommit.stdout && afterCommit.stdout && beforeCommit.stdout !== afterCommit.stdout) {
+        const diffStat = await runCommand(
+            `git diff --stat ${beforeCommit.stdout}..${afterCommit.stdout} 2>/dev/null | tail -1`,
+            corePath, true
+        );
+        if (diffStat.stdout) {
+            console.log(`   📊 ${diffStat.stdout}`);
+        }
+
+        // Show changed file count by type
+        const diffFiles = await runCommand(
+            `git diff --name-only ${beforeCommit.stdout}..${afterCommit.stdout} 2>/dev/null`,
+            corePath, true
+        );
+        if (diffFiles.stdout) {
+            const files = diffFiles.stdout.split('\n').filter(f => f);
+            const migrations = files.filter(f => f.startsWith('migrations/')).length;
+            const src = files.filter(f => f.startsWith('src/')).length;
+            const other = files.length - migrations - src;
+
+            console.log(`   📁 변경된 파일: ${files.length}개 (src: ${src}, migrations: ${migrations}, 기타: ${other})`);
+
+            // Highlight if migrations changed
+            if (migrations > 0) {
+                console.log(`   ⚠️  마이그레이션 ${migrations}개 변경됨 - DB 업데이트 필요!`);
+            }
+        }
+    } else {
+        console.log(`   ℹ️  파일 변경 없음 (동일 커밋)`);
+    }
 
     // Sync Shell Scripts (Starter Kit Maintenance)
     try {
@@ -180,7 +220,7 @@ async function main() {
         if (updateInfo.release_notes) console.log(`   Release Notes: ${updateInfo.release_notes}`);
         console.log('');
 
-        await updateViaGit(config, updateInfo);
+        await updateViaGit(config, updateInfo, currentVersion);
 
         console.log('\n════════════════════════════════════════════');
         console.log(`✅ Update Successful: ${updateInfo.latest_version} (${channel})`);
