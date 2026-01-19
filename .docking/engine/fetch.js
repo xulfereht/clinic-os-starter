@@ -3,7 +3,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 import { exec } from 'child_process';
-import { runMigrations, runAllPluginMigrations } from './migrate.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -107,6 +106,52 @@ function runCommand(cmd, cwd = PROJECT_ROOT, silent = false) {
     });
 }
 
+/**
+ * wrangler.toml에서 DB 이름 가져오기
+ */
+function getDbName() {
+    const wranglerPath = path.join(PROJECT_ROOT, 'wrangler.toml');
+    if (fs.existsSync(wranglerPath)) {
+        const content = fs.readFileSync(wranglerPath, 'utf8');
+        const match = content.match(/database_name\s*=\s*"([^"]+)"/);
+        if (match) return match[1];
+    }
+    return 'clinic-os-dev';
+}
+
+/**
+ * 새로 추가된 마이그레이션 파일만 실행
+ * @param {string[]} migrationFiles - git diff로 찾은 새 마이그레이션 파일 경로 배열
+ * @param {string} corePath - core 디렉토리 경로
+ */
+async function runNewMigrations(migrationFiles, corePath) {
+    const dbName = getDbName();
+
+    for (const migFile of migrationFiles) {
+        const fileName = path.basename(migFile);
+        const filePath = path.join(corePath, migFile);
+
+        if (!fs.existsSync(filePath)) {
+            console.log(`   ⚠️  ${fileName}: 파일 없음 (스킵)`);
+            continue;
+        }
+
+        process.stdout.write(`   🔄 ${fileName}... `);
+
+        const result = await runCommand(
+            `npx wrangler d1 execute ${dbName} --local --file="${filePath}" --yes`,
+            PROJECT_ROOT,
+            true
+        );
+
+        if (result.success || result.stderr?.includes('already exists')) {
+            console.log('✅');
+        } else {
+            console.log(`❌ ${result.stderr}`);
+        }
+    }
+}
+
 async function updateViaGit(config, updateInfo, currentVersion) {
     const corePath = path.join(PROJECT_ROOT, 'core');
     const version = updateInfo.latest_version;
@@ -148,6 +193,13 @@ async function updateViaGit(config, updateInfo, currentVersion) {
             `git diff --name-only ${beforeCommit.stdout}..${afterCommit.stdout} 2>/dev/null`,
             corePath, true
         );
+
+        // 새로 추가된 마이그레이션 파일만 추출 (--diff-filter=A)
+        const newMigrations = await runCommand(
+            `git diff --name-only --diff-filter=A ${beforeCommit.stdout}..${afterCommit.stdout} -- migrations/*.sql 2>/dev/null`,
+            corePath, true
+        );
+
         if (diffFiles.stdout) {
             const files = diffFiles.stdout.split('\n').filter(f => f);
             const migrations = files.filter(f => f.startsWith('migrations/')).length;
@@ -155,11 +207,19 @@ async function updateViaGit(config, updateInfo, currentVersion) {
             const other = files.length - migrations - src;
 
             console.log(`   📁 변경된 파일: ${files.length}개 (src: ${src}, migrations: ${migrations}, 기타: ${other})`);
+        }
 
-            // Highlight if migrations changed
-            if (migrations > 0) {
-                console.log(`   ⚠️  마이그레이션 ${migrations}개 변경됨 - DB 업데이트 필요!`);
+        // 새로 추가된 마이그레이션만 실행
+        if (newMigrations.stdout) {
+            const newMigFiles = newMigrations.stdout.split('\n').filter(f => f && f.endsWith('.sql'));
+            if (newMigFiles.length > 0) {
+                console.log(`\n🗃️  새 마이그레이션 ${newMigFiles.length}개 감지됨`);
+                await runNewMigrations(newMigFiles, corePath);
+            } else {
+                console.log('\n✅ 새 마이그레이션 없음');
             }
+        } else {
+            console.log('\n✅ 새 마이그레이션 없음');
         }
     } else {
         console.log(`   ℹ️  파일 변경 없음 (동일 커밋)`);
@@ -179,29 +239,6 @@ async function updateViaGit(config, updateInfo, currentVersion) {
         }
     } catch (e) {
         console.warn("   ⚠️  스크립트 동기화 실패 (무시됨):", e.message);
-    }
-
-    // Auto-run migrations after successful update
-    console.log('\n🗃️  데이터베이스 마이그레이션 자동 실행...');
-    try {
-        // Core migrations
-        const coreResult = await runMigrations({ local: true, verbose: true });
-
-        // Plugin migrations
-        const pluginResult = await runAllPluginMigrations({ local: true, verbose: true });
-
-        if (coreResult.success && pluginResult.success) {
-            console.log('   ✅ 모든 마이그레이션 완료');
-        } else {
-            console.warn('   ⚠️  일부 마이그레이션 실패 (수동 확인 필요)');
-        }
-    } catch (e) {
-        console.warn('   ⚠️  마이그레이션 실행 실패:', e.message);
-        console.warn('');
-        console.warn('   ╔════════════════════════════════════════════════════╗');
-        console.warn('   ║  💡 수동으로 마이그레이션 실행:                      ║');
-        console.warn('   ║     npm run db:migrate                             ║');
-        console.warn('   ╚════════════════════════════════════════════════════╝');
     }
 
     return true;

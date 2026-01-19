@@ -542,32 +542,29 @@ CLINIC_NAME = "${clinicName}"
         console.log(`   🚀 스키마 생성 중 (${wranglerCmd.includes('node_modules') ? 'Local binary' : 'npx'})...`);
         const initOk = await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file=core/migrations/0000_initial_schema.sql --yes`);
 
-        // Additional migrations (for new tables/columns added after initial schema)
-        const additionalMigrations = [
-            'migrations/0500_add_is_sample_column.sql',
-            'migrations/0501_add_password_change_required.sql',
-            'migrations/0503_add_payment_method.sql',
-            'migrations/0505_add_is_sample_to_leads.sql',
-            'migrations/0510_init_navigation_settings.sql',
-            'migrations/0511_add_is_sample_to_ops.sql',
-            'migrations/0512_add_is_sample_to_faq.sql',
-            'migrations/0600_performance_optimization.sql',
-            'migrations/0601_additional_indexes.sql',
-            'migrations/0602_internal_component_indexes.sql',
-            'migrations/0800_create_system_manuals.sql',
-            'migrations/0801_add_translations_column.sql'
-            // 0802_add_posts_deleted_at.sql - 초기 스키마에 이미 포함됨
-        ];
+        // 모든 마이그레이션 파일을 d1_migrations 테이블에 "이미 적용됨"으로 기록
+        // (초기 스키마가 최신 상태이므로 실행할 필요 없음, 나중에 새 마이그레이션만 실행됨)
+        console.log("   🚀 마이그레이션 기록 초기화 중...");
 
-        console.log("   🚀 추가 마이그레이션 적용 중...");
-        for (const migFile of additionalMigrations) {
-            let finalPath = path.join(PROJECT_ROOT, migFile);
-            if (!fs.existsSync(finalPath)) {
-                finalPath = path.join(PROJECT_ROOT, 'core', migFile);
+        // migrations 폴더 찾기
+        let migrationsDir = path.join(PROJECT_ROOT, 'core/migrations');
+        if (!fs.existsSync(migrationsDir)) {
+            migrationsDir = path.join(PROJECT_ROOT, 'migrations');
+        }
+
+        if (fs.existsSync(migrationsDir)) {
+            const migrationFiles = fs.readdirSync(migrationsDir)
+                .filter(f => f.endsWith('.sql') && !f.startsWith('_'))
+                .sort();
+
+            // d1_migrations 테이블 생성 (없으면)
+            await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, applied_at TEXT DEFAULT (datetime('now')))" --yes`);
+
+            // 모든 마이그레이션 파일을 기록 (실행 없이)
+            for (const migFile of migrationFiles) {
+                await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_migrations (name) VALUES ('${migFile}')" --yes`);
             }
-            if (fs.existsSync(finalPath)) {
-                await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file=${finalPath} --yes`);
-            }
+            console.log(`   ✅ ${migrationFiles.length}개 마이그레이션 기록 완료 (초기 설치)`);
         }
 
         console.log("   🚀 샘플 데이터 삽입 중...");
