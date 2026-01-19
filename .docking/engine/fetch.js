@@ -197,7 +197,11 @@ async function updateViaGit(config, updateInfo, currentVersion) {
         }
     } catch (e) {
         console.warn('   ⚠️  마이그레이션 실행 실패:', e.message);
-        console.warn('   💡 수동 실행: node .docking/engine/migrate.js');
+        console.warn('');
+        console.warn('   ╔════════════════════════════════════════════════════╗');
+        console.warn('   ║  💡 수동으로 마이그레이션 실행:                      ║');
+        console.warn('   ║     npm run db:migrate                             ║');
+        console.warn('   ╚════════════════════════════════════════════════════╝');
     }
 
     return true;
