@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 import { exec } from 'child_process';
+import { runMigrations, runAllPluginMigrations } from './migrate.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -180,6 +181,25 @@ async function updateViaGit(config, updateInfo, currentVersion) {
         console.warn("   ⚠️  스크립트 동기화 실패 (무시됨):", e.message);
     }
 
+    // Auto-run migrations after successful update
+    console.log('\n🗃️  데이터베이스 마이그레이션 자동 실행...');
+    try {
+        // Core migrations
+        const coreResult = await runMigrations({ local: true, verbose: true });
+
+        // Plugin migrations
+        const pluginResult = await runAllPluginMigrations({ local: true, verbose: true });
+
+        if (coreResult.success && pluginResult.success) {
+            console.log('   ✅ 모든 마이그레이션 완료');
+        } else {
+            console.warn('   ⚠️  일부 마이그레이션 실패 (수동 확인 필요)');
+        }
+    } catch (e) {
+        console.warn('   ⚠️  마이그레이션 실행 실패:', e.message);
+        console.warn('   💡 수동 실행: node .docking/engine/migrate.js');
+    }
+
     return true;
 }
 
@@ -227,7 +247,9 @@ async function main() {
         console.log('');
         console.log('Next steps:');
         console.log('  1. npm install (if package.json changed)');
-        console.log('  2. npx wrangler d1 execute ... (apply migrations)');
+        console.log('  2. npm run dev (to test locally)');
+        console.log('');
+        console.log('💡 마이그레이션은 자동으로 적용되었습니다.');
         console.log('════════════════════════════════════════════');
 
     } catch (error) {

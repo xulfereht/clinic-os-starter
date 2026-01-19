@@ -1,5 +1,10 @@
 node_modules/
 .env
+data/.env
+data/wrangler.toml
+.docking/incoming/*.zip
+.docking/staging/
+.docking/config.yaml
 archive/
 dist/
 *.log
@@ -9,17 +14,3 @@ dist/
 clinic.json
 wrangler.toml
 .wrangler/
-
-# Core app (managed by HQ, has its own .git)
-core/
-
-# Local data
-data/
-
-# Docking runtime files
-.docking/config.yaml
-.docking/incoming/
-.docking/staging/
-.docking/checkpoints/
-.docking/versions/
-.docking/logs/
