@@ -204,10 +204,16 @@ data/.env
 data/wrangler.toml
 .docking/incoming/*.zip
 .docking/staging/
+.docking/config.yaml
 archive/
 dist/
 *.log
 .DS_Store
+
+# Local-only files (protected from git pull)
+clinic.json
+wrangler.toml
+.wrangler/
 `;
     archive.append(gitignoreContent, { name: '.gitignore' });
 

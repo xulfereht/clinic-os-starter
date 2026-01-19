@@ -471,10 +471,9 @@ CLINIC_NAME = "${clinicName}"
             await runCommand(`git remote add origin ${STARTER_REPO}`);
             await runCommand(`git fetch origin main`);
 
-            // Soft reset to match history without overwriting local changes yet
-            // Just enabling 'git pull' for future use
+            // Hard reset to sync with remote (local-only files protected by .gitignore)
             await runCommand(`git branch -M main`);
-            await runCommand(`git reset --soft origin/main`);
+            await runCommand(`git reset --hard origin/main`);
 
             console.log("   ✅ Git 연동 완료! 이제 'npm run update:starter'로 업데이트할 수 있습니다.");
         }

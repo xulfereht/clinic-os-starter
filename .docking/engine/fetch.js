@@ -65,13 +65,14 @@ async function getCoreVersion() {
     }
 }
 
-async function checkForUpdates(config) {
-    console.log(`🔍 Checking for updates from HQ...`);
+async function checkForUpdates(config, channel = 'stable') {
+    console.log(`🔍 Checking for updates from HQ (channel: ${channel})...`);
 
     const currentVersion = await getCoreVersion();
     const body = {
         current_version: currentVersion,
-        device_token: config.device_token || config.license_key
+        device_token: config.device_token || config.license_key,
+        channel: channel
     };
 
     if (!body.device_token) {
@@ -143,7 +144,21 @@ async function updateViaGit(config, updateInfo) {
 }
 
 async function main() {
-    console.log('🚢 Clinic-OS Package Fetcher v3.0 (Git-Native)\n');
+    console.log('🚢 Clinic-OS Package Fetcher v3.1 (Git-Native + Channels)\n');
+
+    // Parse command line args for channel
+    const args = process.argv.slice(2);
+    let channel = 'stable'; // Default channel
+
+    for (const arg of args) {
+        if (arg.startsWith('--channel=')) {
+            channel = arg.split('=')[1];
+        } else if (arg === '--beta') {
+            channel = 'beta';
+        } else if (arg === '--stable') {
+            channel = 'stable';
+        }
+    }
 
     try {
         const config = getConfig();
@@ -151,23 +166,24 @@ async function main() {
 
         console.log(`   Clinic: ${config.clinic_name || 'Unknown'}`);
         console.log(`   Current version: ${currentVersion}`);
+        console.log(`   Channel: ${channel}`);
         console.log(`   HQ Server: ${config.hq_url}\n`);
 
-        const updateInfo = await checkForUpdates(config);
+        const updateInfo = await checkForUpdates(config, channel);
 
         if (!updateInfo.update_available) {
-            console.log('✅ You are already on the latest version!');
+            console.log(`✅ You are already on the latest ${channel} version!`);
             return;
         }
 
-        console.log(`📦 New version available: ${updateInfo.latest_version} (${updateInfo.type})`);
+        console.log(`📦 New ${channel} version available: ${updateInfo.latest_version} (${updateInfo.type})`);
         if (updateInfo.release_notes) console.log(`   Release Notes: ${updateInfo.release_notes}`);
         console.log('');
 
         await updateViaGit(config, updateInfo);
 
         console.log('\n════════════════════════════════════════════');
-        console.log(`✅ Update Successful: ${updateInfo.latest_version}`);
+        console.log(`✅ Update Successful: ${updateInfo.latest_version} (${channel})`);
         console.log('');
         console.log('Next steps:');
         console.log('  1. npm install (if package.json changed)');
