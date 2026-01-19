@@ -16,7 +16,7 @@ const PROJECT_ROOT = path.join(__dirname, '..');
 
 const STARTER_FILES = [
     'GEMINI.md',
-    '.gitignore',
+    // '.gitignore' is generated separately with starter-specific content
     '.docking',
     '.client',
     '.agent',
@@ -135,6 +135,26 @@ fi
 node scripts/setup-clinic.js
 `;
         fs.writeFileSync(path.join(STAGING_DIR, 'setup.sh'), setupSh, { mode: 0o755 });
+
+        // Create starter-specific .gitignore (protects local-only files from git pull)
+        const starterGitignore = `node_modules/
+.env
+data/.env
+data/wrangler.toml
+.docking/incoming/*.zip
+.docking/staging/
+.docking/config.yaml
+archive/
+dist/
+*.log
+.DS_Store
+
+# Local-only files (protected from git pull)
+clinic.json
+wrangler.toml
+.wrangler/
+`;
+        fs.writeFileSync(path.join(STAGING_DIR, '.gitignore'), starterGitignore);
 
         // Update package.json for the starter (remove dev/local scripts if needed, or keep as is)
         // For now, we keep it as is, but ensure 'dev' works (whch we did with preflight)
