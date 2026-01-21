@@ -168,12 +168,54 @@ async function updateViaGit(config, updateInfo, currentVersion) {
     const fetchResult = await runCommand(`git fetch --tags --force`, corePath);
     if (!fetchResult.success) throw new Error('Git fetch 실패');
 
+    // Check for local changes and stash if necessary
+    const statusResult = await runCommand(`git status --porcelain`, corePath, true);
+    let hasStash = false;
+
+    if (statusResult.stdout && statusResult.stdout.trim()) {
+        console.log("   📦 로컬 변경사항 감지됨 - 임시 저장 중...");
+        const changedFiles = statusResult.stdout.trim().split('\n').length;
+        console.log(`      (${changedFiles}개 파일 stash)`);
+
+        const stashResult = await runCommand(
+            `git stash push -m "core:pull auto-stash $(date +%Y%m%d-%H%M%S)"`,
+            corePath, true
+        );
+
+        if (stashResult.success && !stashResult.stdout.includes('No local changes')) {
+            hasStash = true;
+            console.log("   ✅ 로컬 변경사항 임시 저장 완료");
+        }
+    }
+
     // Get current commit before checkout
     const beforeCommit = await runCommand(`git rev-parse HEAD`, corePath, true);
 
     console.log(`   🛠️  버전 전환: v${version}...`);
     const checkoutResult = await runCommand(`git checkout v${version} || git checkout ${version}`, corePath);
-    if (!checkoutResult.success) throw new Error('Git checkout 실패');
+    if (!checkoutResult.success) {
+        // Restore stash if checkout failed
+        if (hasStash) {
+            console.log("   🔄 체크아웃 실패 - 로컬 변경사항 복원 중...");
+            await runCommand(`git stash pop`, corePath, true);
+        }
+        throw new Error('Git checkout 실패');
+    }
+
+    // Restore stashed changes after successful checkout
+    if (hasStash) {
+        console.log("   🔄 로컬 변경사항 복원 중...");
+        const popResult = await runCommand(`git stash pop`, corePath, true);
+
+        if (!popResult.success) {
+            // Conflict occurred - keep stash and notify user
+            console.log("   ⚠️  병합 충돌 발생!");
+            console.log("      로컬 변경사항이 stash에 보관되어 있습니다.");
+            console.log("      수동으로 해결하세요: cd core && git stash pop");
+        } else {
+            console.log("   ✅ 로컬 변경사항 복원 완료");
+        }
+    }
 
     // Get commit after checkout
     const afterCommit = await runCommand(`git rev-parse HEAD`, corePath, true);
@@ -245,7 +287,7 @@ async function updateViaGit(config, updateInfo, currentVersion) {
 }
 
 async function main() {
-    console.log('🚢 Clinic-OS Package Fetcher v3.1 (Git-Native + Channels)\n');
+    console.log('🚢 Clinic-OS Package Fetcher v3.2 (Git-Native + Auto-Stash)\n');
 
     // Parse command line args for channel
     const args = process.argv.slice(2);
