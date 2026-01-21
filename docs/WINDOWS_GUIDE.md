@@ -1,19 +1,10 @@
-# 🏥 Clinic-OS Windows 가이드: Antigravity + WSL 격리 환경
+# 🏥 Clinic-OS Windows 가이드: Gemini CLI + WSL 격리 환경
 
 윈도우 사용자를 위한 최적의 개발 및 운영 환경 설정 가이드입니다. 이 가이드는 **WSL(리눅스 서브시스템)**을 사용하여 마치 도커 컨테이너처럼 깔끔하고 강력한 격리 환경을 구축하는 것을 목표로 합니다.
 
 ---
 
-## 🚀 1. Antigravity 앱 설치
-
-가장 먼저 **Antigravity** 앱을 설치해주세요. Antigravity는 AI 어시스턴트 기능뿐만 아니라, 복잡한 개발 환경 설정을 안전하게 가이드하는 통합 환경을 제공합니다.
-
-1. [Antigravity 다운로드 페이지](https://clinic-os-hq.pages.dev/download)에서 설치 파일을 내려받아 설치합니다.
-2. 앱을 실행하고 로그인을 완료합니다.
-
----
-
-## 🐧 2. WSL(Linux) 활성화
+## 🚀 1. WSL(Linux) 활성화
 
 윈도우 네이티브 환경에 개발 도구를 직접 설치하면 경로 문제나 권한 오류가 발생하기 쉽습니다. 따라서 별도의 격리된 리눅스 환경(WSL)을 사용합니다.
 
@@ -27,7 +18,7 @@
 
 ---
 
-## 🛠️ 3. 격리 환경 내 도구 설치 (WSL 안에서)
+## 🛠️ 2. 격리 환경 내 도구 설치 (WSL 안에서)
 
 이제 윈도우가 아닌, 방금 만든 **리눅스 환경 내부**에 필요한 도구들을 설치합니다. (WSL 터미널에서 실행)
 
@@ -37,25 +28,67 @@ sudo apt update && sudo apt upgrade -y
 
 # 기본 도구 (Node.js, Git) 설치
 sudo apt install -y git
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs
 ```
 
 ---
 
-## 🏁 4. 프로젝트 시작하기
+## 🤖 3. Gemini CLI 설치 (WSL 안에서)
 
-1. **Antigravity 앱**에서 프로젝트 폴더를 엽니다.
-2. 이때 작업 경로는 윈도우 경로(`C:\...`)가 아닌, **WSL 내부 경로**(`\\wsl$\Ubuntu\home\...`)에 프로젝트를 두는 것이 성능상 훨씬 유리합니다.
+AI 어시스턴트로 Gemini CLI를 사용합니다.
+
+```bash
+# Gemini CLI 전역 설치
+npm install -g @google/gemini-cli
+
+# 설치 확인
+gemini --version
+```
+
+처음 실행 시 **Google 계정 로그인**이 필요합니다:
+```bash
+gemini
+# → "Login with Google" 선택 → 브라우저에서 로그인
+```
+
+> 자세한 내용: [Gemini CLI 설치 가이드](./GEMINI_CLI_SETUP.md)
+
+---
+
+## 🎨 4. 터미널 꾸미기 (선택)
+
+터미널 가독성을 높이려면 Starship 프롬프트를 설치하세요.
+
+```bash
+# Starship 설치
+curl -sS https://starship.rs/install.sh | sh -s -- -y
+echo 'eval "$(starship init bash)"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+> 자세한 내용: [터미널 꾸미기 가이드](./TERMINAL_BEAUTIFY.md)
+
+---
+
+## 🏁 5. 프로젝트 시작하기
+
+1. **Windows Terminal**에서 Ubuntu를 실행합니다.
+2. 작업 경로는 윈도우 경로(`C:\...`)가 아닌, **WSL 내부 경로**(`~/clinic-os`)에 프로젝트를 두는 것이 성능상 훨씬 유리합니다.
 3. **(중요)** 프로젝트 폴더 권한을 현재 사용자로 설정합니다:
    ```bash
    sudo chown -R $USER:$USER ~/clinic-os
    ```
-4. 앱 내 터미널(또는 VS Code WSL 연결)에서 다음 명령어를 입력하세요:
+4. 터미널에서 프로젝트로 이동 후 설정을 실행합니다:
    ```bash
-   /setup-clinic
+   cd ~/clinic-os
+   npm run setup
    ```
-   *Antigravity AI가 환경을 자동으로 한 번 더 점검하고, 부족한 부분이 있다면 리눅스 명령어를 통해 즉시 해결을 도와드립니다.*
+5. Gemini CLI로 AI 어시스턴트를 시작합니다:
+   ```bash
+   gemini
+   ```
+   *Gemini가 GEMINI.md를 읽고 프로젝트 맥락을 파악합니다.*
 
 ---
 
@@ -293,7 +326,7 @@ su - 아이디
 
 - Ubuntu 터미널에서 `npm run dev`로 서버를 먼저 띄워야 함
 - 서버가 내려가면 localhost 접속 불가
-- Antigravity에서 "로컬서버 실행해줘"라고 해도 됨
+- Gemini CLI에서 "로컬서버 실행해줘"라고 해도 됨
 
 ---
 
@@ -357,5 +390,5 @@ npm -v
 
 ---
 
-> 📅 최종 업데이트: 2026-01-16
-> 📝 1주차 워크샵(2026-01-15) 실습 기반 트러블슈팅 추가 
+> 📅 최종 업데이트: 2026-01-21
+> 📝 Gemini CLI 기반으로 업데이트, 터미널 꾸미기 가이드 추가 
