@@ -1,519 +1,430 @@
-# 플러그인 개발 가이드
+# Clinic-OS 플러그인 개발 가이드
 
-Clinic-OS 플러그인 시스템을 사용하여 기능을 확장하는 방법을 설명합니다.
+> 플러그인을 만들거나 수정할 때 따라야 하는 규칙입니다.
 
-## 플러그인 아키텍처
+---
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Clinic-OS                                │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │  src/plugins/                                            │   │
-│  │  ├── installed.json         # 설치된 플러그인 목록        │   │
-│  │  ├── vip-management/        # 플러그인 코드              │   │
-│  │  │   ├── manifest.json      # 플러그인 설정              │   │
-│  │  │   ├── migration.sql      # DB 스키마                  │   │
-│  │  │   ├── pages/             # 관리자 페이지              │   │
-│  │  │   ├── api/               # API 엔드포인트             │   │
-│  │  │   ├── components/        # UI 컴포넌트                │   │
-│  │  │   └── lib/               # 비즈니스 로직              │   │
-│  │  └── another-plugin/                                     │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│                              │                                  │
-│                              ▼                                  │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │  동적 라우팅                                              │   │
-│  │  ├── /admin/hub/{plugin-id}/*      페이지 라우트         │   │
-│  │  └── /api/hub/{plugin-id}/*        API 라우트            │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+## 핵심 원칙: 코어 수정 없는 플러그인
 
-## 핵심 원칙
+**플러그인 추가 시 `src/pages/` 등 코어 코드를 수정하면 안 됩니다.**
 
-### 1. 코어 코드 침범 금지
+Astro는 `src/pages/` 내 파일만 라우팅하지만, Clinic-OS는 2-Track 아키텍처로 이 제약을 해결합니다:
+- 플러그인은 `src/plugins/{plugin-id}/` 에 위치
+- 코어의 Universal Router가 플러그인 페이지를 자동 라우팅
+- manifest.json만 있으면 자동 인식 (installed.json 불필요)
 
-플러그인은 **자체 영역에서만** 동작합니다:
-- 자체 페이지: `/admin/hub/{plugin-id}/*`
-- 자체 API: `/api/hub/{plugin-id}/*`
-- 자체 DB 테이블: `custom_` 접두사 사용
+---
 
-### 2. Plugin SDK를 통한 코어 데이터 접근
+## 2-Track 플러그인 아키텍처
 
-코어 데이터(환자, 예약, 결제 등)는 **Plugin SDK API**를 통해서만 접근합니다:
+### Track 1: New Route 플러그인 (새 경로 추가)
 
-```typescript
-// 플러그인 내 API 예시
-import { createPluginSDK } from '@clinic-os/plugin-sdk';
+**용도**: `/ext/{pluginId}/*` 경로로 새로운 페이지 추가
 
-export async function GET({ locals }) {
-  const sdk = createPluginSDK(db, context);
-
-  // 코어 데이터 읽기
-  const patients = await sdk.patients.list({ status: 'active' });
-  const payments = await sdk.payments.getByPatient(patientId);
-
-  return new Response(JSON.stringify(patients));
+```json
+{
+  "id": "survey-tools",
+  "type": "new-route",
+  "routes": {
+    "base": "/ext/survey-tools",
+    "public": [
+      { "path": "/", "file": "pages/index.astro", "title": "검사도구 목록" },
+      { "path": "/:toolId", "file": "pages/[...tool].astro", "title": "검사 실행" }
+    ]
+  }
 }
 ```
+
+**라우팅 동작**:
+- `/ext/survey-tools` → `plugins/survey-tools/pages/index.astro`
+- `/ext/survey-tools/stress-check` → `plugins/survey-tools/pages/[...tool].astro`
+
+**Universal Router**: `src/pages/ext/[...path].astro`가 모든 `/ext/*` 요청을 처리
+
+### Track 2: Override 플러그인 (기존 경로 대체)
+
+**용도**: 코어가 제공하는 Override Point를 대체 (예: 홈페이지)
+
+```json
+{
+  "id": "custom-homepage",
+  "type": "override",
+  "overrides": [
+    {
+      "path": "/",
+      "file": "pages/index.astro",
+      "priority": 10,
+      "description": "홈페이지 대체"
+    }
+  ]
+}
+```
+
+**Override Points (코어 제공)**:
+- `/` - 메인 홈페이지
+
+**주의**: Override는 코어가 명시적으로 제공하는 포인트에서만 작동합니다. 임의 경로 대체 불가.
 
 ---
 
 ## 플러그인 구조
 
-### 디렉토리 구조
-
 ```
 src/plugins/{plugin-id}/
-├── manifest.json       # 필수: 플러그인 메타데이터
+├── manifest.json       # 필수: 플러그인 메타정보
+├── README.md           # 권장: 사용 설명서
 ├── migration.sql       # 선택: DB 스키마
-├── pages/              # 관리자 페이지
-│   ├── index.astro     # 메인 대시보드
-│   └── settings.astro  # 설정 페이지
+├── pages/              # Astro 페이지 (라우팅 대상)
+│   ├── index.astro     # /ext/{plugin-id}/ 또는 Override 대상
+│   └── [...path].astro # Catch-all 라우트
 ├── api/                # API 엔드포인트
-│   └── data.ts
 ├── components/         # UI 컴포넌트
-│   └── Widget.astro
 └── lib/                # 비즈니스 로직
-    └── utils.ts
+    └── hooks.ts        # 이벤트 훅 핸들러
 ```
 
-### manifest.json
+---
+
+## manifest.json 스키마
+
+### 공통 필드 (필수)
 
 ```json
 {
-  "id": "vip-management",
-  "name": "VIP 관리",
-  "description": "VIP 회원 등급 및 포인트 관리 시스템",
-  "version": "1.0.0",
-  "author": "Clinic-OS",
+  "id": "plugin-id",           // 고유 ID (폴더명과 일치)
+  "name": "플러그인 이름",      // UI 표시 이름
+  "description": "설명",        // 간단한 설명
+  "version": "1.0.0",          // 시맨틱 버전
+  "author": "작성자",
+  "type": "new-route",         // "new-route" | "override"
+  "category": "utility"        // core|marketing|integration|customization|analytics|utility
+}
+```
 
-  "pages": [
-    { "path": "index", "title": "대시보드", "description": "VIP 현황" },
-    { "path": "members", "title": "회원 관리" },
-    { "path": "settings", "title": "설정" }
-  ],
+### New Route 전용 필드
 
-  "apis": [
-    { "path": "members", "methods": ["GET", "POST"] },
-    { "path": "members/:id", "methods": ["GET", "PUT", "DELETE"] },
-    { "path": "points", "methods": ["POST"] }
-  ],
+```json
+{
+  "routes": {
+    "base": "/ext/my-plugin",  // 기본 경로 (필수)
+    "public": [                // 공개 라우트
+      { "path": "/", "file": "pages/index.astro", "title": "메인" },
+      { "path": "/:id", "file": "pages/[id].astro", "title": "상세" }
+    ],
+    "admin": "pages/admin/",   // 어드민 라우트 디렉토리 (선택)
+    "api": "api/"              // API 라우트 디렉토리 (선택)
+  }
+}
+```
 
-  "tables": [
-    "custom_vip_members",
-    "custom_vip_point_history"
-  ],
+### Override 전용 필드
 
-  "hooks": [
-    { "event": "onPaymentCompleted", "handler": "handlePayment" }
-  ],
-
-  "permissions": [
-    "read:patients",
-    "read:payments",
-    "database:read",
-    "database:write"
+```json
+{
+  "overrides": [
+    {
+      "path": "/",                    // 대체할 경로
+      "file": "pages/index.astro",    // 플러그인 내 파일
+      "priority": 10,                 // 우선순위 (높을수록 우선)
+      "description": "홈페이지 대체"
+    }
   ]
+}
+```
+
+### 선택 필드
+
+```json
+{
+  "documentation": {
+    "summary": "플러그인 요약 (2-3문장)",
+    "features": ["기능1", "기능2"],
+    "requirements": ["필요 조건"],
+    "howToEdit": "수정 방법 안내"
+  },
+  "permissions": ["database:read", "database:write"],
+  "pages": [                     // 어드민 허브에 표시
+    { "path": "manage", "title": "관리 페이지" }
+  ],
+  "apis": [
+    { "path": "data", "methods": ["GET", "POST"], "description": "데이터 API" }
+  ],
+  "hooks": [
+    { "event": "onPatientCreated", "handler": "handlePatientCreated" }
+  ],
+  "migration": "migration.sql",    // DB 마이그레이션 파일
+  "tables": ["custom_my_table"],   // 생성되는 테이블 목록
+  "settings": {
+    "option1": { "type": "string", "label": "옵션1", "default": "value" }
+  }
 }
 ```
 
 ---
 
-## 데이터베이스
+## 플러그인 페이지 작성
 
-### 규칙: custom_ 접두사 필수
+### Props (Universal Router가 전달)
 
-플러그인 테이블은 **반드시** `custom_` 접두사를 사용합니다:
+```typescript
+// pages/index.astro
+---
+interface Props {
+  settings: ClinicSettings;      // 클리닉 설정
+  db: D1Database;                // 데이터베이스
+  pluginId: string;              // 플러그인 ID
+  path: string;                  // 남은 경로 (예: "stress-check")
+  url: URL;                      // 전체 URL
+  request: Request;              // 요청 객체
+  plugin: PluginManifest;        // 플러그인 매니페스트
+}
 
-```sql
--- ✅ Good
-CREATE TABLE custom_vip_members (...);
-CREATE TABLE custom_loyalty_points (...);
+const { settings, db, pluginId, path, plugin } = Astro.props;
+---
 
--- ❌ Bad - 코어 테이블과 충돌 가능
-CREATE TABLE vip_members (...);
+<BaseLayout title="My Plugin">
+  <h1>{plugin.name}</h1>
+  <!-- 플러그인 콘텐츠 -->
+</BaseLayout>
 ```
 
-### migration.sql 예시
+### Catch-all 패턴
 
-```sql
--- src/plugins/vip-management/migration.sql
+```typescript
+// pages/[...tool].astro
+---
+const { path } = Astro.props;
+const segments = path.split('/');
+const toolId = segments[0];
+const action = segments[1]; // 'result' 등
 
-CREATE TABLE IF NOT EXISTS custom_vip_members (
-  id TEXT PRIMARY KEY,
-  patient_id TEXT NOT NULL,
-  tier TEXT DEFAULT 'silver',
-  points INTEGER DEFAULT 0,
-  total_spent INTEGER DEFAULT 0,
-  created_at INTEGER DEFAULT (unixepoch()),
-  UNIQUE(patient_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_custom_vip_patient
-  ON custom_vip_members(patient_id);
-
-CREATE TABLE IF NOT EXISTS custom_vip_point_history (
-  id TEXT PRIMARY KEY,
-  member_id TEXT NOT NULL,
-  type TEXT NOT NULL,  -- 'earn', 'spend', 'expire'
-  amount INTEGER NOT NULL,
-  description TEXT,
-  created_at INTEGER DEFAULT (unixepoch())
-);
-```
-
-### 코어 테이블 참조
-
-커스텀 테이블에서 코어 테이블을 FK로 참조할 수 있습니다:
-
-```sql
-CREATE TABLE custom_vip_members (
-  patient_id TEXT NOT NULL,
-  FOREIGN KEY (patient_id) REFERENCES patients(id)
-);
+// toolId에 따른 처리
+---
 ```
 
 ---
 
-## Plugin SDK API
+## 플러그인 설치 과정
 
-플러그인에서 코어 데이터에 접근할 때 사용합니다.
+1. `src/plugins/` 폴더에 플러그인 디렉토리 생성
+2. `manifest.json` 파일 작성
+3. 페이지/API/컴포넌트 추가
+4. **끝!** (코어 수정 불필요)
 
-### 환자 API
+플러그인은 `import.meta.glob('../plugins/*/manifest.json')`으로 빌드 타임에 자동 인식됩니다.
 
-```typescript
-// 목록 조회
-const patients = await sdk.patients.list({ status: 'active', limit: 50 });
+---
 
-// 단일 조회
-const patient = await sdk.patients.get(patientId);
+## 로컬 오버라이드 (Local Override)
 
-// 검색
-const results = await sdk.patients.search('홍길동');
+**문제**: 클라이언트가 코어 플러그인(예: custom-homepage)을 커스터마이징한 후 `core:pull`하면 변경사항이 덮어씌워짐.
+
+**해결책**: `src/plugins/local/` 폴더 사용
+
+### 폴더 구조
+
+```
+src/plugins/
+├── custom-homepage/           ← 코어 제공 (core:pull 시 업데이트됨)
+├── survey-tools/              ← 코어 제공
+└── local/                     ← 클라이언트 전용 (gitignore, 보호됨)
+    └── custom-homepage/       ← 로컬 오버라이드 (우선순위 높음)
 ```
 
-### 결제 API
+### 동작 방식
 
+1. **로컬 우선**: `src/plugins/local/custom-homepage/`가 있으면 이것 사용
+2. **코어 폴백**: 없으면 `src/plugins/custom-homepage/` 사용
+3. **보호됨**: `local/` 폴더는 `.gitignore`에 포함되어 `core:pull`에 영향 안 받음
+
+### 커스터마이징 방법
+
+```bash
+# 1. 코어 플러그인을 local 폴더로 복사
+cp -r src/plugins/custom-homepage src/plugins/local/custom-homepage
+
+# 2. local 버전 수정
+# src/plugins/local/custom-homepage/pages/index.astro 편집
+
+# 3. 끝! 빌드 시 자동으로 local 버전 사용
+npm run dev
+```
+
+### 검사도구도 동일
+
+```
+src/survey-tools/
+├── stress-check/              ← 코어 제공 (샘플)
+└── local/                     ← 클라이언트 전용 (보호됨)
+    └── stress-check/          ← 로컬 오버라이드
+    └── my-custom-tool/        ← 새 검사도구
+```
+
+---
+
+## 필수 규칙 (MUST)
+
+### 1. 테이블명 규칙
+```sql
+-- ✅ GOOD: custom_ 접두사 필수
+CREATE TABLE custom_vip_members (...);
+CREATE TABLE custom_loyalty_points (...);
+
+-- ❌ BAD: 접두사 없음
+CREATE TABLE vip_members (...);
+CREATE TABLE my_table (...);
+```
+
+### 2. 코어 데이터는 SDK로만 접근
 ```typescript
-// 환자별 결제 내역
+// ✅ GOOD: SDK API 사용
+const patient = await sdk.patients.get(patientId);
 const payments = await sdk.payments.getByPatient(patientId);
 
-// 총 결제액
-const total = await sdk.payments.getTotalAmount(patientId);
+// ❌ BAD: 코어 테이블 직접 쿼리
+await db.prepare('SELECT * FROM patients WHERE id = ?').bind(id).first();
 ```
 
-### 예약 API
-
+### 3. 커스텀 테이블은 직접 쿼리 OK
 ```typescript
-// 오늘 예약
-const today = await sdk.reservations.getToday();
-
-// 환자별 예약
-const reservations = await sdk.reservations.getByPatient(patientId);
-```
-
-### 데이터베이스 직접 접근
-
-커스텀 테이블 조작 시:
-
-```typescript
-// 조회
-const members = await sdk.database.query(
+// ✅ GOOD: custom_ 테이블은 직접 접근 가능
+await sdk.database.query(
   'SELECT * FROM custom_vip_members WHERE tier = ?',
   ['gold']
 );
-
-// 실행
-await sdk.database.execute(
-  'INSERT INTO custom_vip_members (id, patient_id, tier) VALUES (?, ?, ?)',
-  [id, patientId, 'silver']
-);
 ```
 
-### 권한
+### 4. 플러그인 ID는 폴더명과 일치
+```
+src/plugins/survey-tools/
+└── manifest.json → "id": "survey-tools"
+```
 
-SDK 사용 시 manifest.json의 `permissions`에 선언된 권한만 사용 가능합니다:
+---
+
+## 금지 규칙 (NEVER)
+
+### 1. 코어 파일 수정 금지
+```
+❌ src/pages/ 에 파일 추가
+❌ src/lib/ 의 코어 로직 수정
+❌ src/components/layout/ 수정
+```
+
+### 2. 코어 테이블 수정 금지
+```sql
+-- ❌ NEVER
+ALTER TABLE patients ADD COLUMN custom_field TEXT;
+UPDATE patients SET status = 'vip';
+DELETE FROM payments;
+```
+
+### 3. 동적 코드 실행 금지
+```typescript
+// ❌ NEVER
+eval(userInput);
+new Function(code)();
+require(dynamicPath);
+import(dynamicPath);
+```
+
+### 4. 하드코딩된 시크릿 금지
+```typescript
+// ❌ NEVER
+const API_KEY = "sk-1234567890";
+const password = "admin123";
+
+// ✅ GOOD: 설정에서 로드
+const apiKey = await sdk.settings.get('api_key');
+```
+
+---
+
+## 권장 패턴 (SHOULD)
+
+### 1. 에러 처리
+```typescript
+try {
+  const result = await sdk.patients.get(id);
+  return new Response(JSON.stringify(result));
+} catch (e) {
+  const message = e instanceof Error ? e.message : 'Unknown error';
+  return new Response(JSON.stringify({ error: message }), { status: 500 });
+}
+```
+
+### 2. API 응답 형식
+```typescript
+// 성공
+return new Response(JSON.stringify({ success: true, data: result }), { status: 200 });
+
+// 에러
+return new Response(JSON.stringify({ success: false, error: 'message' }), { status: 400 });
+```
+
+### 3. 레이아웃 사용
+```astro
+---
+import BaseLayout from "../../../components/layout/BaseLayout.astro";
+---
+
+<BaseLayout title="페이지 제목">
+  <!-- 콘텐츠 -->
+</BaseLayout>
+```
+
+---
+
+## 권한 목록
 
 | 권한 | 설명 |
 |------|------|
 | `read:patients` | 환자 정보 읽기 |
 | `write:patients` | 환자 정보 수정 |
-| `read:payments` | 결제 정보 읽기 |
 | `read:reservations` | 예약 정보 읽기 |
+| `read:payments` | 결제 정보 읽기 |
 | `database:read` | 커스텀 테이블 조회 |
 | `database:write` | 커스텀 테이블 수정 |
 
 ---
 
-## 훅 (Hooks)
+## 훅 이벤트
 
-코어 이벤트에 반응하여 플러그인 로직을 실행합니다.
-
-### 사용 가능한 이벤트
-
-| 이벤트 | 설명 | 페이로드 |
-|--------|------|----------|
-| `onPatientCreated` | 환자 생성 | `{ patient }` |
-| `onPaymentCompleted` | 결제 완료 | `{ payment, patient }` |
-| `onReservationCreated` | 예약 생성 | `{ reservation }` |
-| `onVisitCheckin` | 내원 체크인 | `{ visit, patient }` |
-
-### 훅 핸들러 구현
-
-```typescript
-// src/plugins/vip-management/lib/hooks.ts
-
-export async function handlePayment(event: PaymentEvent, sdk: PluginSDK) {
-  const { payment, patient } = event;
-
-  // VIP 포인트 적립
-  const points = Math.floor(payment.amount * 0.01);
-
-  await sdk.database.execute(
-    `UPDATE custom_vip_members
-     SET points = points + ?, total_spent = total_spent + ?
-     WHERE patient_id = ?`,
-    [points, payment.amount, patient.id]
-  );
-}
-```
+| 이벤트 | 설명 |
+|--------|------|
+| `onPatientCreated` | 환자 생성 시 |
+| `onPaymentCompleted` | 결제 완료 시 |
+| `onReservationCreated` | 예약 생성 시 |
+| `onVisitCheckin` | 내원 체크인 시 |
 
 ---
 
-## 로컬 개발
+## 라우팅 우선순위 (참고)
 
-### 1. 플러그인 디렉토리 생성
+Astro 라우팅 우선순위:
+1. 정적 경로 (`/about`)
+2. 동적 경로 (`/[id]`)
+3. Catch-all (`/[...slug]`)
 
-```bash
-mkdir -p src/plugins/my-plugin/{pages,api,components,lib}
-```
+**이것이 `/ext/` prefix를 사용하는 이유입니다.**
 
-### 2. manifest.json 작성
-
-```bash
-cat > src/plugins/my-plugin/manifest.json << 'EOF'
-{
-  "id": "my-plugin",
-  "name": "내 플러그인",
-  "description": "설명",
-  "version": "1.0.0",
-  "author": "개발자",
-  "pages": [
-    { "path": "index", "title": "대시보드" }
-  ],
-  "permissions": ["read:patients"]
-}
-EOF
-```
-
-### 3. installed.json에 등록
-
-```bash
-cat > src/plugins/installed.json << 'EOF'
-[
-  {
-    "id": "my-plugin",
-    "version": "1.0.0",
-    "installedAt": 1705500000,
-    "source": "local"
-  }
-]
-EOF
-```
-
-### 4. 마이그레이션 실행 (테이블 있으면)
-
-```bash
-npx wrangler d1 execute clinic-os-dev --local \
-  --file=src/plugins/my-plugin/migration.sql
-```
-
-### 5. 개발 서버에서 확인
-
-```bash
-npm run dev
-# http://localhost:4321/admin/hub/my-plugin
-```
+예: 기존 `/surveys/[patient_id]` 라우트가 있으면, `/surveys/tools`도 해당 라우트가 캡처합니다.
+`/ext/survey-tools/...`는 기존 라우트와 충돌하지 않습니다.
 
 ---
 
-## HQ 배포
+## 트러블슈팅
 
-### 1. 플러그인 패키징
+### 페이지가 404로 나옴
+1. `manifest.json`의 `id`와 폴더명이 일치하는지 확인
+2. `type`이 올바른지 확인 (`new-route` vs `override`)
+3. 빌드 후 `import.meta.glob`이 파일을 인식하는지 확인
 
-```bash
-npx cos-cli plugin package --id my-plugin
-# → my-plugin-1.0.0.zip 생성
-```
+### Override가 작동하지 않음
+1. 코어가 해당 경로에 Override Point를 제공하는지 확인
+2. `priority` 값 확인 (높을수록 우선)
+3. 플러그인이 활성화되어 있는지 확인 (`plugin_status` 테이블)
 
-### 2. HQ에 제출
-
-```bash
-npx cos-cli plugin submit --file my-plugin-1.0.0.zip
-```
-
-### 3. 다른 클리닉에서 설치
-
-```bash
-npx cos-cli plugin install --id my-plugin
-```
-
----
-
-## 플러그인 설치-배포 워크플로우
-
-플러그인 설치부터 프로덕션 배포까지의 전체 흐름입니다.
-
-### 아키텍처 이해
-
-Clinic-OS는 **Astro + Cloudflare Pages** 기반입니다:
-- Astro는 **빌드 타임**에 라우트 생성
-- Cloudflare Workers는 **번들된 코드만** 실행 가능
-- 따라서 플러그인 설치 후 **재빌드 & 재배포** 필요
-
-### 전체 플로우
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  1. HQ (플러그인 스토어)                                     │
-│     └── 플러그인 코드 (.zip) 저장                            │
-└─────────────────────────────────────────────────────────────┘
-                          │
-                          │ npx cos-cli plugin install --id xxx
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│  2. 로컬 개발 환경                                           │
-│     └── src/plugins/{plugin-id}/ 에 코드 다운로드            │
-│                                                             │
-│     • npm run dev → 로컬에서 플러그인 테스트                  │
-│     • DB 마이그레이션 실행 (있으면)                           │
-└─────────────────────────────────────────────────────────────┘
-                          │
-                          │ npm run build
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│  3. 빌드 (Astro)                                            │
-│     └── 플러그인 페이지/API가 dist/에 컴파일됨                │
-└─────────────────────────────────────────────────────────────┘
-                          │
-                          │ git push / wrangler pages deploy
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│  4. Cloudflare Pages (프로덕션)                              │
-│     └── 플러그인 포함된 새 버전 배포 완료                     │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### 설치 명령어 순서
-
-```bash
-# 1. 플러그인 다운로드 (HQ → 로컬)
-npx cos-cli plugin install --id vip-management
-
-# 2. 로컬 DB 마이그레이션 (테이블 생성)
-npx wrangler d1 execute clinic-os-dev --local \
-  --file=src/plugins/vip-management/migration.sql
-
-# 3. 로컬 테스트
-npm run dev
-# → http://localhost:4321/admin/hub/vip-management 확인
-
-# 4. 빌드
-npm run build
-
-# 5. 프로덕션 배포 (방법 A: Git)
-git add src/plugins/vip-management
-git commit -m "feat: add vip-management plugin"
-git push origin main
-# → Cloudflare Pages 자동 빌드 & 배포
-
-# 5. 프로덕션 배포 (방법 B: 직접)
-npx wrangler pages deploy dist
-
-# 6. 프로덕션 DB 마이그레이션
-npx wrangler d1 execute clinic-os-db \
-  --file=src/plugins/vip-management/migration.sql
-```
-
-### 장점
-
-| 항목 | 설명 |
-|------|------|
-| **보안** | 런타임 동적 코드 실행 없음 |
-| **안정성** | 프로덕션 배포 전 로컬 테스트 가능 |
-| **버전 관리** | 플러그인 코드가 git에 포함됨 |
-| **롤백** | git revert로 플러그인 제거 가능 |
-
-### 주의사항
-
-- 플러그인 설치 ≠ 즉시 활성화 (재배포 필요)
-- 각 클리닉이 자체 배포를 관리
-- 프로덕션 DB 마이그레이션은 별도 실행 필요
-
----
-
-## 예시: VIP 관리 플러그인
-
-### 구조
-
-```
-src/plugins/vip-management/
-├── manifest.json
-├── migration.sql
-├── pages/
-│   ├── index.astro      # VIP 대시보드
-│   ├── members.astro    # 회원 목록
-│   └── settings.astro   # 등급 설정
-├── api/
-│   ├── members.ts       # 회원 CRUD
-│   └── points.ts        # 포인트 적립/차감
-└── lib/
-    ├── hooks.ts         # 결제 시 포인트 자동 적립
-    └── tiers.ts         # 등급 계산 로직
-```
-
-### 동작 흐름
-
-1. 환자가 결제 완료
-2. `onPaymentCompleted` 훅 트리거
-3. `hooks.ts`의 `handlePayment()` 실행
-4. VIP 포인트 자동 적립
-5. `/admin/hub/vip-management`에서 확인
-
----
-
-## FAQ
-
-### Q: 기존 환자 상세 페이지에 정보를 추가하고 싶어요
-
-플러그인은 코어 페이지를 수정할 수 없습니다. 대신:
-1. 플러그인 자체 페이지에서 환자 정보 + 추가 정보 표시
-2. 사이드바에 플러그인 링크 추가 (향후 지원 예정)
-
-### Q: 코어 테이블에 필드를 추가하고 싶어요
-
-불가능합니다. 대신 별도 테이블을 만들어 FK로 연결하세요:
-
-```sql
-CREATE TABLE custom_patient_extra (
-  patient_id TEXT PRIMARY KEY,
-  custom_field TEXT,
-  FOREIGN KEY (patient_id) REFERENCES patients(id)
-);
-```
-
-### Q: 플러그인 삭제하면 데이터는?
-
-`custom_` 테이블은 수동 삭제가 필요합니다. CLI에서 옵션 제공 예정:
-
-```bash
-npx cos-cli plugin uninstall --id my-plugin --drop-tables
-```
-
-### Q: 다른 플러그인의 데이터에 접근하고 싶어요
-
-현재는 지원하지 않습니다. 플러그인 간 의존성은 향후 검토 예정.
+### props가 undefined
+Universal Router에서 전달하는 props 목록 확인:
+- `settings`, `db`, `pluginId`, `path`, `url`, `request`, `plugin`
