@@ -542,8 +542,7 @@ CLINIC_NAME = "${clinicName}"
         console.log(`   🚀 스키마 생성 중 (${wranglerCmd.includes('node_modules') ? 'Local binary' : 'npx'})...`);
         const initOk = await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file=core/migrations/0000_initial_schema.sql --yes`);
 
-        // 모든 마이그레이션 파일을 d1_migrations 테이블에 "이미 적용됨"으로 기록
-        // (초기 스키마가 최신 상태이므로 실행할 필요 없음, 나중에 새 마이그레이션만 실행됨)
+        // 마이그레이션 기록 초기화
         console.log("   🚀 마이그레이션 기록 초기화 중...");
 
         // migrations 폴더 찾기
@@ -560,9 +559,29 @@ CLINIC_NAME = "${clinicName}"
             // d1_migrations 테이블 생성 (없으면)
             await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, applied_at TEXT DEFAULT (datetime('now')))" --yes`);
 
-            // 모든 마이그레이션 파일을 기록 (실행 없이)
+            // 샘플 데이터 시딩 전에 실행해야 할 필수 마이그레이션들
+            const requiredMigrations = [
+                '0500_add_is_sample_column.sql',
+                '0505_add_is_sample_to_leads.sql',
+                '0511_add_is_sample_to_ops.sql',
+                '0512_add_is_sample_to_faq.sql'
+            ];
+
+            console.log("   🚀 필수 마이그레이션 실행 중 (is_sample 컬럼 등)...");
+            for (const migFile of requiredMigrations) {
+                const migPath = path.join(migrationsDir, migFile);
+                if (fs.existsSync(migPath)) {
+                    console.log(`   📜 실행: ${migFile}`);
+                    await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file=${migPath} --yes`);
+                    await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_migrations (name) VALUES ('${migFile}')" --yes`);
+                }
+            }
+
+            // 나머지 마이그레이션 파일들은 기록만 (이미 0000_initial_schema에 포함된 것들)
             for (const migFile of migrationFiles) {
-                await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_migrations (name) VALUES ('${migFile}')" --yes`);
+                if (!requiredMigrations.includes(migFile) && migFile !== '0000_initial_schema.sql') {
+                    await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_migrations (name) VALUES ('${migFile}')" --yes`);
+                }
             }
             console.log(`   ✅ ${migrationFiles.length}개 마이그레이션 기록 완료 (초기 설치)`);
         }

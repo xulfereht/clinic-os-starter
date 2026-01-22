@@ -32,62 +32,19 @@ Node.js가 없다면 [WINDOWS_GUIDE.md](./WINDOWS_GUIDE.md)를 먼저 참고하�
 
 ## 2단계: Gemini CLI 설치
 
-### 방법 1: npm 전역 경로를 유저 홈으로 설정 (⭐ 권장)
-
-> sudo 없이, 환경도 깔끔하게 유지됩니다. Claude Code CLI, Gemini CLI 등 AI CLI 도구들을 함께 쓰기에 가장 안정적입니다.
-
-**1️⃣ 전역 설치 경로 생성**
-```bash
-mkdir -p ~/.npm-global
-```
-
-**2️⃣ npm 설정 변경**
-```bash
-npm config set prefix '~/.npm-global'
-```
-
-**3️⃣ PATH에 추가**
-
-macOS/Linux (zsh):
-```bash
-echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-```
-
-Linux (bash) / WSL:
-```bash
-echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-**4️⃣ Gemini CLI 설치**
-```bash
-npm install -g @google/gemini-cli
-```
-
-**5️⃣ 설치 확인**
-```bash
-which gemini
-# → ~/.npm-global/bin/gemini 나오면 정상
-```
-
----
-
-### 방법 2: 일반 npm 전역 설치
+### 방법 1: npm 전역 설치 (권장)
 
 ```bash
 npm install -g @google/gemini-cli
 ```
 
-> ⚠️ 권한 오류 시 "방법 1"을 사용하세요. `sudo`로 설치하면 나중에 문제가 생길 수 있습니다.
-
-### 방법 3: 설치 없이 바로 실행
+### 방법 2: 설치 없이 바로 실행
 
 ```bash
 npx @google/gemini-cli
 ```
 
-### 방법 4: Homebrew (macOS/Linux)
+### 방법 3: Homebrew (macOS/Linux)
 
 ```bash
 brew install gemini-cli
@@ -124,22 +81,6 @@ Google One AI Premium 구독자는 자동으로 향상된 기능을 사용할 �
 
 Pro 구독이 연결된 Google 계정으로 로그인하면 자동 적용됩니다.
 
-### Preview Features 활성화 (⭐ 권장)
-
-최신 기능을 사용하려면 Preview Features를 켜세요:
-
-1. Gemini CLI 실행 후 `/settings` 입력
-2. **Preview Features** 항목 찾기
-3. `false` → `true`로 변경
-4. 저장 후 종료
-
-```
-> /settings
-# Preview Features 항목에서 false → true 변경
-```
-
-이렇게 하면 최신 실험적 기능들을 먼저 사용할 수 있습니다.
-
 ---
 
 ## 4단계: 프로젝트에서 사용
@@ -153,27 +94,6 @@ cd ~/clinic-os
 # Gemini CLI 실행
 gemini
 ```
-
-### 첫 실행 시 프로젝트 인식시키기 (⭐ 중요)
-
-Gemini CLI를 처음 실행하면 AI가 프로젝트 구조를 모릅니다. **첫 프롬프트로 프로젝트를 파악하게 해주세요:**
-
-```
-> 이 폴더의 구조와 주요 파일들을 읽고 프로젝트를 파악해. GEMINI.md를 먼저 읽어봐.
-```
-
-또는 더 직접적으로:
-
-```
-> 프로젝트 전체를 분석해서 어떤 시스템인지 장악해.
-> GEMINI.md, package.json, src/ 폴더 구조를 확인하고 정리해줘.
-```
-
-이렇게 하면 AI가:
-1. `GEMINI.md`를 읽어 프로젝트 맥락 파악
-2. 폴더 구조 스캔
-3. 주요 설정 파일 확인
-4. 이후 질문에 더 정확하게 응답
 
 ### GEMINI.md 컨텍스트 활용
 
@@ -221,22 +141,8 @@ gemini
 
 ### "command not found: gemini"
 
-**해결책 1: "2단계 방법 1"로 재설치 (권장)**
-
-위 "방법 1: npm 전역 경로를 유저 홈으로 설정" 섹션을 따라 `~/.npm-global` 경로로 재설치하세요.
-
-**해결책 2: 기존 설치 경로를 PATH에 추가**
-
 ```bash
-# 현재 npm prefix 확인
-npm config get prefix
-# → /usr/local 또는 다른 경로가 나옴
-
-# 해당 경로의 bin을 PATH에 추가 (zsh)
-echo 'export PATH="$(npm config get prefix)/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-
-# bash/WSL의 경우
+# npm 전역 경로를 PATH에 추가
 echo 'export PATH="$(npm config get prefix)/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 ```
@@ -271,4 +177,4 @@ gemini
 
 ---
 
-> 최종 업데이트: 2026-01-22
+> 최종 업데이트: 2026-01-21
