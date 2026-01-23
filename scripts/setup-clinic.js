@@ -490,19 +490,29 @@ CLINIC_NAME = "${clinicName}"
             console.log("   📥 HQ 코어 태그를 가져오는 중...");
             await runCommand(`git fetch upstream --tags`);
 
-            // 5) 최신 태그 확인 및 .core/version 생성
+            // 5) HQ API에서 채널 버전 조회 및 .core/version 생성
             try {
-                const { stdout } = await execAsync(`git tag --list 'v*' --sort=-v:refname`, { cwd: PROJECT_ROOT });
-                const tags = stdout.trim().split('\n').filter(Boolean);
-                const latestStable = tags.find(t => !/-/.test(t)) || tags[0];
-
-                if (latestStable) {
+                // HQ API로 현재 채널의 버전 조회
+                const channelRes = await fetch(`${hqUrl}/api/v1/update/channel-version?channel=${channel}`);
+                if (channelRes.ok) {
+                    const channelData = await channelRes.json();
+                    const targetVersion = `v${channelData.version}`;
                     await fs.ensureDir(path.join(PROJECT_ROOT, '.core'));
-                    await fs.writeFile(coreVersionFile, latestStable);
-                    console.log(`   ✅ .core/version 생성: ${latestStable}`);
+                    await fs.writeFile(coreVersionFile, targetVersion);
+                    console.log(`   ✅ .core/version 생성: ${targetVersion} (${channel} 채널)`);
+                } else {
+                    // API 실패 시 git 태그 폴백
+                    const { stdout } = await execAsync(`git tag --list 'v*' --sort=-v:refname`, { cwd: PROJECT_ROOT });
+                    const tags = stdout.trim().split('\n').filter(Boolean);
+                    const latestTag = tags[0];
+                    if (latestTag) {
+                        await fs.ensureDir(path.join(PROJECT_ROOT, '.core'));
+                        await fs.writeFile(coreVersionFile, latestTag);
+                        console.log(`   ⚠️  HQ API 실패, git 태그 폴백: ${latestTag}`);
+                    }
                 }
             } catch (e) {
-                console.log("   ⚠️  태그 확인 실패 (수동으로 .core/version 설정 필요)");
+                console.log("   ⚠️  버전 확인 실패 (수동으로 .core/version 설정 필요)");
             }
 
             // 6) pre-commit 훅 설치
