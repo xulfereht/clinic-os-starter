@@ -203,14 +203,14 @@ async function registerDeviceManually(hqUrl) {
 
 // --- Git Core Setup ---
 
-async function setupCoreViaGit(hqUrl, deviceToken) {
+async function setupCoreViaGit(hqUrl, deviceToken, channel = 'stable') {
     console.log("   📂 Git을 통한 애플리케이션 설치를 시작합니다...");
 
     // 1. Get authenticated Git URL from HQ
     const response = await fetch(`${hqUrl}/api/v1/update/git-url`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ device_token: deviceToken })
+        body: JSON.stringify({ device_token: deviceToken, channel: channel })
     });
 
     if (!response.ok) {
@@ -273,14 +273,19 @@ async function setupClinic() {
     // Auto-fill from signed clinic.json if exists
     const signedPath = path.join(PROJECT_ROOT, 'clinic.json');
     const hasSignedConfig = fs.existsSync(signedPath);
+    let channel = 'stable'; // 기본값
     if (hasSignedConfig) {
         try {
             const signed = fs.readJsonSync(signedPath);
             defaultClinicName = signed.organization || "";
             licenseKey = signed.license_key || "";
+            channel = signed.channel || 'stable';
             console.log(`   ✨ Zero-Touch: [clinic.json] 서명된 파일에서 설정을 불러왔습니다.`);
             console.log(`   ✅ 기관명: ${defaultClinicName}`);
             console.log(`   ✅ 라이선스: ${licenseKey.substring(0, 8)}... (매칭됨)`);
+            if (channel === 'beta') {
+                console.log(`   ✅ 채널: 🧪 Beta`);
+            }
         } catch (e) {
             console.log(`   ⚠️  clinic.json 읽기 실패: ${e.message}`);
         }
@@ -376,7 +381,7 @@ clinic_name: "${clinicName}"
     const doFetch = await ask("   애플리케이션 코드를 지금 설치하시겠습니까? (y/n, default: y): ", "y");
     if (IS_AUTO || doFetch.toLowerCase() !== 'n') {
         try {
-            await setupCoreViaGit(hqUrl, deviceToken);
+            await setupCoreViaGit(hqUrl, deviceToken, channel);
         } catch (error) {
             console.error(`\n   ❌ 설치 실패: ${error.message}`);
             console.log("   Git 설치 여부와 네트워크 상태를 확인해 주세요.");
