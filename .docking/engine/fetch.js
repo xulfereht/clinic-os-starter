@@ -138,8 +138,36 @@ async function assertTagExists(tag) {
 }
 
 /**
+ * HQ API에서 채널별 버전 조회
+ */
+async function getVersionFromHQ(channel = 'stable') {
+    // clinic.json에서 HQ URL 읽기
+    const clinicJsonPath = path.join(PROJECT_ROOT, 'clinic.json');
+    if (!fs.existsSync(clinicJsonPath)) {
+        return null;
+    }
+
+    try {
+        const clinicConfig = fs.readJsonSync(clinicJsonPath);
+        const hqUrl = clinicConfig.hq_url || 'https://clinic-os-hq.pages.dev';
+
+        // HQ API 호출 (간단한 fetch)
+        const response = await fetch(`${hqUrl}/api/v1/update/channel-version?channel=${channel}`);
+        if (!response.ok) {
+            return null;
+        }
+
+        const data = await response.json();
+        return data.version ? `v${data.version}` : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+/**
  * Channel 태그 기반으로 최신 버전 조회
  * latest-stable 또는 latest-beta 태그가 가리키는 실제 v-tag를 반환
+ * 태그가 없으면 HQ API에서 조회
  */
 async function getChannelVersion(channel = 'stable') {
     const channelTag = channel === 'beta' ? 'latest-beta' : 'latest-stable';
@@ -147,8 +175,16 @@ async function getChannelVersion(channel = 'stable') {
     // 1. channel 태그가 존재하는지 확인
     const tagCheck = await runCommand(`git rev-parse --verify refs/tags/${channelTag}`, true);
     if (!tagCheck.success) {
-        console.log(`   ⚠️  ${channelTag} 태그가 없습니다. semver 폴백 사용...`);
-        return getLatestStableTagFallback();
+        console.log(`   ⚠️  ${channelTag} 태그가 없습니다. HQ API 조회 중...`);
+
+        // HQ API에서 채널 버전 조회
+        const hqVersion = await getVersionFromHQ(channel);
+        if (hqVersion) {
+            console.log(`   ✅ HQ에서 ${channel} 버전 확인: ${hqVersion}`);
+            return hqVersion;
+        }
+
+        throw new Error(`${channelTag} 태그가 없고 HQ API 조회도 실패했습니다. core:push:stable을 먼저 실행하세요.`);
     }
 
     // 2. channel 태그가 가리키는 커밋 SHA 획득
