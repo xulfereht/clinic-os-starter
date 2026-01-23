@@ -420,7 +420,7 @@ clinic_name: "${clinicName}"
         const content = `# Clinic-OS Configuration for ${clinicName}
 name = "${cleanName}"
 main = "core/dist/_worker.js"
-compatibility_date = "2024-01-01"
+compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
 [site]
@@ -458,24 +458,120 @@ CLINIC_NAME = "${clinicName}"
 
     await runCommand('npm install', path.join(PROJECT_ROOT, 'core'));
 
-    // --- Git Injection for Zip Users (Self-Healing Git) ---
+    // --- Git Injection for Zip Users (Local Git Architecture v1.1) ---
     const injectGitSupport = async () => {
         const gitDir = path.join(PROJECT_ROOT, '.git');
-        const STARTER_REPO = 'https://github.com/xulfereht/clinic-os-starter.git';
+        const coreVersionFile = path.join(PROJECT_ROOT, '.core', 'version');
+        const UPSTREAM_REPO = 'https://github.com/xulfereht/clinic-os-core.git';
 
         if (!fs.existsSync(gitDir)) {
-            console.log("\n🔗 Step 7.5: Git 업데이트 시스템 활성화 (Zip-to-Git)...");
-            console.log("   다운로드된 버전을 Git 추적 모드로 업그레이드합니다.");
+            console.log("\n🔗 Step 7.5: 로컬 Git 아키텍처 초기화...");
+            console.log("   클라이언트 소유 Git + HQ upstream 연결을 설정합니다.");
 
+            // 1) Git init (클라이언트 소유)
             await runCommand(`git init`);
-            await runCommand(`git remote add origin ${STARTER_REPO}`);
-            await runCommand(`git fetch --depth=1 origin main`);
+            await runCommand(`git config user.name "ClinicOS Local"`);
+            await runCommand(`git config user.email "local@clinic-os.local"`);
 
-            // Hard reset to sync with remote (local-only files protected by .gitignore)
-            await runCommand(`git branch -M main`);
-            await runCommand(`git reset --hard origin/main`);
+            // 2) 초기 커밋
+            await runCommand(`git add -A`);
+            await runCommand(`git commit -m "Initial: Clinic-OS 설치" --no-verify`);
 
-            console.log("   ✅ Git 연동 완료! 이제 'npm run update:starter'로 업데이트할 수 있습니다.");
+            // 3) upstream remote 추가 + push 차단
+            await runCommand(`git remote add upstream ${UPSTREAM_REPO}`);
+            await runCommand(`git remote set-url --push upstream DISABLE`);
+
+            // 4) upstream tags fetch
+            console.log("   📥 HQ 코어 태그를 가져오는 중...");
+            await runCommand(`git fetch upstream --tags`);
+
+            // 5) 최신 태그 확인 및 .core/version 생성
+            try {
+                const { stdout } = await execAsync(`git tag --list 'v*' --sort=-v:refname`, { cwd: PROJECT_ROOT });
+                const tags = stdout.trim().split('\n').filter(Boolean);
+                const latestStable = tags.find(t => !/-/.test(t)) || tags[0];
+
+                if (latestStable) {
+                    await fs.ensureDir(path.join(PROJECT_ROOT, '.core'));
+                    await fs.writeFile(coreVersionFile, latestStable);
+                    console.log(`   ✅ .core/version 생성: ${latestStable}`);
+                }
+            } catch (e) {
+                console.log("   ⚠️  태그 확인 실패 (수동으로 .core/version 설정 필요)");
+            }
+
+            // 6) pre-commit 훅 설치
+            await installPreCommitHook();
+
+            console.log("   ✅ 로컬 Git 아키텍처 초기화 완료!");
+            console.log("   → core:pull로 코어 업데이트 가능");
+            console.log("   → src/lib/local/, src/plugins/local/ 등은 Git 추적됨");
+        }
+    };
+
+    // Pre-commit 훅 설치 함수
+    const installPreCommitHook = async () => {
+        const hooksDir = path.join(PROJECT_ROOT, '.git', 'hooks');
+        const hookPath = path.join(hooksDir, 'pre-commit');
+
+        const hookScript = `#!/bin/sh
+# Clinic-OS Pre-commit Hook: 코어 파일 수정 경고
+
+CORE_PATHS="src/pages src/components src/layouts src/styles src/lib migrations"
+LOCAL_SKIP="src/lib/local src/plugins/local src/survey-tools/local public/local"
+
+# 로컬 경로 체크 함수
+is_local_path() {
+  for skip in $LOCAL_SKIP; do
+    case "$1" in
+      "$skip"*) return 0 ;;
+    esac
+  done
+  return 1
+}
+
+CORE_MODIFIED=""
+
+for path in $CORE_PATHS; do
+  staged=$(git diff --cached --name-only -- "$path")
+  for file in $staged; do
+    # LOCAL_SKIP에 해당하면 무시
+    if is_local_path "$file"; then
+      continue
+    fi
+    CORE_MODIFIED="$CORE_MODIFIED$file\\n"
+  done
+done
+
+if [ -n "$CORE_MODIFIED" ]; then
+  echo "⚠️  경고: 코어 파일이 수정되었습니다."
+  echo ""
+  echo "   수정된 코어 파일:"
+  printf "$CORE_MODIFIED" | sed 's/^/   - /'
+  echo ""
+  echo "   코어 파일은 core:pull 시 덮어쓰여집니다."
+  echo "   커스터마이징이 필요하면 local/ 폴더를 사용하세요."
+  echo ""
+  # Non-interactive: 경고만 출력하고 커밋 진행
+  # 대화형 필요시 아래 주석 해제
+  # echo "   계속하려면 'y'를 입력하세요: "
+  # read -r response
+  # if [ "$response" != "y" ]; then
+  #   echo "커밋이 취소되었습니다."
+  #   exit 1
+  # fi
+fi
+
+exit 0
+`;
+
+        try {
+            await fs.ensureDir(hooksDir);
+            await fs.writeFile(hookPath, hookScript);
+            await fs.chmod(hookPath, 0o755);
+            console.log("   ✅ pre-commit 훅 설치 완료");
+        } catch (e) {
+            console.log(`   ⚠️  pre-commit 훅 설치 실패: ${e.message}`);
         }
     };
 
@@ -540,9 +636,10 @@ CLINIC_NAME = "${clinicName}"
 
         const wranglerCmd = getWranglerCmd();
         console.log(`   🚀 스키마 생성 중 (${wranglerCmd.includes('node_modules') ? 'Local binary' : 'npx'})...`);
-        const initOk = await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file=core/migrations/0000_initial_schema.sql --yes`);
+        const initOk = await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file=${fs.existsSync(path.join(PROJECT_ROOT, 'migrations/0000_initial_schema.sql')) ? 'migrations/0000_initial_schema.sql' : 'core/migrations/0000_initial_schema.sql'} --yes`);
 
-        // 마이그레이션 기록 초기화
+        // 모든 마이그레이션 파일을 d1_migrations 테이블에 "이미 적용됨"으로 기록
+        // (초기 스키마가 최신 상태이므로 실행할 필요 없음, 나중에 새 마이그레이션만 실행됨)
         console.log("   🚀 마이그레이션 기록 초기화 중...");
 
         // migrations 폴더 찾기
@@ -559,29 +656,9 @@ CLINIC_NAME = "${clinicName}"
             // d1_migrations 테이블 생성 (없으면)
             await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, applied_at TEXT DEFAULT (datetime('now')))" --yes`);
 
-            // 샘플 데이터 시딩 전에 실행해야 할 필수 마이그레이션들
-            const requiredMigrations = [
-                '0500_add_is_sample_column.sql',
-                '0505_add_is_sample_to_leads.sql',
-                '0511_add_is_sample_to_ops.sql',
-                '0512_add_is_sample_to_faq.sql'
-            ];
-
-            console.log("   🚀 필수 마이그레이션 실행 중 (is_sample 컬럼 등)...");
-            for (const migFile of requiredMigrations) {
-                const migPath = path.join(migrationsDir, migFile);
-                if (fs.existsSync(migPath)) {
-                    console.log(`   📜 실행: ${migFile}`);
-                    await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file=${migPath} --yes`);
-                    await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_migrations (name) VALUES ('${migFile}')" --yes`);
-                }
-            }
-
-            // 나머지 마이그레이션 파일들은 기록만 (이미 0000_initial_schema에 포함된 것들)
+            // 모든 마이그레이션 파일을 기록 (실행 없이)
             for (const migFile of migrationFiles) {
-                if (!requiredMigrations.includes(migFile) && migFile !== '0000_initial_schema.sql') {
-                    await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_migrations (name) VALUES ('${migFile}')" --yes`);
-                }
+                await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_migrations (name) VALUES ('${migFile}')" --yes`);
             }
             console.log(`   ✅ ${migrationFiles.length}개 마이그레이션 기록 완료 (초기 설치)`);
         }
