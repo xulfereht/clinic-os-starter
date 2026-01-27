@@ -203,14 +203,14 @@ async function registerDeviceManually(hqUrl) {
 
 // --- Git Core Setup ---
 
-async function setupCoreViaGit(hqUrl, deviceToken) {
+async function setupCoreViaGit(hqUrl, deviceToken, channel = 'stable') {
     console.log("   📂 Git을 통한 애플리케이션 설치를 시작합니다...");
 
     // 1. Get authenticated Git URL from HQ
     const response = await fetch(`${hqUrl}/api/v1/update/git-url`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ device_token: deviceToken })
+        body: JSON.stringify({ device_token: deviceToken, channel: channel })
     });
 
     if (!response.ok) {
@@ -237,10 +237,22 @@ async function setupCoreViaGit(hqUrl, deviceToken) {
 
         if (!ok) throw new Error('Git 설치 중 오류가 발생했습니다.');
     } else {
-        console.log("   🔄 기존 Git 저장소를 업데이트합니다...");
-        const updateCmd = `git fetch --tags --force && (git checkout v${version} || git checkout ${version})`;
+        console.log("   🔄 기존 Git 저장소가 감지되었습니다.");
+        console.log(`   현재 버전에서 ${version}(으)로 업데이트합니다.\n`);
+
+        const updateMode = await ask("   업데이트 모드를 선택하세요:\n   [p] Pull - 로컬 변경사항 보존 (충돌 시 Gemini/Claude에게 해결 요청)\n   [r] Reinstall - 클린 재설치 (로컬 변경사항 삭제)\n   선택 (p/r, default: p): ", "p");
+
+        let updateCmd;
+        if (updateMode.toLowerCase() === 'r') {
+            console.log("\n   🔄 클린 재설치를 진행합니다...");
+            updateCmd = `git fetch --tags --force && git reset --hard HEAD && git clean -fd && (git checkout v${version} || git checkout ${version})`;
+        } else {
+            console.log("\n   🔄 로컬 변경사항을 보존하며 업데이트합니다...");
+            updateCmd = `git fetch --tags --force && git stash && (git checkout v${version} || git checkout ${version}) && git stash pop || true`;
+        }
+
         if (!(await runCommand(updateCmd, corePath))) {
-            throw new Error('Git 업데이트 중 오류가 발생했습니다.');
+            throw new Error('Git 업데이트 중 오류가 발생했습니다. 충돌이 있다면 수동으로 해결해주세요.');
         }
     }
 
@@ -273,14 +285,19 @@ async function setupClinic() {
     // Auto-fill from signed clinic.json if exists
     const signedPath = path.join(PROJECT_ROOT, 'clinic.json');
     const hasSignedConfig = fs.existsSync(signedPath);
+    let channel = 'stable'; // 기본값
     if (hasSignedConfig) {
         try {
             const signed = fs.readJsonSync(signedPath);
             defaultClinicName = signed.organization || "";
             licenseKey = signed.license_key || "";
+            channel = signed.channel || 'stable';
             console.log(`   ✨ Zero-Touch: [clinic.json] 서명된 파일에서 설정을 불러왔습니다.`);
             console.log(`   ✅ 기관명: ${defaultClinicName}`);
             console.log(`   ✅ 라이선스: ${licenseKey.substring(0, 8)}... (매칭됨)`);
+            if (channel === 'beta') {
+                console.log(`   ✅ 채널: 🧪 Beta`);
+            }
         } catch (e) {
             console.log(`   ⚠️  clinic.json 읽기 실패: ${e.message}`);
         }
@@ -376,7 +393,7 @@ clinic_name: "${clinicName}"
     const doFetch = await ask("   애플리케이션 코드를 지금 설치하시겠습니까? (y/n, default: y): ", "y");
     if (IS_AUTO || doFetch.toLowerCase() !== 'n') {
         try {
-            await setupCoreViaGit(hqUrl, deviceToken);
+            await setupCoreViaGit(hqUrl, deviceToken, channel);
         } catch (error) {
             console.error(`\n   ❌ 설치 실패: ${error.message}`);
             console.log("   Git 설치 여부와 네트워크 상태를 확인해 주세요.");
@@ -420,7 +437,7 @@ clinic_name: "${clinicName}"
         const content = `# Clinic-OS Configuration for ${clinicName}
 name = "${cleanName}"
 main = "core/dist/_worker.js"
-compatibility_date = "2024-01-01"
+compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
 [site]
@@ -458,24 +475,138 @@ CLINIC_NAME = "${clinicName}"
 
     await runCommand('npm install', path.join(PROJECT_ROOT, 'core'));
 
-    // --- Git Injection for Zip Users (Self-Healing Git) ---
+    // --- Git Injection for Zip Users (Local Git Architecture v1.2) ---
     const injectGitSupport = async () => {
         const gitDir = path.join(PROJECT_ROOT, '.git');
-        const STARTER_REPO = 'https://github.com/xulfereht/clinic-os-starter.git';
+        const coreVersionFile = path.join(PROJECT_ROOT, '.core', 'version');
+        const UPSTREAM_REPO_FALLBACK = 'https://github.com/xulfereht/clinic-os-core.git';
 
         if (!fs.existsSync(gitDir)) {
-            console.log("\n🔗 Step 7.5: Git 업데이트 시스템 활성화 (Zip-to-Git)...");
-            console.log("   다운로드된 버전을 Git 추적 모드로 업그레이드합니다.");
+            console.log("\n🔗 Step 7.5: 로컬 Git 아키텍처 초기화...");
+            console.log("   클라이언트 소유 Git + HQ upstream 연결을 설정합니다.");
 
+            // 1) Git init (클라이언트 소유)
             await runCommand(`git init`);
-            await runCommand(`git remote add origin ${STARTER_REPO}`);
-            await runCommand(`git fetch --depth=1 origin main`);
+            await runCommand(`git config user.name "ClinicOS Local"`);
+            await runCommand(`git config user.email "local@clinic-os.local"`);
 
-            // Hard reset to sync with remote (local-only files protected by .gitignore)
-            await runCommand(`git branch -M main`);
-            await runCommand(`git reset --hard origin/main`);
+            // 2) 초기 커밋
+            await runCommand(`git add -A`);
+            await runCommand(`git commit -m "Initial: Clinic-OS 설치" --no-verify`);
 
-            console.log("   ✅ Git 연동 완료! 이제 'npm run update:starter'로 업데이트할 수 있습니다.");
+            // 3) HQ API에서 인증된 Git URL 가져오기
+            let upstreamUrl = UPSTREAM_REPO_FALLBACK;
+            try {
+                console.log("   🔑 HQ에서 인증된 Git URL 가져오는 중...");
+                const gitUrlRes = await fetch(`${hqUrl}/api/v1/update/git-url`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ device_token: deviceToken, channel: channel })
+                });
+                if (gitUrlRes.ok) {
+                    const gitUrlData = await gitUrlRes.json();
+                    if (gitUrlData.git_url) {
+                        upstreamUrl = gitUrlData.git_url;
+                        console.log("   ✅ 인증된 Git URL 획득 완료");
+                    }
+                }
+            } catch (e) {
+                console.log("   ⚠️  인증된 URL 획득 실패, 기본 URL 사용");
+            }
+
+            // 4) upstream remote 추가 + push 차단
+            await runCommand(`git remote add upstream ${upstreamUrl}`);
+            await runCommand(`git remote set-url --push upstream DISABLE`);
+
+            // 5) HQ API에서 채널 버전 조회 및 .core/version 생성
+            try {
+                console.log("   📥 HQ에서 채널 버전 조회 중...");
+                const channelRes = await fetch(`${hqUrl}/api/v1/update/channel-version?channel=${channel}`);
+                if (channelRes.ok) {
+                    const channelData = await channelRes.json();
+                    const targetVersion = `v${channelData.version}`;
+                    await fs.ensureDir(path.join(PROJECT_ROOT, '.core'));
+                    await fs.writeFile(coreVersionFile, targetVersion);
+                    console.log(`   ✅ .core/version 생성: ${targetVersion} (${channel} 채널)`);
+                } else {
+                    console.log("   ⚠️  HQ API 조회 실패 - npm run core:pull 실행 시 자동 설정됩니다.");
+                }
+            } catch (e) {
+                console.log("   ⚠️  버전 확인 실패 - npm run core:pull 실행 시 자동 설정됩니다.");
+            }
+
+            // 6) pre-commit 훅 설치
+            await installPreCommitHook();
+
+            console.log("   ✅ 로컬 Git 아키텍처 초기화 완료!");
+            console.log("   → core:pull로 코어 업데이트 가능");
+            console.log("   → src/lib/local/, src/plugins/local/ 등은 Git 추적됨");
+        }
+    };
+
+    // Pre-commit 훅 설치 함수
+    const installPreCommitHook = async () => {
+        const hooksDir = path.join(PROJECT_ROOT, '.git', 'hooks');
+        const hookPath = path.join(hooksDir, 'pre-commit');
+
+        const hookScript = `#!/bin/sh
+# Clinic-OS Pre-commit Hook: 코어 파일 수정 경고
+
+CORE_PATHS="src/pages src/components src/layouts src/styles src/lib migrations"
+LOCAL_SKIP="src/lib/local src/plugins/local src/survey-tools/local public/local"
+
+# 로컬 경로 체크 함수
+is_local_path() {
+  for skip in $LOCAL_SKIP; do
+    case "$1" in
+      "$skip"*) return 0 ;;
+    esac
+  done
+  return 1
+}
+
+CORE_MODIFIED=""
+
+for path in $CORE_PATHS; do
+  staged=$(git diff --cached --name-only -- "$path")
+  for file in $staged; do
+    # LOCAL_SKIP에 해당하면 무시
+    if is_local_path "$file"; then
+      continue
+    fi
+    CORE_MODIFIED="$CORE_MODIFIED$file\\n"
+  done
+done
+
+if [ -n "$CORE_MODIFIED" ]; then
+  echo "⚠️  경고: 코어 파일이 수정되었습니다."
+  echo ""
+  echo "   수정된 코어 파일:"
+  printf "$CORE_MODIFIED" | sed 's/^/   - /'
+  echo ""
+  echo "   코어 파일은 core:pull 시 덮어쓰여집니다."
+  echo "   커스터마이징이 필요하면 local/ 폴더를 사용하세요."
+  echo ""
+  # Non-interactive: 경고만 출력하고 커밋 진행
+  # 대화형 필요시 아래 주석 해제
+  # echo "   계속하려면 'y'를 입력하세요: "
+  # read -r response
+  # if [ "$response" != "y" ]; then
+  #   echo "커밋이 취소되었습니다."
+  #   exit 1
+  # fi
+fi
+
+exit 0
+`;
+
+        try {
+            await fs.ensureDir(hooksDir);
+            await fs.writeFile(hookPath, hookScript);
+            await fs.chmod(hookPath, 0o755);
+            console.log("   ✅ pre-commit 훅 설치 완료");
+        } catch (e) {
+            console.log(`   ⚠️  pre-commit 훅 설치 실패: ${e.message}`);
         }
     };
 
@@ -540,9 +671,10 @@ CLINIC_NAME = "${clinicName}"
 
         const wranglerCmd = getWranglerCmd();
         console.log(`   🚀 스키마 생성 중 (${wranglerCmd.includes('node_modules') ? 'Local binary' : 'npx'})...`);
-        const initOk = await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file=core/migrations/0000_initial_schema.sql --yes`);
+        const initOk = await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file=${fs.existsSync(path.join(PROJECT_ROOT, 'migrations/0000_initial_schema.sql')) ? 'migrations/0000_initial_schema.sql' : 'core/migrations/0000_initial_schema.sql'} --yes`);
 
-        // 마이그레이션 기록 초기화
+        // 모든 마이그레이션 파일을 d1_migrations 테이블에 "이미 적용됨"으로 기록
+        // (초기 스키마가 최신 상태이므로 실행할 필요 없음, 나중에 새 마이그레이션만 실행됨)
         console.log("   🚀 마이그레이션 기록 초기화 중...");
 
         // migrations 폴더 찾기
@@ -559,29 +691,9 @@ CLINIC_NAME = "${clinicName}"
             // d1_migrations 테이블 생성 (없으면)
             await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, applied_at TEXT DEFAULT (datetime('now')))" --yes`);
 
-            // 샘플 데이터 시딩 전에 실행해야 할 필수 마이그레이션들
-            const requiredMigrations = [
-                '0500_add_is_sample_column.sql',
-                '0505_add_is_sample_to_leads.sql',
-                '0511_add_is_sample_to_ops.sql',
-                '0512_add_is_sample_to_faq.sql'
-            ];
-
-            console.log("   🚀 필수 마이그레이션 실행 중 (is_sample 컬럼 등)...");
-            for (const migFile of requiredMigrations) {
-                const migPath = path.join(migrationsDir, migFile);
-                if (fs.existsSync(migPath)) {
-                    console.log(`   📜 실행: ${migFile}`);
-                    await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file=${migPath} --yes`);
-                    await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_migrations (name) VALUES ('${migFile}')" --yes`);
-                }
-            }
-
-            // 나머지 마이그레이션 파일들은 기록만 (이미 0000_initial_schema에 포함된 것들)
+            // 모든 마이그레이션 파일을 기록 (실행 없이)
             for (const migFile of migrationFiles) {
-                if (!requiredMigrations.includes(migFile) && migFile !== '0000_initial_schema.sql') {
-                    await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_migrations (name) VALUES ('${migFile}')" --yes`);
-                }
+                await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_migrations (name) VALUES ('${migFile}')" --yes`);
             }
             console.log(`   ✅ ${migrationFiles.length}개 마이그레이션 기록 완료 (초기 설치)`);
         }
@@ -685,16 +797,31 @@ CLINIC_NAME = "${clinicName}"
     console.log("\n═══════════════════════════════════════════════════════════");
     console.log("   🎉  설정 완료!  🎉");
     console.log("═══════════════════════════════════════════════════════════");
+
+    // 12. Auto-run core:pull to fetch initial core files
+    console.log("\n📦 코어 파일을 가져오는 중...");
+    try {
+        const channel = config.hq?.channel || 'stable';
+        const args = channel === 'beta' ? '--beta' : (channel === 'stable' ? '--stable' : '');
+        const fetchCmd = `node .docking/engine/fetch.js ${args}`;
+
+        console.log(`   실행: ${fetchCmd}`);
+        await execAsync(fetchCmd);
+        console.log("   ✅ 코어 파일 가져오기 완료");
+    } catch (e) {
+        console.log("   ⚠️  코어 파일 가져오기 실패 (나중에 npm run core:pull로 다시 시도하세요)");
+    }
+
     console.log(`
    디바이스가 HQ에 등록되었습니다.
-   
+
    다음 명령어로 시작하세요:
 
    1. 로컬 개발 서버 실행:
       npm run dev
 
    2. 업데이트 확인:
-      node .docking/engine/fetch.js
+      npm run core:pull
 
    3. 프로덕션 배포:
       npm run deploy
