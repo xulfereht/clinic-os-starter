@@ -1,0 +1,155 @@
+/**
+ * Clinic-OS Starter Infrastructure Updater
+ *
+ * HQ API에서 최신 인프라 파일을 다운로드하여 로컬에 적용
+ * - Git 인증 없이 업데이트 가능
+ * - core:pull 실패 시 이 스크립트로 복구 가능
+ *
+ * Usage: npm run update:starter
+ */
+
+import fs from 'fs-extra';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import yaml from 'js-yaml';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PROJECT_ROOT = path.join(__dirname, '..');
+
+// 업데이트 대상 인프라 파일 목록
+const INFRA_FILES = [
+    '.docking/engine/fetch.js',
+    'scripts/setup-clinic.js',
+    'scripts/check-system.js',
+    'scripts/dev-preflight.js',
+    'scripts/deploy-guard.js',
+    'scripts/update-starter.js'  // 자기 자신도 업데이트
+];
+
+const DEFAULT_HQ_URL = 'https://clinic-os-hq.pages.dev';
+
+async function getConfig() {
+    const configPath = path.join(PROJECT_ROOT, '.docking/config.yaml');
+
+    if (fs.existsSync(configPath)) {
+        try {
+            const content = fs.readFileSync(configPath, 'utf8');
+            return yaml.load(content);
+        } catch (e) {
+            console.log('   ⚠️  config.yaml 파싱 실패, 기본값 사용');
+        }
+    }
+
+    // clinic.json fallback
+    const clinicJsonPath = path.join(PROJECT_ROOT, 'clinic.json');
+    if (fs.existsSync(clinicJsonPath)) {
+        try {
+            const clinicConfig = fs.readJsonSync(clinicJsonPath);
+            return {
+                hq_url: clinicConfig.hq_url || DEFAULT_HQ_URL,
+                device_token: null  // clinic.json에는 device_token이 없음
+            };
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    return { hq_url: DEFAULT_HQ_URL, device_token: null };
+}
+
+async function downloadFile(hqUrl, filename, deviceToken) {
+    const url = `${hqUrl}/api/v1/starter-files/${encodeURIComponent(filename)}`;
+
+    const headers = {
+        'Content-Type': 'application/json'
+    };
+
+    if (deviceToken) {
+        headers['Authorization'] = `Bearer ${deviceToken}`;
+    }
+
+    const response = await fetch(url, { headers });
+
+    if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`${filename} 다운로드 실패: ${response.status} - ${error}`);
+    }
+
+    return await response.text();
+}
+
+async function updateStarterFiles() {
+    console.log('🔄 Clinic-OS Starter Infrastructure Updater\n');
+
+    // 1. 설정 로드
+    const config = await getConfig();
+    const hqUrl = config.hq_url || DEFAULT_HQ_URL;
+    const deviceToken = config.device_token;
+
+    console.log(`   HQ Server: ${hqUrl}`);
+    if (deviceToken) {
+        console.log(`   Device Token: ${deviceToken.substring(0, 8)}...`);
+    } else {
+        console.log('   ⚠️  Device Token 없음 (공개 파일만 다운로드 가능)');
+    }
+
+    // 2. 버전 정보 조회
+    console.log('\n📥 최신 버전 확인 중...');
+    try {
+        const versionRes = await fetch(`${hqUrl}/api/v1/update/channel-version?channel=stable`);
+        if (versionRes.ok) {
+            const versionData = await versionRes.json();
+            console.log(`   최신 버전: v${versionData.version}`);
+        }
+    } catch (e) {
+        console.log('   버전 확인 실패 (계속 진행)');
+    }
+
+    // 3. 파일 다운로드 및 적용
+    console.log('\n📦 인프라 파일 업데이트 중...\n');
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const file of INFRA_FILES) {
+        process.stdout.write(`   ${file}... `);
+
+        try {
+            const content = await downloadFile(hqUrl, file, deviceToken);
+            const filePath = path.join(PROJECT_ROOT, file);
+
+            // 디렉토리 생성
+            fs.ensureDirSync(path.dirname(filePath));
+
+            // 파일 저장
+            fs.writeFileSync(filePath, content);
+
+            console.log('✅');
+            successCount++;
+        } catch (e) {
+            console.log(`❌ ${e.message}`);
+            failCount++;
+        }
+    }
+
+    // 4. 결과 출력
+    console.log('\n════════════════════════════════════════════');
+    if (failCount === 0) {
+        console.log(`✅ 업데이트 완료! (${successCount}개 파일)`);
+        console.log('\n다음 단계:');
+        console.log('  npm run core:pull   # 코어 파일 업데이트');
+    } else {
+        console.log(`⚠️  일부 파일 업데이트 실패 (성공: ${successCount}, 실패: ${failCount})`);
+        console.log('\n문제가 계속되면:');
+        console.log('  1. HQ 서버 상태 확인');
+        console.log('  2. 네트워크 연결 확인');
+        console.log('  3. device_token 유효성 확인');
+    }
+    console.log('════════════════════════════════════════════');
+}
+
+updateStarterFiles().catch(err => {
+    console.error('\n❌ Error:', err.message);
+    process.exit(1);
+});
