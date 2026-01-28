@@ -105,6 +105,10 @@ async function runCheck() {
             console.log('   1. 리눅스 내부에서 `sudo apt install nodejs`가 완료되었는지 확인하세요.');
             console.log('   2. `npm run setup` 대신 `node scripts/setup-clinic.js`를 직접 입력하세요.\n');
         }
+
+        // WSL 재접속 가이드
+        console.log('💡 WSL 재접속 팁: CMD/PowerShell에서 `wsl ~` 명령으로 홈 디렉토리로 진입하세요.');
+        console.log('   (`wsl`만 입력하면 /mnt/c/... Windows 경로로 시작될 수 있습니다)\n');
     }
 
     let hasError = false;
@@ -151,6 +155,18 @@ async function runCheck() {
             if (ok) console.log('💡 설치 창이 떴습니다. 설치를 완료한 후 다시 실행하세요.');
         }
         hasError = true;
+    }
+
+    // Unzip Check (WSL/Linux only - required for starter kit download)
+    if (inWSL || platform === 'linux') {
+        const unzip = await checkCommand('unzip', '-v');
+        if (unzip.installed) {
+            console.log('✅ unzip: 설치됨');
+        } else {
+            console.log('⚠️  unzip이 설치되어 있지 않습니다. (스타터킷 다운로드에 필요)');
+            const ok = await askToInstall('unzip을 설치하시겠습니까?', 'sudo apt update && sudo apt install -y unzip');
+            if (ok) return runCheck();
+        }
     }
 
     // 3. Network Check
