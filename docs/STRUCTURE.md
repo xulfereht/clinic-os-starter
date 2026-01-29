@@ -73,7 +73,7 @@ clinic-os/
 | `.docking/engine/` | 도킹 엔진 (fetch.js 등) |
 | `.docking/*.template` | 설정 템플릿 |
 | `.client/` | 컨텍스트 템플릿 |
-| `.agent/workflows/` | Antigravity 워크플로우 |
+| `.agent/workflows/` | Gemini CLI 워크플로우 |
 | `GEMINI.md` | 스타터용 가이드 |
 | `package.json` | 루트 명령어 (minimal) |
 | `README.md` | 시작 안내 |

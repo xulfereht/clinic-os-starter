@@ -22,8 +22,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.join(__dirname, '../..');
 
-// 기본 설정
-const DEFAULT_DB_NAME = 'brd-clinic-db';
+// 기본 설정 (wrangler.toml에서 읽지 못할 경우의 fallback)
+const DEFAULT_DB_NAME = 'clinic-os-db';
 
 /**
  * 명령어 실행 헬퍼
