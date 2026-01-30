@@ -17,14 +17,19 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.join(__dirname, '..');
 
-// 업데이트 대상 인프라 파일 목록
+// 업데이트 대상 인프라 파일 목록 (publish-release.js STARTER_INFRA_FILES와 동기화)
 const INFRA_FILES = [
     '.docking/engine/fetch.js',
+    '.docking/engine/migrate.js',
+    '.docking/engine/schema-validator.js',
+    '.docking/engine/engine-updater.js',
     'scripts/setup-clinic.js',
     'scripts/check-system.js',
     'scripts/dev-preflight.js',
+    'scripts/dev-start.js',
     'scripts/deploy-guard.js',
-    'scripts/update-starter.js'  // 자기 자신도 업데이트
+    'scripts/update-starter.js',  // 자기 자신도 업데이트
+    'scripts/update-starter-standalone.cjs'
 ];
 
 const DEFAULT_HQ_URL = 'https://clinic-os-hq.pages.dev';
