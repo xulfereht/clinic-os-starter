@@ -292,22 +292,21 @@ export async function verifyMigrationState(options = {}) {
         return result;
     }
 
-    // Case 2: 빈 d1_migrations + 기존 스키마 존재 = 경고
+    // Case 2: 빈 d1_migrations + 기존 스키마 존재 = 경고만 (차단하지 않음)
+    // 기존 클라이언트 호환성을 위해 warning만 출력하고 계속 진행
     if (migrationCount === 0 && userTables.length > 0) {
         result.hasSchemaConflict = true;
-        result.isValid = force; // --force 없으면 invalid
+        result.isValid = true; // 항상 valid - 차단하지 않음
 
         result.warnings.push(
-            `\uC2A4\uD0A4\uB9C8\uAC00 \uC874\uC7AC\uD558\uC9C0\uB9CC d1_migrations\uAC00 \uBE44\uC5B4\uC788\uC2B5\uB2C8\uB2E4.`,
-            `\uD14C\uC774\uBE14 \uC218: ${userTables.length}\uAC1C (${userTables.slice(0, 5).join(', ')}${userTables.length > 5 ? '...' : ''})`,
-            `\uC2A4\uD0A4\uB9C8 \uD574\uC2DC: ${schemaHash}`
+            `스키마가 존재하지만 d1_migrations가 비어있습니다.`,
+            `테이블 수: ${userTables.length}개 (${userTables.slice(0, 5).join(', ')}${userTables.length > 5 ? '...' : ''})`,
+            `스키마 해시: ${schemaHash}`,
+            `→ d1_migrations 테이블을 자동으로 초기화합니다.`
         );
 
-        if (!force) {
-            result.errors.push(
-                '\uC218\uB3D9 \uD655\uC778\uC774 \uD544\uC694\uD569\uB2C8\uB2E4. --force \uC635\uC158\uC73C\uB85C \uAC15\uC81C \uC9C4\uD589 \uAC00\uB2A5\uD569\uB2C8\uB2E4.'
-            );
-        }
+        // 자동으로 needsBootstrap 설정하여 마이그레이션 트래킹 초기화
+        result.needsBootstrap = true;
 
         return result;
     }
