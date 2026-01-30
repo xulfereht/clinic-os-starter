@@ -23,7 +23,32 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const PROJECT_ROOT = path.join(__dirname, '../..');
+
+/**
+ * Find actual project root by looking for wrangler.toml or .docking/config.yaml
+ * Traverses up from script location to handle both:
+ * - Direct run from root (/.docking/engine/migrate.js)
+ * - Run from core (/core/.docking/engine/migrate.js)
+ */
+function findProjectRoot(startDir) {
+    let current = startDir;
+    const markers = ['wrangler.toml', '.docking/config.yaml', 'clinic.json'];
+
+    for (let i = 0; i < 5; i++) { // Max 5 levels up
+        for (const marker of markers) {
+            if (fs.existsSync(path.join(current, marker))) {
+                return current;
+            }
+        }
+        const parent = path.dirname(current);
+        if (parent === current) break; // Reached filesystem root
+        current = parent;
+    }
+    // Fallback to original behavior (2 levels up from .docking/engine/)
+    return path.join(startDir, '../..');
+}
+
+const PROJECT_ROOT = findProjectRoot(__dirname);
 
 // 기본 설정 (wrangler.toml에서 읽지 못할 경우의 fallback)
 const DEFAULT_DB_NAME = 'clinic-os-db';

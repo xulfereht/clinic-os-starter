@@ -1,5 +1,5 @@
 /**
- * Clinic-OS Core Pull (Local Git Architecture v1.3)
+ * Clinic-OS Core Pull (Local Git Architecture v1.4)
  *
  * 클라이언트 소유 Git에서 upstream 태그 기반으로 코어 파일만 업데이트
  * - git diff --name-status 기반 파일단위 적용 (삭제 포함)
@@ -7,6 +7,11 @@
  * - WIP 스냅샷 자동 생성
  * - Channel Tags (latest-stable, latest-beta) 기반 버전 결정
  * - 스타터킷 구조 (core/ 폴더) 자동 감지 및 지원
+ *
+ * SPEC-CORE-001 추가 기능:
+ * - Pre-flight 스키마 검증
+ * - SQLITE_BUSY 재시도 메커니즘 (Exponential Backoff)
+ * - Atomic Engine Update (Self-update 안전성)
  */
 
 import fs from 'fs-extra';
@@ -16,10 +21,46 @@ import yaml from 'js-yaml';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
+// SPEC-CORE-001: 신규 모듈 import
+import {
+    executeWithRetry,
+    verifyMigrationState,
+    printStateReport
+} from './schema-validator.js';
+import {
+    atomicEngineUpdate,
+    recoverFromPreviousFailure
+} from './engine-updater.js';
+
 const execAsync = promisify(exec);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const PROJECT_ROOT = path.join(__dirname, '../..');
+
+/**
+ * Find actual project root by looking for wrangler.toml or .docking/config.yaml
+ * Traverses up from script location to handle both:
+ * - Direct run from root (/.docking/engine/fetch.js)
+ * - Run from core (/core/.docking/engine/fetch.js)
+ */
+function findProjectRoot(startDir) {
+    let current = startDir;
+    const markers = ['wrangler.toml', '.docking/config.yaml', 'clinic.json'];
+
+    for (let i = 0; i < 5; i++) { // Max 5 levels up
+        for (const marker of markers) {
+            if (fs.existsSync(path.join(current, marker))) {
+                return current;
+            }
+        }
+        const parent = path.dirname(current);
+        if (parent === current) break; // Reached filesystem root
+        current = parent;
+    }
+    // Fallback to original behavior (2 levels up from .docking/engine/)
+    return path.join(startDir, '../..');
+}
+
+const PROJECT_ROOT = findProjectRoot(__dirname);
 
 // ═══════════════════════════════════════════════════════════════
 // 스타터킷 구조 감지
@@ -963,31 +1004,50 @@ async function runAllMigrations() {
     for (const fileName of pendingMigrations) {
         const filePath = path.join(migrationsDir, fileName);
 
-        const result = await runCommand(
-            `npx wrangler d1 execute ${dbName} --local --file="${filePath}" --yes 2>&1`,
-            true
-        );
+        // TASK-002: SQLITE_BUSY 재시도 래퍼 적용 (Exponential Backoff)
+        let result;
+        let output;
 
-        const output = result.stdout + result.stderr;
+        try {
+            result = await executeWithRetry(async () => {
+                const res = await runCommand(
+                    `npx wrangler d1 execute ${dbName} --local --file="${filePath}" --yes 2>&1`,
+                    true
+                );
+                const out = res.stdout + res.stderr;
+
+                // SQLITE_BUSY 오류는 재시도 가능하도록 throw
+                if (!res.success && (out.includes('SQLITE_BUSY') || out.includes('database is locked'))) {
+                    const error = new Error(`SQLITE_BUSY: ${fileName}`);
+                    error.output = out;
+                    throw error;
+                }
+
+                return { ...res, output: out };
+            });
+            output = result.output;
+        } catch (retryError) {
+            // 최대 재시도 후에도 실패
+            console.log(`   \u26A0\uFE0F  ${fileName}: ${retryError.message}`);
+            errorCount++;
+            continue;
+        }
 
         if (result.success) {
             // 성공적으로 새로 적용됨
             newlyApplied++;
             await recordMigration(dbName, fileName);
-            console.log(`   ✅ ${fileName} (적용됨)`);
+            console.log(`   \u2705 ${fileName} (\uC801\uC6A9\uB428)`);
         } else if (output.includes('already exists') || output.includes('duplicate')) {
             // 이미 존재 - 기록만 추가
             alreadyExists++;
             await recordMigration(dbName, fileName);
             if (isFirstRun) {
                 // 최초 실행 시에만 표시 (이미 있는 것들)
-                console.log(`   ⏭️  ${fileName} (이미 존재)`);
+                console.log(`   \u23ED\uFE0F  ${fileName} (\uC774\uBBF8 \uC874\uC7AC)`);
             }
-        } else if (output.includes('SQLITE_BUSY') || output.includes('database is locked')) {
-            console.log(`   ⚠️  ${fileName}: DB 잠금 (dev 서버 종료 후 재시도)`);
-            errorCount++;
         } else {
-            console.log(`   ❌ ${fileName}: ${output.substring(0, 100)}`);
+            console.log(`   \u274C ${fileName}: ${output.substring(0, 100)}`);
             errorCount++;
         }
     }
@@ -1006,68 +1066,6 @@ async function runAllMigrations() {
     }
 }
 
-/**
- * Seeds 폴더를 upstream에서 동기화하고 실행
- * - upstream의 각 seed 파일을 개별 복사 (기존 로컬 파일 유지)
- * - d1_seeds 테이블로 적용 여부 트래킹
- * - 이미 적용된 seeds는 재실행하지 않음
- */
-async function syncAndRunSeeds(targetVersion) {
-    const seedsDir = IS_STARTER_KIT
-        ? path.join(PROJECT_ROOT, 'core', 'seeds')
-        : path.join(PROJECT_ROOT, 'seeds');
-
-    console.log(`\n🌱 Seeds 동기화 중...`);
-
-    // seeds 디렉토리 확보
-    fs.ensureDirSync(seedsDir);
-
-    try {
-        // upstream의 seeds 파일 목록 가져오기
-        const listResult = await runCommand(
-            `git ls-tree --name-only ${targetVersion} seeds/`,
-            true
-        );
-
-        if (listResult.success && listResult.stdout) {
-            const upstreamFiles = listResult.stdout.split('\n')
-                .filter(f => f && f.endsWith('.sql'))
-                .map(f => path.basename(f));
-
-            let syncedCount = 0;
-            for (const fileName of upstreamFiles) {
-                try {
-                    // 개별 파일 내용 가져오기
-                    const showResult = await runCommand(
-                        `git show ${targetVersion}:seeds/${fileName}`,
-                        true
-                    );
-
-                    if (showResult.success && showResult.stdout) {
-                        const localFilePath = path.join(seedsDir, fileName);
-                        fs.writeFileSync(localFilePath, showResult.stdout);
-                        syncedCount++;
-                    }
-                } catch (e) {
-                    // 개별 파일 실패는 무시
-                }
-            }
-
-            if (syncedCount > 0) {
-                console.log(`   ✅ ${syncedCount}개 seed 파일 동기화 완료`);
-            } else {
-                console.log(`   ℹ️  동기화할 seed 파일 없음`);
-            }
-        } else {
-            console.log(`   ℹ️  upstream에 seeds 폴더 없음`);
-        }
-    } catch (e) {
-        console.log(`   ⚠️  Seeds 동기화 중 오류: ${e.message}`);
-    }
-
-    // Seeds 실행
-    await runAllSeeds();
-}
 
 /**
  * d1_seeds 테이블 존재 확인 및 생성
@@ -1208,18 +1206,18 @@ async function runAllSeeds() {
 // ═══════════════════════════════════════════════════════════════
 
 async function corePull(targetVersion = 'latest', options = {}) {
-    const { dryRun = false } = options;
+    const { dryRun = false, force = false } = options;
 
     if (dryRun) {
-        console.log('🔍 Clinic-OS Core Pull DRY-RUN 모드\n');
-        console.log('   실제 파일 변경 없이 변경 예정 사항만 출력합니다.\n');
+        console.log('\uD83D\uDD0D Clinic-OS Core Pull DRY-RUN \uBAA8\uB4DC\n');
+        console.log('   \uC2E4\uC81C \uD30C\uC77C \uBCC0\uACBD \uC5C6\uC774 \uBCC0\uACBD \uC608\uC815 \uC0AC\uD56D\uB9CC \uCD9C\uB825\uD569\uB2C8\uB2E4.\n');
     } else {
-        console.log('🚢 Clinic-OS Core Pull v4.2 (Local Git Architecture v1.3)\n');
+        console.log('\uD83D\uDEA2 Clinic-OS Core Pull v4.3 (Local Git Architecture v1.4)\n');
     }
 
     // 스타터킷 구조 감지 로그
     if (IS_STARTER_KIT) {
-        console.log('📦 스타터킷 구조 감지됨 (core/ 폴더 사용)\n');
+        console.log('\uD83D\uDCE6 \uC2A4\uD0C0\uD130\uD0B7 \uAD6C\uC870 \uAC10\uC9C0\uB428 (core/ \uD3F4\uB354 \uC0AC\uC6A9)\n');
     }
 
     // ═══════════════════════════════════════════════
@@ -1227,6 +1225,13 @@ async function corePull(targetVersion = 'latest', options = {}) {
     // ═══════════════════════════════════════════════
     if (!dryRun && await isDirty()) {
         await createWipSnapshot();
+    }
+
+    // ═══════════════════════════════════════════════
+    // 0.5 TASK-009: 이전 엔진 업데이트 실패 잔여 복구
+    // ═══════════════════════════════════════════════
+    if (!dryRun) {
+        await recoverFromPreviousFailure(runCommand);
     }
 
     // ═══════════════════════════════════════════════
@@ -1488,30 +1493,48 @@ async function corePull(targetVersion = 'latest', options = {}) {
     }
 
     // ═══════════════════════════════════════════════
-    // 7.6. 엔진 파일 처리 (self-update, 마지막에 적용)
+    // 7.6. TASK-011: 엔진 파일 처리 (Atomic Update)
     // ⚠️ 현재 실행 중인 스크립트가 업데이트될 수 있음
+    // Atomic Swap으로 안전하게 업데이트
     // ═══════════════════════════════════════════════
     if (engineQueue.length > 0) {
-        console.log(`\n⚙️  엔진 파일 업데이트 중... (${engineQueue.length}개)`);
-        for (const { status: opStatus, path: filePath } of engineQueue) {
-            if (opStatus === 'D') {
-                // 엔진 파일은 루트에 있으므로 경로 변환 불필요
-                const fullPath = path.join(PROJECT_ROOT, filePath);
-                if (fs.existsSync(fullPath)) {
-                    fs.removeSync(fullPath);
-                    deletedCount++;
-                }
-            } else {
-                // 엔진 파일은 루트에 있으므로 git restore 사용 가능
-                await runCommand(`git restore --source ${version} -- "${filePath}"`, true);
-                appliedCount++;
+        const engineResult = await atomicEngineUpdate(version, engineQueue, runCommand);
+
+        if (engineResult.success) {
+            if (!engineResult.skipped) {
+                appliedCount += engineQueue.length;
+            }
+        } else {
+            console.log(`   \u26A0\uFE0F  \uC5D4\uC9C4 \uC5C5\uB370\uC774\uD2B8 \uC2E4\uD328: ${engineResult.error}`);
+            if (engineResult.rolledBack) {
+                console.log('   \uD83D\uDD04 \uAE30\uC874 \uC5D4\uC9C4 \uBCF5\uC6D0\uB428 - \uC218\uB3D9 \uD655\uC778 \uD544\uC694');
+            }
+            if (engineResult.requiresManualRecovery) {
+                console.log('   \u274C \uC218\uB3D9 \uBCF5\uAD6C\uAC00 \uD544\uC694\uD569\uB2C8\uB2E4!');
+                console.log('   \u26A0\uFE0F  .docking/.engine-backup/ \uB514\uB809\uD1A0\uB9AC\uB97C \uD655\uC778\uD558\uC138\uC694.');
             }
         }
-        console.log(`   ✅ 엔진 업데이트 완료`);
     }
 
-    console.log(`\n   ✅ 적용: ${appliedCount}개, 삭제: ${deletedCount}개`);
-    console.log(`   ⏭️  스킵: protected=${protectedCount}, local=${localCount}`);
+    console.log(`\n   \u2705 \uC801\uC6A9: ${appliedCount}\uAC1C, \uC0AD\uC81C: ${deletedCount}\uAC1C`);
+    console.log(`   \u23ED\uFE0F  \uC2A4\uD0B5: protected=${protectedCount}, local=${localCount}`);
+
+    // ═══════════════════════════════════════════════
+    // 7.9. TASK-010: Pre-flight 스키마 검증
+    // ═══════════════════════════════════════════════
+    if (!dryRun) {
+        const schemaState = await verifyMigrationState({ force });
+
+        if (!schemaState.isValid) {
+            printStateReport(schemaState);
+            throw new Error('\uC2A4\uD0A4\uB9C8 \uC0C1\uD0DC \uBD88\uC77C\uCE58. --force \uC635\uC158\uC73C\uB85C \uAC15\uC81C \uC9C4\uD589 \uAC00\uB2A5\uD569\uB2C8\uB2E4.');
+        }
+
+        if (schemaState.hasSchemaConflict && force) {
+            printStateReport(schemaState);
+            console.log('\n   \u26A0\uFE0F  --force \uC635\uC158\uC73C\uB85C \uAC15\uC81C \uC9C4\uD589\uD569\uB2C8\uB2E4.\n');
+        }
+    }
 
     // ═══════════════════════════════════════════════
     // 8. 모든 마이그레이션 체크 및 적용
@@ -1519,11 +1542,11 @@ async function corePull(targetVersion = 'latest', options = {}) {
     await runAllMigrations();
 
     // ═══════════════════════════════════════════════
-    // 8.5. Seeds 폴더 동기화 및 적용
-    // - seeds는 항상 코어 버전으로 전체 동기화
-    // - d1_seeds 테이블로 적용 여부 트래킹
+    // 8.5. Seeds 실행 (샘플 데이터)
+    // - seeds 폴더가 있으면 미적용 파일만 실행
+    // - 없으면 스킵 (기존 클라이언트는 샘플 불필요)
     // ═══════════════════════════════════════════════
-    await syncAndRunSeeds(version);
+    await runAllSeeds();
 
     // ═══════════════════════════════════════════════
     // 9. 메타데이터 업데이트 (.core/version)
