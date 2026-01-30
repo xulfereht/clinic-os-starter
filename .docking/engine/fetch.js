@@ -1074,6 +1074,7 @@ async function runAllSeeds() {
         : path.join(PROJECT_ROOT, 'seeds');
 
     if (!fs.existsSync(seedsDir)) {
+        console.log(`\n🌱 Seeds 폴더 없음: ${seedsDir}`);
         return;
     }
 
@@ -1243,7 +1244,8 @@ async function corePull(targetVersion = 'latest', options = {}) {
     // 6. 충돌 = (업데이트 대상 ∩ 클라이언트 수정) - 실제 내용이 다른 것만
     // ═══════════════════════════════════════════════
     const potentialConflicts = intersect(filesToUpdate, clientTouchedCore)
-        .filter(f => !isLocalPath(f)); // LOCAL은 충돌 대상 아님
+        .filter(f => !isLocalPath(f)) // LOCAL은 충돌 대상 아님
+        .filter(f => !f.startsWith('seeds/')); // seeds/*.sql은 항상 코어 우선 (데이터 추가용)
 
     // 실제 내용 비교로 진짜 충돌만 필터링
     const { realConflicts: conflicts, alreadySynced } = await filterRealConflicts(potentialConflicts, version);
@@ -1568,7 +1570,8 @@ async function preflightCheck(targetVersion = 'latest') {
 
     // 7. 충돌 계산 - 실제 내용이 다른 것만
     const potentialConflicts = intersect(filesToUpdate, clientTouchedCore)
-        .filter(f => !isLocalPath(f));
+        .filter(f => !isLocalPath(f))
+        .filter(f => !f.startsWith('seeds/')); // seeds/*.sql은 항상 코어 우선
 
     const { realConflicts: conflicts, alreadySynced } = await filterRealConflicts(potentialConflicts, version);
 
