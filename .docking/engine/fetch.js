@@ -1008,8 +1008,9 @@ async function runAllMigrations() {
 
 /**
  * Seeds 폴더를 upstream에서 동기화하고 실행
- * - git diff와 무관하게 항상 upstream seeds 전체를 가져옴
- * - 누락된 seeds 파일 문제 해결
+ * - upstream의 각 seed 파일을 개별 복사 (기존 로컬 파일 유지)
+ * - d1_seeds 테이블로 적용 여부 트래킹
+ * - 이미 적용된 seeds는 재실행하지 않음
  */
 async function syncAndRunSeeds(targetVersion) {
     const seedsDir = IS_STARTER_KIT
@@ -1018,43 +1019,47 @@ async function syncAndRunSeeds(targetVersion) {
 
     console.log(`\n🌱 Seeds 동기화 중...`);
 
+    // seeds 디렉토리 확보
+    fs.ensureDirSync(seedsDir);
+
     try {
-        // upstream의 seeds 폴더 전체를 checkout
-        const upstreamPath = IS_STARTER_KIT ? 'seeds' : 'seeds';
-        const localPath = IS_STARTER_KIT ? 'core/seeds' : 'seeds';
-
-        // seeds 디렉토리 확보
-        fs.ensureDirSync(seedsDir);
-
-        // upstream에서 seeds 폴더 전체 가져오기
-        const result = await runCommand(
-            `git checkout ${targetVersion} -- ${upstreamPath}`,
+        // upstream의 seeds 파일 목록 가져오기
+        const listResult = await runCommand(
+            `git ls-tree --name-only ${targetVersion} seeds/`,
             true
         );
 
-        if (result.success) {
-            // 스타터킷 구조면 core/seeds로 이동
-            if (IS_STARTER_KIT) {
-                const tempSeedsDir = path.join(PROJECT_ROOT, 'seeds');
-                if (fs.existsSync(tempSeedsDir)) {
-                    // seeds/* 파일들을 core/seeds/로 복사
-                    const files = fs.readdirSync(tempSeedsDir);
-                    for (const file of files) {
-                        fs.copySync(
-                            path.join(tempSeedsDir, file),
-                            path.join(seedsDir, file),
-                            { overwrite: true }
-                        );
+        if (listResult.success && listResult.stdout) {
+            const upstreamFiles = listResult.stdout.split('\n')
+                .filter(f => f && f.endsWith('.sql'))
+                .map(f => path.basename(f));
+
+            let syncedCount = 0;
+            for (const fileName of upstreamFiles) {
+                try {
+                    // 개별 파일 내용 가져오기
+                    const showResult = await runCommand(
+                        `git show ${targetVersion}:seeds/${fileName}`,
+                        true
+                    );
+
+                    if (showResult.success && showResult.stdout) {
+                        const localFilePath = path.join(seedsDir, fileName);
+                        fs.writeFileSync(localFilePath, showResult.stdout);
+                        syncedCount++;
                     }
-                    // 임시 seeds 폴더 삭제
-                    fs.removeSync(tempSeedsDir);
+                } catch (e) {
+                    // 개별 파일 실패는 무시
                 }
             }
 
-            const seedFiles = fs.readdirSync(seedsDir).filter(f => f.endsWith('.sql'));
-            console.log(`   ✅ ${seedFiles.length}개 seed 파일 동기화 완료`);
+            if (syncedCount > 0) {
+                console.log(`   ✅ ${syncedCount}개 seed 파일 동기화 완료`);
+            } else {
+                console.log(`   ℹ️  동기화할 seed 파일 없음`);
+            }
         } else {
-            console.log(`   ⚠️  Seeds 동기화 실패, 기존 파일로 진행`);
+            console.log(`   ℹ️  upstream에 seeds 폴더 없음`);
         }
     } catch (e) {
         console.log(`   ⚠️  Seeds 동기화 중 오류: ${e.message}`);
