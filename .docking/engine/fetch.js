@@ -1007,15 +1007,58 @@ async function runAllMigrations() {
 }
 
 /**
- * 변경된 seeds 파일 자동 실행
- * - core:pull 시 seeds/*.sql 파일 변경 감지 시 호출
- * - 로컬 DB에 시드 데이터 적용
+ * d1_seeds 테이블 존재 확인 및 생성
  */
-async function runChangedSeeds(changedSeedFiles) {
-    if (!changedSeedFiles || changedSeedFiles.length === 0) {
-        return;
-    }
+async function ensureSeedsTable(dbName) {
+    const createTableSql = `CREATE TABLE IF NOT EXISTS d1_seeds (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        applied_at TEXT DEFAULT (datetime('now'))
+    )`;
+    await runCommand(
+        `npx wrangler d1 execute ${dbName} --local --command "${createTableSql}" --yes 2>&1`,
+        true
+    );
+}
 
+/**
+ * d1_seeds 테이블에서 적용된 seeds 목록 조회
+ */
+async function getAppliedSeeds(dbName) {
+    try {
+        const result = await runCommand(
+            `npx wrangler d1 execute ${dbName} --local --command "SELECT name FROM d1_seeds ORDER BY id" --json 2>&1`,
+            true
+        );
+
+        if (result.success && result.stdout) {
+            const data = JSON.parse(result.stdout);
+            if (data && data[0] && data[0].results) {
+                return new Set(data[0].results.map(r => r.name));
+            }
+        }
+    } catch (e) {
+        // 테이블이 없거나 파싱 실패 시 빈 Set 반환
+    }
+    return new Set();
+}
+
+/**
+ * seed 적용 후 d1_seeds 테이블에 기록
+ */
+async function recordSeed(dbName, seedName) {
+    await runCommand(
+        `npx wrangler d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_seeds (name) VALUES ('${seedName}')" --yes 2>&1`,
+        true
+    );
+}
+
+/**
+ * 모든 seeds 파일을 스캔하고 미적용 파일 실행
+ * - d1_seeds 테이블로 적용 여부 트래킹
+ * - migrations와 동일한 패턴으로 동작
+ */
+async function runAllSeeds() {
     // wrangler.toml에서 DB 이름 가져오기
     let dbName = 'local-clinic-db';
     const wranglerPath = path.join(PROJECT_ROOT, 'wrangler.toml');
@@ -1030,25 +1073,41 @@ async function runChangedSeeds(changedSeedFiles) {
         ? path.join(PROJECT_ROOT, 'core', 'seeds')
         : path.join(PROJECT_ROOT, 'seeds');
 
-    console.log(`\n🌱 Seeds 적용 중... (${changedSeedFiles.length}개 파일)`);
+    if (!fs.existsSync(seedsDir)) {
+        return;
+    }
+
+    // 모든 .sql 파일 가져오기 (정렬됨)
+    const seedFiles = fs.readdirSync(seedsDir)
+        .filter(f => f.endsWith('.sql'))
+        .sort();
+
+    if (seedFiles.length === 0) {
+        return;
+    }
+
+    // d1_seeds 테이블 존재 확인 및 생성
+    await ensureSeedsTable(dbName);
+
+    // 이미 적용된 seeds 조회
+    const appliedSeeds = await getAppliedSeeds(dbName);
+
+    // 새로 적용해야 할 seeds 필터링
+    const pendingSeeds = seedFiles.filter(f => !appliedSeeds.has(f));
+
+    if (pendingSeeds.length === 0) {
+        console.log(`\n🌱 Seeds (${seedFiles.length}개 파일)`);
+        console.log(`   → 모든 seeds 이미 적용됨`);
+        return;
+    }
+
+    console.log(`\n🌱 Seeds 적용 중... (${pendingSeeds.length}/${seedFiles.length}개)`);
 
     let appliedCount = 0;
     let errorCount = 0;
 
-    for (const seedFile of changedSeedFiles) {
-        // 파일명만 추출 (경로에서)
-        const fileName = path.basename(seedFile);
+    for (const fileName of pendingSeeds) {
         const filePath = path.join(seedsDir, fileName);
-
-        if (!fs.existsSync(filePath)) {
-            console.log(`   ⚠️  ${fileName}: 파일 없음 (스킵)`);
-            continue;
-        }
-
-        // .sql 파일만 실행
-        if (!fileName.endsWith('.sql')) {
-            continue;
-        }
 
         try {
             const result = await runCommand(
@@ -1057,12 +1116,15 @@ async function runChangedSeeds(changedSeedFiles) {
             );
 
             if (result.success) {
+                await recordSeed(dbName, fileName);
                 console.log(`   ✅ ${fileName}`);
                 appliedCount++;
             } else {
-                // 일부 에러는 무시 (이미 존재하는 데이터 등)
+                // UNIQUE constraint 에러는 성공으로 처리 (데이터 이미 존재)
                 if (result.output && result.output.includes('UNIQUE constraint failed')) {
-                    console.log(`   ⏭️  ${fileName}: 이미 적용됨 (스킵)`);
+                    await recordSeed(dbName, fileName);
+                    console.log(`   ⏭️  ${fileName}: 데이터 이미 존재 (트래킹 등록)`);
+                    appliedCount++;
                 } else {
                     console.log(`   ⚠️  ${fileName}: ${result.output || '실행 실패'}`);
                     errorCount++;
@@ -1074,7 +1136,7 @@ async function runChangedSeeds(changedSeedFiles) {
         }
     }
 
-    console.log(`   → 적용: ${appliedCount}, 스킵/오류: ${errorCount}`);
+    console.log(`   → 적용: ${appliedCount}, 오류: ${errorCount}`);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1208,7 +1270,6 @@ async function corePull(targetVersion = 'latest', options = {}) {
     let localCount = 0;
     const mergeQueue = [];
     const engineQueue = [];  // .docking/engine/ 파일은 마지막에 처리
-    const seedsQueue = [];   // seeds/*.sql 파일은 마이그레이션 후 실행
 
     // dry-run용 분류
     const dryRunReport = {
@@ -1263,12 +1324,6 @@ async function corePull(targetVersion = 'latest', options = {}) {
                 dryRunReport.engine.push({ status, path: filePath });
             }
             continue;
-        }
-
-        // 4.5. seeds/*.sql → 시드 큐에 추가 (마이그레이션 후 실행)
-        if (filePath.startsWith('seeds/') && filePath.endsWith('.sql') && status !== 'D') {
-            seedsQueue.push(filePath);
-            // seeds 파일도 일반 파일로 복사는 진행 (continue 없음)
         }
 
         // 5. 일반 파일: restore/delete 적용
@@ -1399,11 +1454,9 @@ async function corePull(targetVersion = 'latest', options = {}) {
     await runAllMigrations();
 
     // ═══════════════════════════════════════════════
-    // 8.5. 변경된 Seeds 파일 자동 실행
+    // 8.5. Seeds 파일 적용 (d1_seeds 테이블로 트래킹)
     // ═══════════════════════════════════════════════
-    if (seedsQueue.length > 0) {
-        await runChangedSeeds(seedsQueue);
-    }
+    await runAllSeeds();
 
     // ═══════════════════════════════════════════════
     // 9. 메타데이터 업데이트 (.core/version)
