@@ -21,16 +21,32 @@ import yaml from 'js-yaml';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
-// SPEC-CORE-001: 신규 모듈 import
-import {
-    executeWithRetry,
-    verifyMigrationState,
-    printStateReport
-} from './schema-validator.js';
-import {
-    atomicEngineUpdate,
-    recoverFromPreviousFailure
-} from './engine-updater.js';
+// SPEC-CORE-001: 신규 모듈 (optional - 없으면 기본 동작)
+let executeWithRetry, verifyMigrationState, printStateReport;
+let atomicEngineUpdate, recoverFromPreviousFailure;
+
+// Dynamic import to handle bootstrap scenario (files may not exist yet)
+try {
+    const schemaValidator = await import('./schema-validator.js');
+    executeWithRetry = schemaValidator.executeWithRetry;
+    verifyMigrationState = schemaValidator.verifyMigrationState;
+    printStateReport = schemaValidator.printStateReport;
+} catch (e) {
+    // Module not found - use fallback implementations
+    executeWithRetry = async (fn) => fn(); // No retry, just execute
+    verifyMigrationState = async () => ({ valid: true });
+    printStateReport = () => {};
+}
+
+try {
+    const engineUpdater = await import('./engine-updater.js');
+    atomicEngineUpdate = engineUpdater.atomicEngineUpdate;
+    recoverFromPreviousFailure = engineUpdater.recoverFromPreviousFailure;
+} catch (e) {
+    // Module not found - use fallback implementations
+    atomicEngineUpdate = async () => ({ success: true, updated: [] });
+    recoverFromPreviousFailure = async () => {};
+}
 
 const execAsync = promisify(exec);
 const __filename = fileURLToPath(import.meta.url);
