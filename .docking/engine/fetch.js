@@ -1006,6 +1006,77 @@ async function runAllMigrations() {
     }
 }
 
+/**
+ * 변경된 seeds 파일 자동 실행
+ * - core:pull 시 seeds/*.sql 파일 변경 감지 시 호출
+ * - 로컬 DB에 시드 데이터 적용
+ */
+async function runChangedSeeds(changedSeedFiles) {
+    if (!changedSeedFiles || changedSeedFiles.length === 0) {
+        return;
+    }
+
+    // wrangler.toml에서 DB 이름 가져오기
+    let dbName = 'local-clinic-db';
+    const wranglerPath = path.join(PROJECT_ROOT, 'wrangler.toml');
+    if (fs.existsSync(wranglerPath)) {
+        const content = fs.readFileSync(wranglerPath, 'utf8');
+        const match = content.match(/database_name\s*=\s*"([^"]+)"/);
+        if (match) dbName = match[1];
+    }
+
+    // seeds 폴더 경로 (스타터킷 구조 지원)
+    const seedsDir = IS_STARTER_KIT
+        ? path.join(PROJECT_ROOT, 'core', 'seeds')
+        : path.join(PROJECT_ROOT, 'seeds');
+
+    console.log(`\n🌱 Seeds 적용 중... (${changedSeedFiles.length}개 파일)`);
+
+    let appliedCount = 0;
+    let errorCount = 0;
+
+    for (const seedFile of changedSeedFiles) {
+        // 파일명만 추출 (경로에서)
+        const fileName = path.basename(seedFile);
+        const filePath = path.join(seedsDir, fileName);
+
+        if (!fs.existsSync(filePath)) {
+            console.log(`   ⚠️  ${fileName}: 파일 없음 (스킵)`);
+            continue;
+        }
+
+        // .sql 파일만 실행
+        if (!fileName.endsWith('.sql')) {
+            continue;
+        }
+
+        try {
+            const result = await runCommand(
+                `npx wrangler d1 execute ${dbName} --local --file="${filePath}" --yes 2>&1`,
+                true
+            );
+
+            if (result.success) {
+                console.log(`   ✅ ${fileName}`);
+                appliedCount++;
+            } else {
+                // 일부 에러는 무시 (이미 존재하는 데이터 등)
+                if (result.output && result.output.includes('UNIQUE constraint failed')) {
+                    console.log(`   ⏭️  ${fileName}: 이미 적용됨 (스킵)`);
+                } else {
+                    console.log(`   ⚠️  ${fileName}: ${result.output || '실행 실패'}`);
+                    errorCount++;
+                }
+            }
+        } catch (e) {
+            console.log(`   ❌ ${fileName}: ${e.message}`);
+            errorCount++;
+        }
+    }
+
+    console.log(`   → 적용: ${appliedCount}, 스킵/오류: ${errorCount}`);
+}
+
 // ═══════════════════════════════════════════════════════════════
 // core:pull 메인 알고리즘
 // ═══════════════════════════════════════════════════════════════
@@ -1137,6 +1208,7 @@ async function corePull(targetVersion = 'latest', options = {}) {
     let localCount = 0;
     const mergeQueue = [];
     const engineQueue = [];  // .docking/engine/ 파일은 마지막에 처리
+    const seedsQueue = [];   // seeds/*.sql 파일은 마이그레이션 후 실행
 
     // dry-run용 분류
     const dryRunReport = {
@@ -1191,6 +1263,12 @@ async function corePull(targetVersion = 'latest', options = {}) {
                 dryRunReport.engine.push({ status, path: filePath });
             }
             continue;
+        }
+
+        // 4.5. seeds/*.sql → 시드 큐에 추가 (마이그레이션 후 실행)
+        if (filePath.startsWith('seeds/') && filePath.endsWith('.sql') && status !== 'D') {
+            seedsQueue.push(filePath);
+            // seeds 파일도 일반 파일로 복사는 진행 (continue 없음)
         }
 
         // 5. 일반 파일: restore/delete 적용
@@ -1319,6 +1397,13 @@ async function corePull(targetVersion = 'latest', options = {}) {
     // 8. 모든 마이그레이션 체크 및 적용
     // ═══════════════════════════════════════════════
     await runAllMigrations();
+
+    // ═══════════════════════════════════════════════
+    // 8.5. 변경된 Seeds 파일 자동 실행
+    // ═══════════════════════════════════════════════
+    if (seedsQueue.length > 0) {
+        await runChangedSeeds(seedsQueue);
+    }
 
     // ═══════════════════════════════════════════════
     // 9. 메타데이터 업데이트 (.core/version)
