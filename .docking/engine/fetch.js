@@ -1007,6 +1007,64 @@ async function runAllMigrations() {
 }
 
 /**
+ * Seeds 폴더를 upstream에서 동기화하고 실행
+ * - git diff와 무관하게 항상 upstream seeds 전체를 가져옴
+ * - 누락된 seeds 파일 문제 해결
+ */
+async function syncAndRunSeeds(targetVersion) {
+    const seedsDir = IS_STARTER_KIT
+        ? path.join(PROJECT_ROOT, 'core', 'seeds')
+        : path.join(PROJECT_ROOT, 'seeds');
+
+    console.log(`\n🌱 Seeds 동기화 중...`);
+
+    try {
+        // upstream의 seeds 폴더 전체를 checkout
+        const upstreamPath = IS_STARTER_KIT ? 'seeds' : 'seeds';
+        const localPath = IS_STARTER_KIT ? 'core/seeds' : 'seeds';
+
+        // seeds 디렉토리 확보
+        fs.ensureDirSync(seedsDir);
+
+        // upstream에서 seeds 폴더 전체 가져오기
+        const result = await runCommand(
+            `git checkout ${targetVersion} -- ${upstreamPath}`,
+            true
+        );
+
+        if (result.success) {
+            // 스타터킷 구조면 core/seeds로 이동
+            if (IS_STARTER_KIT) {
+                const tempSeedsDir = path.join(PROJECT_ROOT, 'seeds');
+                if (fs.existsSync(tempSeedsDir)) {
+                    // seeds/* 파일들을 core/seeds/로 복사
+                    const files = fs.readdirSync(tempSeedsDir);
+                    for (const file of files) {
+                        fs.copySync(
+                            path.join(tempSeedsDir, file),
+                            path.join(seedsDir, file),
+                            { overwrite: true }
+                        );
+                    }
+                    // 임시 seeds 폴더 삭제
+                    fs.removeSync(tempSeedsDir);
+                }
+            }
+
+            const seedFiles = fs.readdirSync(seedsDir).filter(f => f.endsWith('.sql'));
+            console.log(`   ✅ ${seedFiles.length}개 seed 파일 동기화 완료`);
+        } else {
+            console.log(`   ⚠️  Seeds 동기화 실패, 기존 파일로 진행`);
+        }
+    } catch (e) {
+        console.log(`   ⚠️  Seeds 동기화 중 오류: ${e.message}`);
+    }
+
+    // Seeds 실행
+    await runAllSeeds();
+}
+
+/**
  * d1_seeds 테이블 존재 확인 및 생성
  */
 async function ensureSeedsTable(dbName) {
@@ -1456,9 +1514,11 @@ async function corePull(targetVersion = 'latest', options = {}) {
     await runAllMigrations();
 
     // ═══════════════════════════════════════════════
-    // 8.5. Seeds 파일 적용 (d1_seeds 테이블로 트래킹)
+    // 8.5. Seeds 폴더 동기화 및 적용
+    // - seeds는 항상 코어 버전으로 전체 동기화
+    // - d1_seeds 테이블로 적용 여부 트래킹
     // ═══════════════════════════════════════════════
-    await runAllSeeds();
+    await syncAndRunSeeds(version);
 
     // ═══════════════════════════════════════════════
     // 9. 메타데이터 업데이트 (.core/version)
