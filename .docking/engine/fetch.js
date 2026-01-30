@@ -81,16 +81,23 @@ const PROTECTED_EXACT = new Set([
     // 백록담 커스텀 페이지들
     'src/pages/intake.astro',
     'src/pages/intake/new.astro',
+    'src/pages/404.astro',
     'src/plugins/custom-homepage/pages/index.astro',
     // 레이아웃/헤더 관련
+    'src/components/layout/BaseLayout.astro',
     'src/components/layout/Navbar.astro',
-    'src/components/sections/PageHeader.astro',
+    'src/components/layout/Footer.astro',
+    // PageHeader.astro는 코어 버그 수정 적용을 위해 보호하지 않음
+    // 클라이언트 설정/스타일
+    'src/config.ts',
+    'src/styles/global.css',
 ]);
 
 const PROTECTED_PREFIXES = [
     '.env',           // .env, .env.local, .env.production 등
     '.core/',         // 버전 메타데이터
-    '.docking/engine/', // fetch.js 등 엔진 파일 보호 (삭제 방지)
+    'src/pages/intake/',  // intake 관련 페이지 전체 보호
+    // .docking/engine/는 보호하지 않음 - fetch.js 업데이트 필요
 ];
 
 // 특수 머지가 필요한 파일
@@ -169,7 +176,10 @@ async function runCommand(cmd, silent = false) {
         });
         return { success: true, stdout: stdout?.trim() || '', stderr: stderr?.trim() || '' };
     } catch (error) {
-        return { success: false, stdout: '', stderr: error.message };
+        // exec 에러 시 stdout/stderr가 error 객체에 포함됨
+        const stdout = error.stdout?.trim() || '';
+        const stderr = error.stderr?.trim() || error.message || '';
+        return { success: false, stdout, stderr };
     }
 }
 
@@ -801,13 +811,98 @@ function countNewDeps(oldDeps = {}, newDeps = {}) {
 // ═══════════════════════════════════════════════════════════════
 
 async function runNewMigrations(migrationFiles) {
-    if (migrationFiles.length === 0) {
-        console.log('\n✅ 새 마이그레이션 없음');
+    // 이 함수는 하위 호환성을 위해 유지하지만, 실제로는 runAllMigrations 사용
+    if (migrationFiles.length > 0) {
+        console.log(`\n🗃️  새 마이그레이션 ${migrationFiles.length}개 감지됨 (전체 마이그레이션 체크로 처리)`);
+    }
+}
+
+/**
+ * d1_migrations 테이블 존재 확인 및 생성
+ */
+async function ensureMigrationsTable(dbName) {
+    const createTableSql = `CREATE TABLE IF NOT EXISTS d1_migrations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        applied_at TEXT DEFAULT (datetime('now'))
+    )`;
+    await runCommand(
+        `npx wrangler d1 execute ${dbName} --local --command "${createTableSql}" --yes 2>&1`,
+        true
+    );
+}
+
+/**
+ * d1_migrations 테이블에서 적용된 마이그레이션 목록 조회
+ */
+async function getAppliedMigrations(dbName) {
+    try {
+        const result = await runCommand(
+            `npx wrangler d1 execute ${dbName} --local --command "SELECT name FROM d1_migrations ORDER BY id" --json 2>&1`,
+            true
+        );
+
+        if (result.success && result.stdout) {
+            const data = JSON.parse(result.stdout);
+            if (data && data[0] && data[0].results) {
+                return new Set(data[0].results.map(r => r.name));
+            }
+        }
+    } catch (e) {
+        // 테이블이 없거나 파싱 실패 시 빈 Set 반환
+    }
+    return new Set();
+}
+
+/**
+ * 기존 마이그레이션을 d1_migrations 테이블에 일괄 등록 (최초 1회)
+ * - 테이블이 비어있으면 모든 마이그레이션을 "이미 적용됨"으로 등록
+ * - 이를 통해 기존 클라이언트도 새 트래킹 시스템으로 전환
+ */
+async function bootstrapMigrationTracking(dbName, migrationFiles) {
+    // 각 마이그레이션을 등록 (INSERT OR IGNORE로 중복 방지)
+    const values = migrationFiles.map(f => `('${f}')`).join(',');
+    if (values) {
+        await runCommand(
+            `npx wrangler d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_migrations (name) VALUES ${values}" --yes 2>&1`,
+            true
+        );
+    }
+}
+
+/**
+ * 마이그레이션 적용 후 d1_migrations 테이블에 기록
+ */
+async function recordMigration(dbName, migrationName) {
+    await runCommand(
+        `npx wrangler d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_migrations (name) VALUES ('${migrationName}')" --yes 2>&1`,
+        true
+    );
+}
+
+/**
+ * 스키마 문서 자동 갱신 (마이그레이션 후)
+ */
+async function updateSchemaDoc() {
+    const scriptPath = path.join(PROJECT_ROOT, 'scripts/generate-schema-doc.js');
+    if (!fs.existsSync(scriptPath)) {
         return;
     }
 
-    console.log(`\n🗃️  새 마이그레이션 ${migrationFiles.length}개 감지됨`);
+    console.log('\n📝 스키마 문서 갱신 중...');
+    const result = await runCommand(`node "${scriptPath}" 2>&1`, true);
+    if (result.success) {
+        console.log('   ✅ SCHEMA.md 갱신 완료');
+    }
+}
 
+/**
+ * 마이그레이션 파일을 스캔하고 DB에 적용 (최적화 버전)
+ * - d1_migrations 테이블로 적용 여부 추적
+ * - 새 마이그레이션만 실행 (기존: 매번 전체 실행)
+ * - 적용 후 스키마 문서 자동 갱신
+ */
+async function runAllMigrations() {
     // wrangler.toml에서 DB 이름 가져오기
     let dbName = 'local-clinic-db';
     const wranglerPath = path.join(PROJECT_ROOT, 'wrangler.toml');
@@ -817,29 +912,97 @@ async function runNewMigrations(migrationFiles) {
         if (match) dbName = match[1];
     }
 
-    for (const migFile of migrationFiles) {
-        const fileName = path.basename(migFile);
-        // 스타터킷 구조에서는 로컬 경로로 변환
-        const localMigFile = toLocalPath(migFile);
-        const filePath = path.join(PROJECT_ROOT, localMigFile);
+    // 마이그레이션 폴더 경로 (스타터킷 구조 지원)
+    const migrationsDir = IS_STARTER_KIT
+        ? path.join(PROJECT_ROOT, 'core', 'migrations')
+        : path.join(PROJECT_ROOT, 'migrations');
 
-        if (!fs.existsSync(filePath)) {
-            console.log(`   ⚠️  ${fileName}: 파일 없음 (스킵)`);
-            continue;
-        }
+    if (!fs.existsSync(migrationsDir)) {
+        console.log('\n⚠️  마이그레이션 폴더 없음');
+        return;
+    }
 
-        process.stdout.write(`   🔄 ${fileName}... `);
+    // 모든 .sql 파일 가져오기 (정렬됨)
+    const migrationFiles = fs.readdirSync(migrationsDir)
+        .filter(f => f.endsWith('.sql'))
+        .sort();
+
+    if (migrationFiles.length === 0) {
+        console.log('\n✅ 마이그레이션 파일 없음');
+        return;
+    }
+
+    // d1_migrations 테이블 존재 확인 및 생성
+    await ensureMigrationsTable(dbName);
+
+    // 이미 적용된 마이그레이션 조회
+    const appliedMigrations = await getAppliedMigrations(dbName);
+    const isFirstRun = appliedMigrations.size === 0;
+
+    // 새로 적용해야 할 마이그레이션 필터링
+    const pendingMigrations = migrationFiles.filter(f => !appliedMigrations.has(f));
+
+    if (pendingMigrations.length === 0) {
+        console.log(`\n🗃️  마이그레이션 (${migrationFiles.length}개 파일)`);
+        console.log(`   → 모든 마이그레이션 이미 적용됨`);
+        return;
+    }
+
+    // 최초 실행 시 안내 메시지
+    if (isFirstRun) {
+        console.log(`\n🗃️  마이그레이션 트래킹 초기화 + 누락분 적용 (${pendingMigrations.length}개)`);
+        console.log(`   → 실행 후 결과 기반으로 트래킹 등록`);
+    } else {
+        console.log(`\n🗃️  마이그레이션 (${pendingMigrations.length}개 새 파일 / 전체 ${migrationFiles.length}개)`);
+    }
+
+    let newlyApplied = 0;      // 실제로 새로 적용됨
+    let alreadyExists = 0;     // 이미 존재 (기록만)
+    let errorCount = 0;
+
+    for (const fileName of pendingMigrations) {
+        const filePath = path.join(migrationsDir, fileName);
 
         const result = await runCommand(
-            `npx wrangler d1 execute ${dbName} --local --file="${filePath}" --yes`,
+            `npx wrangler d1 execute ${dbName} --local --file="${filePath}" --yes 2>&1`,
             true
         );
 
-        if (result.success || result.stderr?.includes('already exists')) {
-            console.log('✅');
+        const output = result.stdout + result.stderr;
+
+        if (result.success) {
+            // 성공적으로 새로 적용됨
+            newlyApplied++;
+            await recordMigration(dbName, fileName);
+            console.log(`   ✅ ${fileName} (적용됨)`);
+        } else if (output.includes('already exists') || output.includes('duplicate')) {
+            // 이미 존재 - 기록만 추가
+            alreadyExists++;
+            await recordMigration(dbName, fileName);
+            if (isFirstRun) {
+                // 최초 실행 시에만 표시 (이미 있는 것들)
+                console.log(`   ⏭️  ${fileName} (이미 존재)`);
+            }
+        } else if (output.includes('SQLITE_BUSY') || output.includes('database is locked')) {
+            console.log(`   ⚠️  ${fileName}: DB 잠금 (dev 서버 종료 후 재시도)`);
+            errorCount++;
         } else {
-            console.log(`❌ ${result.stderr}`);
+            console.log(`   ❌ ${fileName}: ${output.substring(0, 100)}`);
+            errorCount++;
         }
+    }
+
+    // 결과 요약
+    if (isFirstRun) {
+        console.log(`   → 새로 적용: ${newlyApplied}, 이미 존재: ${alreadyExists}, 오류: ${errorCount}`);
+        console.log(`   ✅ 트래킹 초기화 완료 (총 ${newlyApplied + alreadyExists}개 등록)`);
+    } else {
+        console.log(`   → 적용: ${newlyApplied}, 오류: ${errorCount}`);
+    }
+
+    // 마이그레이션 적용 시 스키마 문서 갱신
+    if (newlyApplied > 0) {
+        await updateSchemaDoc();
     }
 }
 
@@ -1153,13 +1316,9 @@ async function corePull(targetVersion = 'latest', options = {}) {
     console.log(`   ⏭️  스킵: protected=${protectedCount}, local=${localCount}`);
 
     // ═══════════════════════════════════════════════
-    // 8. 새 마이그레이션 감지 및 실행
+    // 8. 모든 마이그레이션 체크 및 적용
     // ═══════════════════════════════════════════════
-    const newMigrations = fileOps
-        .filter(op => op.status === 'A' && op.path.startsWith('migrations/') && op.path.endsWith('.sql'))
-        .map(op => op.path);
-
-    await runNewMigrations(newMigrations);
+    await runAllMigrations();
 
     // ═══════════════════════════════════════════════
     // 9. 메타데이터 업데이트 (.core/version)
