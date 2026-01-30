@@ -11,6 +11,9 @@
  *
  *   // 플러그인 마이그레이션 실행
  *   await runPluginMigration('plugin-id', '/path/to/migration.sql', { local: true });
+ *
+ * @see ARCHITECTURE.md#4-데이터베이스
+ * @see migrations/ - 마이그레이션 SQL 파일
  */
 
 import fs from 'fs-extra';
