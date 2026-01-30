@@ -740,6 +740,27 @@ exit 0
             }
         }
 
+        // d1_seeds 테이블 생성 및 실행된 seeds 기록 (core:pull 시 재실행 방지)
+        console.log("   📝 Seeds 기록 초기화 중...");
+        await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "CREATE TABLE IF NOT EXISTS d1_seeds (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, applied_at TEXT DEFAULT (datetime('now')))" --yes`);
+
+        // seeds 폴더의 모든 파일을 기록
+        let seedsDir = path.join(PROJECT_ROOT, 'core/seeds');
+        if (!fs.existsSync(seedsDir)) {
+            seedsDir = path.join(PROJECT_ROOT, 'seeds');
+        }
+
+        if (fs.existsSync(seedsDir)) {
+            const seedFiles = fs.readdirSync(seedsDir)
+                .filter(f => f.endsWith('.sql'))
+                .sort();
+
+            for (const seedFile of seedFiles) {
+                await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_seeds (name) VALUES ('${seedFile}')" --yes`);
+            }
+            console.log(`   ✅ ${seedFiles.length}개 seeds 기록 완료 (초기 설치)`);
+        }
+
         if (initOk && seedOk) {
             console.log("   ✅ 데이터베이스 초기화 및 전체 시딩 완료");
         } else {

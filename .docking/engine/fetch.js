@@ -1139,9 +1139,16 @@ async function runAllSeeds() {
         return;
     }
 
-    // 모든 .sql 파일 가져오기 (정렬됨)
+    // 프로덕션 전용 또는 특수 목적 seeds (로컬 개발 시 제외)
+    const SKIP_SEEDS = [
+        'go_live.sql',           // 프로덕션 전용 (UNIQUE constraint 등)
+        'seed_digestive_content.sql',  // 대용량 컨텐츠 (선택적)
+    ];
+
+    // 모든 .sql 파일 가져오기 (정렬됨, 제외 목록 필터링)
     const seedFiles = fs.readdirSync(seedsDir)
         .filter(f => f.endsWith('.sql'))
+        .filter(f => !SKIP_SEEDS.includes(f))
         .sort();
 
     if (seedFiles.length === 0) {
