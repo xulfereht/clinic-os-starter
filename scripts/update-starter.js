@@ -17,22 +17,32 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.join(__dirname, '..');
 
-// 업데이트 대상 인프라 파일 목록 (publish-release.js STARTER_INFRA_FILES와 동기화)
-const INFRA_FILES = [
+const DEFAULT_HQ_URL = 'https://clinic-os-hq.pages.dev';
+
+// Fallback 파일 목록 (manifest.json 로드 실패 시)
+const FALLBACK_INFRA_FILES = [
     '.docking/engine/fetch.js',
-    '.docking/engine/migrate.js',
-    '.docking/engine/schema-validator.js',
-    '.docking/engine/engine-updater.js',
     'scripts/setup-clinic.js',
     'scripts/check-system.js',
     'scripts/dev-preflight.js',
-    'scripts/dev-start.js',
     'scripts/deploy-guard.js',
-    'scripts/update-starter.js',  // 자기 자신도 업데이트
-    'scripts/update-starter-standalone.cjs'
+    'scripts/update-starter.js'
 ];
 
-const DEFAULT_HQ_URL = 'https://clinic-os-hq.pages.dev';
+async function fetchManifest(hqUrl, deviceToken) {
+    const url = `${hqUrl}/api/v1/starter-files/manifest.json`;
+    const headers = { 'Content-Type': 'application/json' };
+    if (deviceToken) {
+        headers['Authorization'] = `Bearer ${deviceToken}`;
+    }
+
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+        throw new Error(`Manifest fetch failed: ${response.status}`);
+    }
+
+    return await response.json();
+}
 
 async function getConfig() {
     const configPath = path.join(PROJECT_ROOT, '.docking/config.yaml');
@@ -99,25 +109,26 @@ async function updateStarterFiles() {
         console.log('   ⚠️  Device Token 없음 (공개 파일만 다운로드 가능)');
     }
 
-    // 2. 버전 정보 조회
-    console.log('\n📥 최신 버전 확인 중...');
+    // 2. manifest.json에서 파일 목록 로드
+    console.log('\n📥 파일 목록 확인 중...');
+    let infraFiles = FALLBACK_INFRA_FILES;
+    let manifestVersion = 'unknown';
     try {
-        const versionRes = await fetch(`${hqUrl}/api/v1/update/channel-version?channel=stable`);
-        if (versionRes.ok) {
-            const versionData = await versionRes.json();
-            console.log(`   최신 버전: v${versionData.version}`);
-        }
+        const manifest = await fetchManifest(hqUrl, deviceToken);
+        infraFiles = manifest.files || FALLBACK_INFRA_FILES;
+        manifestVersion = manifest.version || 'unknown';
+        console.log(`   최신 버전: v${manifestVersion} (${infraFiles.length}개 파일)`);
     } catch (e) {
-        console.log('   버전 확인 실패 (계속 진행)');
+        console.log(`   ⚠️  manifest 로드 실패, fallback 사용 (${FALLBACK_INFRA_FILES.length}개 파일)`);
     }
 
     // 3. 파일 다운로드 및 적용
-    console.log('\n📦 인프라 파일 업데이트 ���...\n');
+    console.log('\n📦 인프라 파일 업데이트 중...\n');
 
     let successCount = 0;
     let failCount = 0;
 
-    for (const file of INFRA_FILES) {
+    for (const file of infraFiles) {
         process.stdout.write(`   ${file}... `);
 
         try {
@@ -138,12 +149,40 @@ async function updateStarterFiles() {
         }
     }
 
-    // 4. 결과 출력
+    // 4. core/ 폴더가 있으면 인프라 파일 복사 (스타터킷 구조 지원)
+    const coreDir = path.join(PROJECT_ROOT, 'core');
+    if (fs.existsSync(coreDir)) {
+        console.log('\n🔄 core/ 폴더에 인프라 파일 동기화 중...');
+        const coreInfraFiles = [
+            '.docking/engine/migrate.js',
+            '.docking/engine/fetch.js',
+            '.docking/engine/schema-validator.js',
+            '.docking/engine/engine-updater.js',
+            'scripts/dev-start.js'
+        ];
+        let coreCopyCount = 0;
+        for (const file of coreInfraFiles) {
+            const srcPath = path.join(PROJECT_ROOT, file);
+            const destPath = path.join(coreDir, file);
+            if (fs.existsSync(srcPath)) {
+                try {
+                    fs.ensureDirSync(path.dirname(destPath));
+                    fs.copyFileSync(srcPath, destPath);
+                    coreCopyCount++;
+                } catch (e) {
+                    // 복사 실패해도 계속 진행
+                }
+            }
+        }
+        console.log(`   ✅ ${coreCopyCount}개 파일 core/에 동기화 완료`);
+    }
+
+    // 5. 결과 출력
     console.log('\n════════════════════════════════════════════');
     if (failCount === 0) {
         console.log(`✅ 업데이트 완료! (${successCount}개 파일)`);
         console.log('\n다음 단계:');
-        console.log('  npm run core:pull   # 코어 파일 업데이트');
+        console.log('  npm run dev         # 개발 서버 시작');
     } else {
         console.log(`⚠️  일부 파일 업데이트 실패 (성공: ${successCount}, 실패: ${failCount})`);
         console.log('\n문제가 계속되면:');
