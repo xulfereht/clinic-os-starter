@@ -90,7 +90,7 @@ git add -A && git commit -m "Backup before package apply"
 
 새 마이그레이션이 있으면:
 ```bash
-npx wrangler d1 migrations apply clinic-os-dev --local
+npm run db:migrate
 ```
 
 ### 8단계: 기록 업데이트

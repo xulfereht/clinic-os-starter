@@ -32,7 +32,8 @@ npm run dev
 **Q: 한의원 이름/정보를 바꾸고 싶어요**
 → `/admin/settings`에서 변경하거나, DB 직접 업데이트:
 ```bash
-npx wrangler d1 execute clinic-os-dev --local --command "UPDATE site_settings SET value = '새이름' WHERE key = 'name';"
+# wrangler.toml의 database_name에 맞게 자동 실행
+node scripts/db-helper.js exec --command "UPDATE site_settings SET value = '새이름' WHERE key = 'name';"
 ```
 
 ---

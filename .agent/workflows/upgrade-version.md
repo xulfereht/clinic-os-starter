@@ -96,7 +96,7 @@ ls migrations/
 새 마이그레이션이 있으면:
 // turbo
 ```bash
-npx wrangler d1 migrations apply clinic-os-dev --local
+npm run db:migrate
 ```
 
 ---

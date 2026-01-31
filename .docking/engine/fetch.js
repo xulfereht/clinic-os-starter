@@ -1,5 +1,5 @@
 /**
- * Clinic-OS Core Pull (Local Git Architecture v1.4)
+ * Clinic-OS Core Pull (Local Git Architecture v1.3)
  *
  * 클라이언트 소유 Git에서 upstream 태그 기반으로 코어 파일만 업데이트
  * - git diff --name-status 기반 파일단위 적용 (삭제 포함)
@@ -7,11 +7,6 @@
  * - WIP 스냅샷 자동 생성
  * - Channel Tags (latest-stable, latest-beta) 기반 버전 결정
  * - 스타터킷 구조 (core/ 폴더) 자동 감지 및 지원
- *
- * SPEC-CORE-001 추가 기능:
- * - Pre-flight 스키마 검증
- * - SQLITE_BUSY 재시도 메커니즘 (Exponential Backoff)
- * - Atomic Engine Update (Self-update 안전성)
  */
 
 import fs from 'fs-extra';
@@ -21,76 +16,24 @@ import yaml from 'js-yaml';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
-// SPEC-CORE-001: 신규 모듈 (optional - 없으면 기본 동작)
-let executeWithRetry, verifyMigrationState, printStateReport;
-let atomicEngineUpdate, recoverFromPreviousFailure;
-
-// Dynamic import to handle bootstrap scenario (files may not exist yet)
-try {
-    const schemaValidator = await import('./schema-validator.js');
-    executeWithRetry = schemaValidator.executeWithRetry;
-    verifyMigrationState = schemaValidator.verifyMigrationState;
-    printStateReport = schemaValidator.printStateReport;
-} catch (e) {
-    // Module not found - use fallback implementations
-    executeWithRetry = async (fn) => fn(); // No retry, just execute
-    verifyMigrationState = async () => ({ valid: true });
-    printStateReport = () => {};
-}
-
-try {
-    const engineUpdater = await import('./engine-updater.js');
-    atomicEngineUpdate = engineUpdater.atomicEngineUpdate;
-    recoverFromPreviousFailure = engineUpdater.recoverFromPreviousFailure;
-} catch (e) {
-    // Module not found - use fallback implementations
-    atomicEngineUpdate = async () => ({ success: true, updated: [] });
-    recoverFromPreviousFailure = async () => {};
-}
-
 const execAsync = promisify(exec);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const PROJECT_ROOT = path.join(__dirname, '../..');
 
-/**
- * Find actual project root by looking for wrangler.toml first (has DB config)
- * Then falls back to other markers if wrangler.toml not found.
- * Traverses up from script location to handle both:
- * - Direct run from root (/.docking/engine/fetch.js)
- * - Run from core (/core/.docking/engine/fetch.js)
- */
-function findProjectRoot(startDir) {
-    let current = startDir;
-
-    // 1차: wrangler.toml 우선 탐색 (DB 설정이 여기 있음)
-    for (let i = 0; i < 5; i++) {
-        if (fs.existsSync(path.join(current, 'wrangler.toml'))) {
-            return current;
+// DB Doctor import (동적 import로 순환 의존성 방지)
+async function runDbDoctorCheck() {
+    try {
+        const doctorPath = path.join(PROJECT_ROOT, 'scripts', 'doctor.js');
+        if (fs.existsSync(doctorPath)) {
+            const { runDbDoctor } = await import(doctorPath);
+            return await runDbDoctor();
         }
-        const parent = path.dirname(current);
-        if (parent === current) break;
-        current = parent;
+    } catch (e) {
+        console.log('   ⚠️  DB Doctor 체크 건너뜀:', e.message);
     }
-
-    // 2차: 다른 마커로 fallback
-    current = startDir;
-    const fallbackMarkers = ['.docking/config.yaml', 'clinic.json'];
-    for (let i = 0; i < 5; i++) {
-        for (const marker of fallbackMarkers) {
-            if (fs.existsSync(path.join(current, marker))) {
-                return current;
-            }
-        }
-        const parent = path.dirname(current);
-        if (parent === current) break;
-        current = parent;
-    }
-
-    // Fallback to original behavior (2 levels up from .docking/engine/)
-    return path.join(startDir, '../..');
+    return { ok: true };
 }
-
-const PROJECT_ROOT = findProjectRoot(__dirname);
 
 // ═══════════════════════════════════════════════════════════════
 // 스타터킷 구조 감지
@@ -152,23 +95,16 @@ const PROTECTED_EXACT = new Set([
     // 백록담 커스텀 페이지들
     'src/pages/intake.astro',
     'src/pages/intake/new.astro',
-    'src/pages/404.astro',
     'src/plugins/custom-homepage/pages/index.astro',
     // 레이아웃/헤더 관련
-    'src/components/layout/BaseLayout.astro',
     'src/components/layout/Navbar.astro',
-    'src/components/layout/Footer.astro',
-    // PageHeader.astro는 코어 버그 수정 적용을 위해 보호하지 않음
-    // 클라이언트 설정/스타일
-    'src/config.ts',
-    'src/styles/global.css',
+    'src/components/sections/PageHeader.astro',
 ]);
 
 const PROTECTED_PREFIXES = [
     '.env',           // .env, .env.local, .env.production 등
     '.core/',         // 버전 메타데이터
-    'src/pages/intake/',  // intake 관련 페이지 전체 보호
-    // .docking/engine/는 보호하지 않음 - fetch.js 업데이트 필요
+    '.docking/engine/', // fetch.js 등 엔진 파일 보호 (삭제 방지)
 ];
 
 // 특수 머지가 필요한 파일
@@ -247,10 +183,7 @@ async function runCommand(cmd, silent = false) {
         });
         return { success: true, stdout: stdout?.trim() || '', stderr: stderr?.trim() || '' };
     } catch (error) {
-        // exec 에러 시 stdout/stderr가 error 객체에 포함됨
-        const stdout = error.stdout?.trim() || '';
-        const stderr = error.stderr?.trim() || error.message || '';
-        return { success: false, stdout, stderr };
+        return { success: false, stdout: '', stderr: error.message };
     }
 }
 
@@ -882,98 +815,13 @@ function countNewDeps(oldDeps = {}, newDeps = {}) {
 // ═══════════════════════════════════════════════════════════════
 
 async function runNewMigrations(migrationFiles) {
-    // 이 함수는 하위 호환성을 위해 유지하지만, 실제로는 runAllMigrations 사용
-    if (migrationFiles.length > 0) {
-        console.log(`\n🗃️  새 마이그레이션 ${migrationFiles.length}개 감지됨 (전체 마이그레이션 체크로 처리)`);
-    }
-}
-
-/**
- * d1_migrations 테이블 존재 확인 및 생성
- */
-async function ensureMigrationsTable(dbName) {
-    const createTableSql = `CREATE TABLE IF NOT EXISTS d1_migrations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE NOT NULL,
-        applied_at TEXT DEFAULT (datetime('now'))
-    )`;
-    await runCommand(
-        `npx wrangler d1 execute ${dbName} --local --command "${createTableSql}" --yes 2>&1`,
-        true
-    );
-}
-
-/**
- * d1_migrations 테이블에서 적용된 마이그레이션 목록 조회
- */
-async function getAppliedMigrations(dbName) {
-    try {
-        const result = await runCommand(
-            `npx wrangler d1 execute ${dbName} --local --command "SELECT name FROM d1_migrations ORDER BY id" --json 2>&1`,
-            true
-        );
-
-        if (result.success && result.stdout) {
-            const data = JSON.parse(result.stdout);
-            if (data && data[0] && data[0].results) {
-                return new Set(data[0].results.map(r => r.name));
-            }
-        }
-    } catch (e) {
-        // 테이블이 없거나 파싱 실패 시 빈 Set 반환
-    }
-    return new Set();
-}
-
-/**
- * 기존 마이그레이션을 d1_migrations 테이블에 일괄 등록 (최초 1회)
- * - 테이블이 비어있으면 모든 마이그레이션을 "이미 적용됨"으로 등록
- * - 이를 통해 기존 클라이언트도 새 트래킹 시스템으로 전환
- */
-async function bootstrapMigrationTracking(dbName, migrationFiles) {
-    // 각 마이그레이션을 등록 (INSERT OR IGNORE로 중복 방지)
-    const values = migrationFiles.map(f => `('${f}')`).join(',');
-    if (values) {
-        await runCommand(
-            `npx wrangler d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_migrations (name) VALUES ${values}" --yes 2>&1`,
-            true
-        );
-    }
-}
-
-/**
- * 마이그레이션 적용 후 d1_migrations 테이블에 기록
- */
-async function recordMigration(dbName, migrationName) {
-    await runCommand(
-        `npx wrangler d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_migrations (name) VALUES ('${migrationName}')" --yes 2>&1`,
-        true
-    );
-}
-
-/**
- * 스키마 문서 자동 갱신 (마이그레이션 후)
- */
-async function updateSchemaDoc() {
-    const scriptPath = path.join(PROJECT_ROOT, 'scripts/generate-schema-doc.js');
-    if (!fs.existsSync(scriptPath)) {
+    if (migrationFiles.length === 0) {
+        console.log('\n✅ 새 마이그레이션 없음');
         return;
     }
 
-    console.log('\n📝 스키마 문서 갱신 중...');
-    const result = await runCommand(`node "${scriptPath}" 2>&1`, true);
-    if (result.success) {
-        console.log('   ✅ SCHEMA.md 갱신 완료');
-    }
-}
+    console.log(`\n🗃️  새 마이그레이션 ${migrationFiles.length}개 감지됨`);
 
-/**
- * 마이그레이션 파일을 스캔하고 DB에 적용 (최적화 버전)
- * - d1_migrations 테이블로 적용 여부 추적
- * - 새 마이그레이션만 실행 (기존: 매번 전체 실행)
- * - 적용 후 스키마 문서 자동 갱신
- */
-async function runAllMigrations() {
     // wrangler.toml에서 DB 이름 가져오기
     let dbName = 'local-clinic-db';
     const wranglerPath = path.join(PROJECT_ROOT, 'wrangler.toml');
@@ -983,259 +831,30 @@ async function runAllMigrations() {
         if (match) dbName = match[1];
     }
 
-    // 마이그레이션 폴더 경로 (스타터킷 구조 지원)
-    const migrationsDir = IS_STARTER_KIT
-        ? path.join(PROJECT_ROOT, 'core', 'migrations')
-        : path.join(PROJECT_ROOT, 'migrations');
+    for (const migFile of migrationFiles) {
+        const fileName = path.basename(migFile);
+        // 스타터킷 구조에서는 로컬 경로로 변환
+        const localMigFile = toLocalPath(migFile);
+        const filePath = path.join(PROJECT_ROOT, localMigFile);
 
-    if (!fs.existsSync(migrationsDir)) {
-        console.log('\n⚠️  마이그레이션 폴더 없음');
-        return;
-    }
-
-    // 모든 .sql 파일 가져오기 (정렬됨)
-    const migrationFiles = fs.readdirSync(migrationsDir)
-        .filter(f => f.endsWith('.sql'))
-        .sort();
-
-    if (migrationFiles.length === 0) {
-        console.log('\n✅ 마이그레이션 파일 없음');
-        return;
-    }
-
-    // d1_migrations 테이블 존재 확인 및 생성
-    await ensureMigrationsTable(dbName);
-
-    // 이미 적용된 마이그레이션 조회
-    const appliedMigrations = await getAppliedMigrations(dbName);
-    const isFirstRun = appliedMigrations.size === 0;
-
-    // 새로 적용해야 할 마이그레이션 필터링
-    const pendingMigrations = migrationFiles.filter(f => !appliedMigrations.has(f));
-
-    if (pendingMigrations.length === 0) {
-        console.log(`\n🗃️  마이그레이션 (${migrationFiles.length}개 파일)`);
-        console.log(`   → 모든 마이그레이션 이미 적용됨`);
-        return;
-    }
-
-    // 최초 실행 시 안내 메시지
-    if (isFirstRun) {
-        console.log(`\n🗃️  마이그레이션 트래킹 초기화 + 누락분 적용 (${pendingMigrations.length}개)`);
-        console.log(`   → 실행 후 결과 기반으로 트래킹 등록`);
-    } else {
-        console.log(`\n🗃️  마이그레이션 (${pendingMigrations.length}개 새 파일 / 전체 ${migrationFiles.length}개)`);
-    }
-
-    let newlyApplied = 0;      // 실제로 새로 적용됨
-    let alreadyExists = 0;     // 이미 존재 (기록만)
-    let errorCount = 0;
-
-    for (const fileName of pendingMigrations) {
-        const filePath = path.join(migrationsDir, fileName);
-
-        // TASK-002: SQLITE_BUSY 재시도 래퍼 적용 (Exponential Backoff)
-        let result;
-        let output;
-
-        try {
-            result = await executeWithRetry(async () => {
-                const res = await runCommand(
-                    `npx wrangler d1 execute ${dbName} --local --file="${filePath}" --yes 2>&1`,
-                    true
-                );
-                const out = res.stdout + res.stderr;
-
-                // SQLITE_BUSY 오류는 재시도 가능하도록 throw
-                if (!res.success && (out.includes('SQLITE_BUSY') || out.includes('database is locked'))) {
-                    const error = new Error(`SQLITE_BUSY: ${fileName}`);
-                    error.output = out;
-                    throw error;
-                }
-
-                return { ...res, output: out };
-            });
-            output = result.output;
-        } catch (retryError) {
-            // 최대 재시도 후에도 실패
-            console.log(`   \u26A0\uFE0F  ${fileName}: ${retryError.message}`);
-            errorCount++;
+        if (!fs.existsSync(filePath)) {
+            console.log(`   ⚠️  ${fileName}: 파일 없음 (스킵)`);
             continue;
         }
 
-        if (result.success) {
-            // 성공적으로 새로 적용됨
-            newlyApplied++;
-            await recordMigration(dbName, fileName);
-            console.log(`   \u2705 ${fileName} (\uC801\uC6A9\uB428)`);
-        } else if (output.includes('already exists') || output.includes('duplicate')) {
-            // 이미 존재 - 기록만 추가
-            alreadyExists++;
-            await recordMigration(dbName, fileName);
-            if (isFirstRun) {
-                // 최초 실행 시에만 표시 (이미 있는 것들)
-                console.log(`   \u23ED\uFE0F  ${fileName} (\uC774\uBBF8 \uC874\uC7AC)`);
-            }
-        } else {
-            console.log(`   \u274C ${fileName}: ${output.substring(0, 100)}`);
-            errorCount++;
-        }
-    }
+        process.stdout.write(`   🔄 ${fileName}... `);
 
-    // 결과 요약
-    if (isFirstRun) {
-        console.log(`   → 새로 적용: ${newlyApplied}, 이미 존재: ${alreadyExists}, 오류: ${errorCount}`);
-        console.log(`   ✅ 트래킹 초기화 완료 (총 ${newlyApplied + alreadyExists}개 등록)`);
-    } else {
-        console.log(`   → 적용: ${newlyApplied}, 오류: ${errorCount}`);
-    }
-
-    // 마이그레이션 적용 시 스키마 문서 갱신
-    if (newlyApplied > 0) {
-        await updateSchemaDoc();
-    }
-}
-
-
-/**
- * d1_seeds 테이블 존재 확인 및 생성
- */
-async function ensureSeedsTable(dbName) {
-    const createTableSql = `CREATE TABLE IF NOT EXISTS d1_seeds (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE NOT NULL,
-        applied_at TEXT DEFAULT (datetime('now'))
-    )`;
-    await runCommand(
-        `npx wrangler d1 execute ${dbName} --local --command "${createTableSql}" --yes 2>&1`,
-        true
-    );
-}
-
-/**
- * d1_seeds 테이블에서 적용된 seeds 목록 조회
- */
-async function getAppliedSeeds(dbName) {
-    try {
         const result = await runCommand(
-            `npx wrangler d1 execute ${dbName} --local --command "SELECT name FROM d1_seeds ORDER BY id" --json 2>&1`,
+            `npx wrangler d1 execute ${dbName} --local --file="${filePath}" --yes`,
             true
         );
 
-        if (result.success && result.stdout) {
-            const data = JSON.parse(result.stdout);
-            if (data && data[0] && data[0].results) {
-                return new Set(data[0].results.map(r => r.name));
-            }
-        }
-    } catch (e) {
-        // 테이블이 없거나 파싱 실패 시 빈 Set 반환
-    }
-    return new Set();
-}
-
-/**
- * seed 적용 후 d1_seeds 테이블에 기록
- */
-async function recordSeed(dbName, seedName) {
-    await runCommand(
-        `npx wrangler d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_seeds (name) VALUES ('${seedName}')" --yes 2>&1`,
-        true
-    );
-}
-
-/**
- * 모든 seeds 파일을 스캔하고 미적용 파일 실행
- * - d1_seeds 테이블로 적용 여부 트래킹
- * - migrations와 동일한 패턴으로 동작
- */
-async function runAllSeeds() {
-    // wrangler.toml에서 DB 이름 가져오기
-    let dbName = 'local-clinic-db';
-    const wranglerPath = path.join(PROJECT_ROOT, 'wrangler.toml');
-    if (fs.existsSync(wranglerPath)) {
-        const content = fs.readFileSync(wranglerPath, 'utf8');
-        const match = content.match(/database_name\s*=\s*"([^"]+)"/);
-        if (match) dbName = match[1];
-    }
-
-    // seeds 폴더 경로 (스타터킷 구조 지원)
-    const seedsDir = IS_STARTER_KIT
-        ? path.join(PROJECT_ROOT, 'core', 'seeds')
-        : path.join(PROJECT_ROOT, 'seeds');
-
-    if (!fs.existsSync(seedsDir)) {
-        console.log(`\n🌱 Seeds 폴더 없음: ${seedsDir}`);
-        return;
-    }
-
-    // 프로덕션 전용 또는 특수 목적 seeds (로컬 개발 시 제외)
-    const SKIP_SEEDS = [
-        'go_live.sql',           // 프로덕션 전용 (UNIQUE constraint 등)
-        'seed_digestive_content.sql',  // 대용량 컨텐츠 (선택적)
-    ];
-
-    // 모든 .sql 파일 가져오기 (정렬됨, 제외 목록 필터링)
-    const seedFiles = fs.readdirSync(seedsDir)
-        .filter(f => f.endsWith('.sql'))
-        .filter(f => !SKIP_SEEDS.includes(f))
-        .sort();
-
-    if (seedFiles.length === 0) {
-        return;
-    }
-
-    // d1_seeds 테이블 존재 확인 및 생성
-    await ensureSeedsTable(dbName);
-
-    // 이미 적용된 seeds 조회
-    const appliedSeeds = await getAppliedSeeds(dbName);
-
-    // 새로 적용해야 할 seeds 필터링
-    const pendingSeeds = seedFiles.filter(f => !appliedSeeds.has(f));
-
-    if (pendingSeeds.length === 0) {
-        console.log(`\n🌱 Seeds (${seedFiles.length}개 파일)`);
-        console.log(`   → 모든 seeds 이미 적용됨`);
-        return;
-    }
-
-    console.log(`\n🌱 Seeds 적용 중... (${pendingSeeds.length}/${seedFiles.length}개)`);
-
-    let appliedCount = 0;
-    let errorCount = 0;
-
-    for (const fileName of pendingSeeds) {
-        const filePath = path.join(seedsDir, fileName);
-
-        try {
-            const result = await runCommand(
-                `npx wrangler d1 execute ${dbName} --local --file="${filePath}" --yes 2>&1`,
-                true
-            );
-
-            if (result.success) {
-                await recordSeed(dbName, fileName);
-                console.log(`   ✅ ${fileName}`);
-                appliedCount++;
-            } else {
-                // UNIQUE constraint 에러는 성공으로 처리 (데이터 이미 존재)
-                if (result.output && result.output.includes('UNIQUE constraint failed')) {
-                    await recordSeed(dbName, fileName);
-                    console.log(`   ⏭️  ${fileName}: 데이터 이미 존재 (트래킹 등록)`);
-                    appliedCount++;
-                } else {
-                    console.log(`   ⚠️  ${fileName}: ${result.output || '실행 실패'}`);
-                    errorCount++;
-                }
-            }
-        } catch (e) {
-            console.log(`   ❌ ${fileName}: ${e.message}`);
-            errorCount++;
+        if (result.success || result.stderr?.includes('already exists')) {
+            console.log('✅');
+        } else {
+            console.log(`❌ ${result.stderr}`);
         }
     }
-
-    console.log(`   → 적용: ${appliedCount}, 오류: ${errorCount}`);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1243,18 +862,18 @@ async function runAllSeeds() {
 // ═══════════════════════════════════════════════════════════════
 
 async function corePull(targetVersion = 'latest', options = {}) {
-    const { dryRun = false, force = false } = options;
+    const { dryRun = false } = options;
 
     if (dryRun) {
-        console.log('\uD83D\uDD0D Clinic-OS Core Pull DRY-RUN \uBAA8\uB4DC\n');
-        console.log('   \uC2E4\uC81C \uD30C\uC77C \uBCC0\uACBD \uC5C6\uC774 \uBCC0\uACBD \uC608\uC815 \uC0AC\uD56D\uB9CC \uCD9C\uB825\uD569\uB2C8\uB2E4.\n');
+        console.log('🔍 Clinic-OS Core Pull DRY-RUN 모드\n');
+        console.log('   실제 파일 변경 없이 변경 예정 사항만 출력합니다.\n');
     } else {
-        console.log('\uD83D\uDEA2 Clinic-OS Core Pull v4.3 (Local Git Architecture v1.4)\n');
+        console.log('🚢 Clinic-OS Core Pull v4.2 (Local Git Architecture v1.3)\n');
     }
 
     // 스타터킷 구조 감지 로그
     if (IS_STARTER_KIT) {
-        console.log('\uD83D\uDCE6 \uC2A4\uD0C0\uD130\uD0B7 \uAD6C\uC870 \uAC10\uC9C0\uB428 (core/ \uD3F4\uB354 \uC0AC\uC6A9)\n');
+        console.log('📦 스타터킷 구조 감지됨 (core/ 폴더 사용)\n');
     }
 
     // ═══════════════════════════════════════════════
@@ -1262,13 +881,6 @@ async function corePull(targetVersion = 'latest', options = {}) {
     // ═══════════════════════════════════════════════
     if (!dryRun && await isDirty()) {
         await createWipSnapshot();
-    }
-
-    // ═══════════════════════════════════════════════
-    // 0.5 TASK-009: 이전 엔진 업데이트 실패 잔여 복구
-    // ═══════════════════════════════════════════════
-    if (!dryRun) {
-        await recoverFromPreviousFailure(runCommand);
     }
 
     // ═══════════════════════════════════════════════
@@ -1349,8 +961,7 @@ async function corePull(targetVersion = 'latest', options = {}) {
     // 6. 충돌 = (업데이트 대상 ∩ 클라이언트 수정) - 실제 내용이 다른 것만
     // ═══════════════════════════════════════════════
     const potentialConflicts = intersect(filesToUpdate, clientTouchedCore)
-        .filter(f => !isLocalPath(f)) // LOCAL은 충돌 대상 아님
-        .filter(f => !f.startsWith('seeds/')); // seeds/*.sql은 항상 코어 우선 (데이터 추가용)
+        .filter(f => !isLocalPath(f)); // LOCAL은 충돌 대상 아님
 
     // 실제 내용 비교로 진짜 충돌만 필터링
     const { realConflicts: conflicts, alreadySynced } = await filterRealConflicts(potentialConflicts, version);
@@ -1530,60 +1141,39 @@ async function corePull(targetVersion = 'latest', options = {}) {
     }
 
     // ═══════════════════════════════════════════════
-    // 7.6. TASK-011: 엔진 파일 처리 (Atomic Update)
+    // 7.6. 엔진 파일 처리 (self-update, 마지막에 적용)
     // ⚠️ 현재 실행 중인 스크립트가 업데이트될 수 있음
-    // Atomic Swap으로 안전하게 업데이트
     // ═══════════════════════════════════════════════
     if (engineQueue.length > 0) {
-        const engineResult = await atomicEngineUpdate(version, engineQueue, runCommand);
-
-        if (engineResult.success) {
-            if (!engineResult.skipped) {
-                appliedCount += engineQueue.length;
-            }
-        } else {
-            console.log(`   \u26A0\uFE0F  \uC5D4\uC9C4 \uC5C5\uB370\uC774\uD2B8 \uC2E4\uD328: ${engineResult.error}`);
-            if (engineResult.rolledBack) {
-                console.log('   \uD83D\uDD04 \uAE30\uC874 \uC5D4\uC9C4 \uBCF5\uC6D0\uB428 - \uC218\uB3D9 \uD655\uC778 \uD544\uC694');
-            }
-            if (engineResult.requiresManualRecovery) {
-                console.log('   \u274C \uC218\uB3D9 \uBCF5\uAD6C\uAC00 \uD544\uC694\uD569\uB2C8\uB2E4!');
-                console.log('   \u26A0\uFE0F  .docking/.engine-backup/ \uB514\uB809\uD1A0\uB9AC\uB97C \uD655\uC778\uD558\uC138\uC694.');
+        console.log(`\n⚙️  엔진 파일 업데이트 중... (${engineQueue.length}개)`);
+        for (const { status: opStatus, path: filePath } of engineQueue) {
+            if (opStatus === 'D') {
+                // 엔진 파일은 루트에 있으므로 경로 변환 불필요
+                const fullPath = path.join(PROJECT_ROOT, filePath);
+                if (fs.existsSync(fullPath)) {
+                    fs.removeSync(fullPath);
+                    deletedCount++;
+                }
+            } else {
+                // 엔진 파일은 루트에 있으므로 git restore 사용 가능
+                await runCommand(`git restore --source ${version} -- "${filePath}"`, true);
+                appliedCount++;
             }
         }
+        console.log(`   ✅ 엔진 업데이트 완료`);
     }
 
-    console.log(`\n   \u2705 \uC801\uC6A9: ${appliedCount}\uAC1C, \uC0AD\uC81C: ${deletedCount}\uAC1C`);
-    console.log(`   \u23ED\uFE0F  \uC2A4\uD0B5: protected=${protectedCount}, local=${localCount}`);
+    console.log(`\n   ✅ 적용: ${appliedCount}개, 삭제: ${deletedCount}개`);
+    console.log(`   ⏭️  스킵: protected=${protectedCount}, local=${localCount}`);
 
     // ═══════════════════════════════════════════════
-    // 7.9. TASK-010: Pre-flight 스키마 검증
+    // 8. 새 마이그레이션 감지 및 실행
     // ═══════════════════════════════════════════════
-    if (!dryRun) {
-        const schemaState = await verifyMigrationState({ force });
+    const newMigrations = fileOps
+        .filter(op => op.status === 'A' && op.path.startsWith('migrations/') && op.path.endsWith('.sql'))
+        .map(op => op.path);
 
-        if (!schemaState.isValid) {
-            printStateReport(schemaState);
-            throw new Error('\uC2A4\uD0A4\uB9C8 \uC0C1\uD0DC \uBD88\uC77C\uCE58. --force \uC635\uC158\uC73C\uB85C \uAC15\uC81C \uC9C4\uD589 \uAC00\uB2A5\uD569\uB2C8\uB2E4.');
-        }
-
-        if (schemaState.hasSchemaConflict && force) {
-            printStateReport(schemaState);
-            console.log('\n   \u26A0\uFE0F  --force \uC635\uC158\uC73C\uB85C \uAC15\uC81C \uC9C4\uD589\uD569\uB2C8\uB2E4.\n');
-        }
-    }
-
-    // ═══════════════════════════════════════════════
-    // 8. 모든 마이그레이션 체크 및 적용
-    // ═══════════════════════════════════════════════
-    await runAllMigrations();
-
-    // ═══════════════════════════════════════════════
-    // 8.5. Seeds 실행 (샘플 데이터)
-    // - seeds 폴더가 있으면 미적용 파일만 실행
-    // - 없으면 스킵 (기존 클라이언트는 샘플 불필요)
-    // ═══════════════════════════════════════════════
-    await runAllSeeds();
+    await runNewMigrations(newMigrations);
 
     // ═══════════════════════════════════════════════
     // 9. 메타데이터 업데이트 (.core/version)
@@ -1695,8 +1285,7 @@ async function preflightCheck(targetVersion = 'latest') {
 
     // 7. 충돌 계산 - 실제 내용이 다른 것만
     const potentialConflicts = intersect(filesToUpdate, clientTouchedCore)
-        .filter(f => !isLocalPath(f))
-        .filter(f => !f.startsWith('seeds/')); // seeds/*.sql은 항상 코어 우선
+        .filter(f => !isLocalPath(f));
 
     const { realConflicts: conflicts, alreadySynced } = await filterRealConflicts(potentialConflicts, version);
 
@@ -1860,6 +1449,13 @@ async function main() {
         // 실제 업데이트 진행
         console.log('\n');
         await corePull(result.target, { dryRun: false });
+
+        // 업데이트 후 DB Doctor 실행
+        console.log('\n🗃️  데이터베이스 상태 확인 중...');
+        const dbResult = await runDbDoctorCheck();
+        if (!dbResult.ok) {
+            console.log('\n💡 DB 문제 해결: npm run doctor --fix');
+        }
 
     } catch (error) {
         console.error('\n❌ Error:', error.message);

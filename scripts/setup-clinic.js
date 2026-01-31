@@ -402,22 +402,37 @@ clinic_name: "${clinicName}"
     }
 
     // 6. Generate Configuration (Local First)
+    console.log("\n⚙️  Step 6: 데이터베이스 설정\n");
+
     const wranglerPath = path.join(PROJECT_ROOT, 'wrangler.toml');
 
-    // Standardized DB/Bucket names
-    let dbName = 'local-clinic-db';
-    const bucketName = 'local-clinic-uploads';
+    // Sanitize clinic name for use as DB/bucket name
+    let cleanName = clinicName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+    while (cleanName.startsWith('-')) cleanName = cleanName.substring(1);
+    while (cleanName.endsWith('-')) cleanName = cleanName.slice(0, -1);
+    if (!cleanName) cleanName = 'my-clinic';
+
+    // Default DB name based on clinic name
+    let defaultDbName = `${cleanName}-db`;
+    let dbName = defaultDbName;
     let dbId = "local-db-placeholder"; // Default for local dev
 
-    // ⚠️ CRITICAL Fix: If wrangler.toml exists, respect its database_name to avoid mismatch
+    // Check existing wrangler.toml first
     if (fs.existsSync(wranglerPath)) {
         try {
             const tomlContent = await fs.readFile(wranglerPath, 'utf-8');
             const match = tomlContent.match(/database_name\s*=\s*["']([^"']+)["']/);
             if (match && match[1]) {
                 const existingDbName = match[1];
-                if (existingDbName !== dbName) {
-                    console.log(`   ℹ️  기존 설정 감지: DB 이름 유지 (${existingDbName})`);
+                console.log(`   ℹ️  기존 DB 설정 감지: ${existingDbName}`);
+
+                if (!IS_AUTO) {
+                    const keepExisting = await ask(`   기존 DB 이름을 유지하시겠습니까? (y/n, default: y): `);
+                    if (keepExisting.toLowerCase() !== 'n') {
+                        dbName = existingDbName;
+                        console.log(`   → 기존 DB 이름 유지: ${dbName}`);
+                    }
+                } else {
                     dbName = existingDbName;
                 }
             }
@@ -426,11 +441,25 @@ clinic_name: "${clinicName}"
         }
     }
 
-    // Sanitize clinic name for the 'name' field in wrangler.toml (just for identification)
-    let cleanName = clinicName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
-    while (cleanName.startsWith('-')) cleanName = cleanName.substring(1);
-    while (cleanName.endsWith('-')) cleanName = cleanName.slice(0, -1);
-    if (!cleanName) cleanName = 'local-clinic';
+    // If no existing DB or user wants new one, ask for DB name
+    if (dbName === defaultDbName && !IS_AUTO) {
+        console.log(`\n   데이터베이스 이름을 지정하세요.`);
+        console.log(`   - 영문 소문자, 숫자, 하이픈만 사용 가능`);
+        console.log(`   - 프로덕션 배포 시 Cloudflare D1 데이터베이스 이름이 됩니다`);
+        console.log(`   - 예: ${cleanName}-db, my-clinic-db, seoul-clinic-db\n`);
+
+        const inputDbName = await ask(`   DB 이름 (Enter for "${defaultDbName}"): `);
+        if (inputDbName) {
+            // Sanitize input
+            dbName = inputDbName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-');
+            if (!dbName.endsWith('-db')) dbName += '-db';
+        }
+    }
+
+    console.log(`   ✅ 데이터베이스 이름: ${dbName}`);
+
+    // Bucket name follows DB name pattern
+    const bucketName = dbName.replace(/-db$/, '-uploads');
 
     // Function to write wrangler.toml
     const writeWrangler = async (dId) => {
@@ -738,27 +767,6 @@ exit 0
                 // Optional: Log warning if critical seeds are missing, but for now silent skip is safer for optional seeds
                 // console.log(`   ⚠️  Seed skipped (not found): ${seedFile}`);
             }
-        }
-
-        // d1_seeds 테이블 생성 및 실행된 seeds 기록 (core:pull 시 재실행 방지)
-        console.log("   📝 Seeds 기록 초기화 중...");
-        await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "CREATE TABLE IF NOT EXISTS d1_seeds (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, applied_at TEXT DEFAULT (datetime('now')))" --yes`);
-
-        // seeds 폴더의 모든 파일을 기록
-        let seedsDir = path.join(PROJECT_ROOT, 'core/seeds');
-        if (!fs.existsSync(seedsDir)) {
-            seedsDir = path.join(PROJECT_ROOT, 'seeds');
-        }
-
-        if (fs.existsSync(seedsDir)) {
-            const seedFiles = fs.readdirSync(seedsDir)
-                .filter(f => f.endsWith('.sql'))
-                .sort();
-
-            for (const seedFile of seedFiles) {
-                await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_seeds (name) VALUES ('${seedFile}')" --yes`);
-            }
-            console.log(`   ✅ ${seedFiles.length}개 seeds 기록 완료 (초기 설치)`);
         }
 
         if (initOk && seedOk) {
