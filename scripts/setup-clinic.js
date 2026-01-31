@@ -499,6 +499,28 @@ CLINIC_NAME = "${clinicName}"
     // 7. Install Dependencies (moved up)
     console.log("\n📦 Step 7: 의존성 설치\n");
 
+    // 손상된 node_modules 감지 및 정리
+    const nodeModulesPath = path.join(PROJECT_ROOT, 'node_modules');
+    const packageLockPath = path.join(PROJECT_ROOT, 'package-lock.json');
+
+    if (fs.existsSync(nodeModulesPath)) {
+        // node_modules가 있지만 손상되었을 수 있음 (이전 설치 실패 등)
+        const reactDomPath = path.join(nodeModulesPath, 'react-dom', 'package.json');
+        const isCorrupted = fs.existsSync(nodeModulesPath) &&
+            fs.readdirSync(nodeModulesPath).length > 0 &&
+            fs.existsSync(path.join(nodeModulesPath, 'react-dom')) &&
+            !fs.existsSync(reactDomPath);
+
+        if (isCorrupted) {
+            console.log("   ⚠️  손상된 node_modules 감지됨, 정리 중...");
+            await fs.remove(nodeModulesPath);
+            if (fs.existsSync(packageLockPath)) {
+                await fs.remove(packageLockPath);
+            }
+            console.log("   ✓ node_modules 정리 완료");
+        }
+    }
+
     console.log("   [1/2] 프로젝트 루트 의존성 설치...");
     await runCommand('npm install');
 
@@ -513,6 +535,14 @@ CLINIC_NAME = "${clinicName}"
         if (!fs.existsSync(gitDir)) {
             console.log("\n🔗 Step 7.5: 로컬 Git 아키텍처 초기화...");
             console.log("   클라이언트 소유 Git + HQ upstream 연결을 설정합니다.");
+
+            // 0) core/.git 제거 (embedded git repo 문제 방지)
+            // core가 별도 git repo면 git add -A 시 submodule처럼 처리되어 파일이 누락됨
+            const coreGitDir = path.join(PROJECT_ROOT, 'core', '.git');
+            if (fs.existsSync(coreGitDir)) {
+                console.log("   🧹 core/.git 제거 중 (embedded git repo 방지)...");
+                await fs.remove(coreGitDir);
+            }
 
             // 1) Git init (클라이언트 소유)
             await runCommand(`git init`);
@@ -767,6 +797,27 @@ exit 0
                 // Optional: Log warning if critical seeds are missing, but for now silent skip is safer for optional seeds
                 // console.log(`   ⚠️  Seed skipped (not found): ${seedFile}`);
             }
+        }
+
+        // d1_seeds 테이블 생성 및 실행된 seeds 기록 (core:pull 시 재실행 방지)
+        console.log("   📝 Seeds 기록 초기화 중...");
+        await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "CREATE TABLE IF NOT EXISTS d1_seeds (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, applied_at TEXT DEFAULT (datetime('now')))" --yes`);
+
+        // seeds 폴더의 모든 파일을 기록
+        let seedsDir = path.join(PROJECT_ROOT, 'core/seeds');
+        if (!fs.existsSync(seedsDir)) {
+            seedsDir = path.join(PROJECT_ROOT, 'seeds');
+        }
+
+        if (fs.existsSync(seedsDir)) {
+            const seedFiles = fs.readdirSync(seedsDir)
+                .filter(f => f.endsWith('.sql'))
+                .sort();
+
+            for (const seedFile of seedFiles) {
+                await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_seeds (name) VALUES ('${seedFile}')" --yes`);
+            }
+            console.log(`   ✅ ${seedFiles.length}개 seeds 기록 완료 (초기 설치)`);
         }
 
         if (initOk && seedOk) {

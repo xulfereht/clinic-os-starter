@@ -11,6 +11,9 @@
  *
  *   // 플러그인 마이그레이션 실행
  *   await runPluginMigration('plugin-id', '/path/to/migration.sql', { local: true });
+ *
+ * @see ARCHITECTURE.md#4-데이터베이스
+ * @see migrations/ - 마이그레이션 SQL 파일
  */
 
 import fs from 'fs-extra';
@@ -20,7 +23,46 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const PROJECT_ROOT = path.join(__dirname, '../..');
+
+/**
+ * Find actual project root by looking for wrangler.toml first (has DB config)
+ * Then falls back to other markers if wrangler.toml not found.
+ * Traverses up from script location to handle both:
+ * - Direct run from root (/.docking/engine/migrate.js)
+ * - Run from core (/core/.docking/engine/migrate.js)
+ */
+function findProjectRoot(startDir) {
+    let current = startDir;
+
+    // 1차: wrangler.toml 우선 탐색 (DB 설정이 여기 있음)
+    for (let i = 0; i < 5; i++) {
+        if (fs.existsSync(path.join(current, 'wrangler.toml'))) {
+            return current;
+        }
+        const parent = path.dirname(current);
+        if (parent === current) break;
+        current = parent;
+    }
+
+    // 2차: 다른 마커로 fallback
+    current = startDir;
+    const fallbackMarkers = ['.docking/config.yaml', 'clinic.json'];
+    for (let i = 0; i < 5; i++) {
+        for (const marker of fallbackMarkers) {
+            if (fs.existsSync(path.join(current, marker))) {
+                return current;
+            }
+        }
+        const parent = path.dirname(current);
+        if (parent === current) break;
+        current = parent;
+    }
+
+    // Fallback to original behavior (2 levels up from .docking/engine/)
+    return path.join(startDir, '../..');
+}
+
+const PROJECT_ROOT = findProjectRoot(__dirname);
 
 // 기본 설정 (wrangler.toml에서 읽지 못할 경우의 fallback)
 const DEFAULT_DB_NAME = 'clinic-os-db';
