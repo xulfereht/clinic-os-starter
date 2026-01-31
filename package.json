@@ -1,6 +1,6 @@
 {
   "name": "clinic-os-client",
-  "version": "1.7.4",
+  "version": "1.7.5",
   "type": "module",
   "description": "Clinic-OS 클라이언트",
   "scripts": {
