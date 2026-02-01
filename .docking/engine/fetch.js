@@ -848,15 +848,34 @@ async function mergePackageJson(targetTag) {
             console.log(`   📦 새 의존성: deps=${addedDeps}, devDeps=${addedDevDeps}`);
         }
 
-        // 5. 스타터킷 구조: 루트 package.json 버전도 동기화
+        // 5. 스타터킷 구조: 루트 package.json 버전 및 스크립트 동기화
         if (IS_STARTER_KIT && merged.version) {
             const rootPkgPath = path.join(PROJECT_ROOT, 'package.json');
             if (fs.existsSync(rootPkgPath)) {
                 const rootPkg = fs.readJsonSync(rootPkgPath);
+                let rootUpdated = false;
+
+                // 버전 동기화
                 if (rootPkg.version !== merged.version) {
                     rootPkg.version = merged.version;
+                    rootUpdated = true;
+                }
+
+                // 스크립트 동기화 (core 스크립트를 루트에서도 실행 가능하게)
+                if (merged.scripts) {
+                    rootPkg.scripts = rootPkg.scripts || {};
+                    for (const [key, value] of Object.entries(merged.scripts)) {
+                        // 루트에 없는 스크립트만 추가 (기존 커스텀 스크립트 보존)
+                        if (!(key in rootPkg.scripts)) {
+                            rootPkg.scripts[key] = value;
+                            rootUpdated = true;
+                        }
+                    }
+                }
+
+                if (rootUpdated) {
                     fs.writeJsonSync(rootPkgPath, rootPkg, { spaces: 4 });
-                    console.log(`   🔄 루트 package.json 버전 동기화: ${merged.version}`);
+                    console.log(`   🔄 루트 package.json 동기화: v${merged.version}`);
                 }
             }
         }
