@@ -1,6 +1,6 @@
 {
   "name": "clinic-os-client",
-  "version": "1.8.5",
+  "version": "1.8.6",
   "type": "module",
   "description": "Clinic-OS 클라이언트",
   "scripts": {
@@ -14,6 +14,7 @@
     "dev": "node scripts/dev-preflight.js && npm run dev --prefix core",
     "build": "npm run build --prefix core",
     "deploy": "node scripts/deploy-guard.js",
+    "doctor": "node scripts/doctor.js",
     "db:init": "npm run db:init --prefix core",
     "db:seed": "npm run db:seed --prefix core",
     "db:migrate": "npm run db:migrate --prefix core",
