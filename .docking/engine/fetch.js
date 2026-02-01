@@ -1086,10 +1086,7 @@ async function runAllMigrations() {
             // 이미 존재 - 기록만 추가
             alreadyExists++;
             await recordMigration(dbName, fileName);
-            if (isFirstRun) {
-                // 최초 실행 시에만 표시 (이미 있는 것들)
-                console.log(`   \u23ED\uFE0F  ${fileName} (\uC774\uBBF8 \uC874\uC7AC)`);
-            }
+            console.log(`   \u23ED\uFE0F  ${fileName} (\uC774\uBBF8 \uC874\uC7AC)`);
         } else {
             console.log(`   \u274C ${fileName}: ${output.substring(0, 100)}`);
             errorCount++;
