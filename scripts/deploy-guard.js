@@ -75,6 +75,20 @@ async function deployGuard() {
     console.log(`   ✅ DB ID: ${dbId || 'N/A'}`);
     console.log(`   ✅ 버킷: ${bucketName || 'N/A'}\n`);
 
+    // 2.1 Check CLOUDFLARE_URL Environment Variable
+    console.log("🔗 Step 2.1: CLOUDFLARE_URL 확인...");
+    const cloudflareUrlMatch = tomlContent.match(/CLOUDFLARE_URL\s*=\s*"([^"]+)"/);
+    const cloudflareUrl = cloudflareUrlMatch ? cloudflareUrlMatch[1] : null;
+    const defaultPagesUrl = `https://${projectName}.pages.dev`;
+
+    if (!cloudflareUrl) {
+        console.log(`   ⚠️  CLOUDFLARE_URL 미설정 → 기본값 사용: ${defaultPagesUrl}`);
+        console.log("   💡 커스텀 도메인 연결 후 wrangler.toml [vars]에 추가하거나,");
+        console.log("      관리자 페이지(설정 > 기본정보)에서 수정할 수 있습니다.\n");
+    } else {
+        console.log(`   ✅ CLOUDFLARE_URL: ${cloudflareUrl}\n`);
+    }
+
     // 3. Verify Remote Resources
     console.log("☁️  Step 3: 리포트 리소스 검증...");
 
