@@ -203,4 +203,115 @@ npm run publish
 
 ---
 
-> 최종 업데이트: 2026-01-21
+## 🤖 바이브코딩: AI 어시스턴트 활용 가이드
+
+클라이언트가 AI(Gemini, Claude 등)를 통해 Clinic-OS를 수정할 때 올바른 답변을 받도록 하는 문서 시스템과 요청 방법입니다.
+
+### 문서 계층 구조
+
+```
+GEMINI.md (AI 시작점)
+    │
+    ├──→ docs/AI-QUICK-REFERENCE.md (상세 레퍼런스)
+    │       ├── 컴포넌트 위치
+    │       ├── DB 스키마 요약
+    │       ├── JSON 필드 구조
+    │       ├── 자주 하는 작업 예시
+    │       └── 환경 설정
+    │
+    ├──→ docs/API-REFERENCE.md (Admin API 전체)
+    │       ├── 인증 방법
+    │       ├── 모든 엔드포인트
+    │       └── 요청/응답 예시
+    │
+    ├──→ SCHEMA.md (DB 테이블 전체)
+    │
+    └──→ docs/*.md (기능별 상세 문서)
+```
+
+### AI가 참조하는 핵심 파일
+
+| 파일 | 용도 | 위치 |
+|------|------|------|
+| `GEMINI.md` | AI 시작점, 핵심 원칙 | 루트 |
+| `docs/AI-QUICK-REFERENCE.md` | 통합 레퍼런스 | docs/ |
+| `docs/API-REFERENCE.md` | Admin API 문서 | docs/ |
+| `SCHEMA.md` | DB 스키마 | 루트 |
+
+### 효과적인 요청 패턴
+
+**✅ 좋은 요청 (구체적, 문서 참조 유도)**
+
+```
+"병원 전화번호를 02-1234-5678로 변경해줘"
+→ AI가 API-REFERENCE.md 참조 → PUT /api/admin/clinic-info 사용
+
+"운영시간을 평일 9시-7시, 토요일 9시-1시로 바꿔줘"
+→ AI가 hours API 참조 → PUT /api/admin/hours 사용
+
+"새 프로그램 '다이어트 한약' 추가해줘"
+→ AI가 programs API 참조 → POST /api/admin/programs 사용
+
+"홈페이지 메인 비주얼 이미지 바꾸고 싶어"
+→ AI가 AI-QUICK-REFERENCE.md의 컴포넌트 위치 참조
+→ src/plugins/local/로 안내
+```
+
+**❌ 피해야 할 요청 (모호함, 직접 수정 유도)**
+
+```
+"DB에 직접 데이터 넣어줘"
+→ AI가 INSERT 쿼리 제안할 수 있음 (위험)
+→ 대신: "API로 데이터 추가해줘"
+
+"src/pages/ 수정해줘"
+→ 코어 파일 직접 수정 (core:pull 시 덮어씌워짐)
+→ 대신: "플러그인으로 페이지 추가해줘"
+
+"테이블에 컬럼 추가해줘"
+→ 코어 스키마 변경 (위험)
+→ 대신: "custom_ 테이블 만들어줘"
+```
+
+### AI 응답 품질 체크리스트
+
+AI의 답변이 다음을 따르는지 확인:
+
+- [ ] **API 사용**: DB 직접 조작 대신 Admin API 사용 권장
+- [ ] **local/ 폴더**: 코어 파일 대신 local/ 폴더에서 작업
+- [ ] **플러그인 패턴**: 새 기능은 플러그인으로 구현
+- [ ] **문서 참조**: 관련 문서 경로 제시
+
+### 문서 유지보수
+
+**새 기능 추가 시:**
+1. 해당 기능의 API 문서 → `docs/API-REFERENCE.md` 업데이트
+2. 자주 하는 작업이면 → `docs/AI-QUICK-REFERENCE.md`에 예시 추가
+3. DB 변경 있으면 → `SCHEMA.md` 재생성
+
+**문서 배포:**
+```bash
+# 문서 수정 후 mirror-staging에 복사
+cp docs/API-REFERENCE.md .mirror-staging/docs/
+cp docs/AI-QUICK-REFERENCE.md .mirror-staging/docs/
+cp SCHEMA.md .mirror-staging/
+
+# 릴리스에 포함
+npm run publish
+```
+
+### 자연어 → API 매핑 확장
+
+`GEMINI.md`의 "자연어 → API 매핑" 섹션에 새 패턴 추가 시:
+
+```markdown
+| 사용자 요청 | API 호출 |
+|------------|----------|
+| "XXX 해줘" | `METHOD /api/admin/xxx` `{"field": "value"}` |
+```
+
+이 매핑이 많을수록 AI가 정확한 API를 선택합니다.
+
+---
+
+> 최종 업데이트: 2026-02-03
