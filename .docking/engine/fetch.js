@@ -1244,23 +1244,29 @@ async function runAllSeeds() {
                 true
             );
 
+            // wrangler 출력은 stderr에 오는 경우가 많음
+            const output = result.stderr || result.stdout || '';
+
             if (result.success) {
                 await recordSeed(dbName, fileName);
                 console.log(`   ✅ ${fileName}`);
                 appliedCount++;
             } else {
                 // UNIQUE constraint 에러는 성공으로 처리 (데이터 이미 존재)
-                if (result.output && result.output.includes('UNIQUE constraint failed')) {
+                if (output.includes('UNIQUE constraint failed')) {
                     await recordSeed(dbName, fileName);
                     console.log(`   ⏭️  ${fileName}: 데이터 이미 존재 (트래킹 등록)`);
                     appliedCount++;
                 } else {
                     // 에러 메시지에서 핵심만 추출
-                    const errorMsg = result.output
-                        ? result.output.split('\n').find(l => l.includes('ERROR') || l.includes('error') || l.includes('Parse error')) || result.output.substring(0, 200)
-                        : '실행 실패 (상세 오류 없음)';
+                    const errorLines = output.split('\n').filter(l =>
+                        l.includes('ERROR') || l.includes('error') || l.includes('Parse error') || l.includes('SQLITE')
+                    );
+                    const errorMsg = errorLines.length > 0
+                        ? errorLines.slice(0, 3).join('\n      ')
+                        : output.substring(0, 300) || '실행 실패 (상세 오류 없음)';
                     console.log(`   ⚠️  ${fileName}: 실행 실패`);
-                    console.log(`      └─ ${errorMsg.trim()}`);
+                    console.log(`      └─ ${errorMsg}`);
                     errorCount++;
                 }
             }
