@@ -1255,7 +1255,12 @@ async function runAllSeeds() {
                     console.log(`   ⏭️  ${fileName}: 데이터 이미 존재 (트래킹 등록)`);
                     appliedCount++;
                 } else {
-                    console.log(`   ⚠️  ${fileName}: ${result.output || '실행 실패'}`);
+                    // 에러 메시지에서 핵심만 추출
+                    const errorMsg = result.output
+                        ? result.output.split('\n').find(l => l.includes('ERROR') || l.includes('error') || l.includes('Parse error')) || result.output.substring(0, 200)
+                        : '실행 실패 (상세 오류 없음)';
+                    console.log(`   ⚠️  ${fileName}: 실행 실패`);
+                    console.log(`      └─ ${errorMsg.trim()}`);
                     errorCount++;
                 }
             }
