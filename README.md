@@ -32,39 +32,6 @@ npm run core:pull
 - **Antigravity** 솔루션
 - Cloudflare 계정 (배포 시에만 필요)
 
-## Support Agent
-
-Clinic-OS Support Agent는 개발 문제에 대한 AI 기반 기술 지원을 제공합니다.
-
-### 빠른 사용법
-
-```bash
-# 질문하기
-pnpm support "환자 폼에 커스텀 필드를 어떻게 추가하나요?"
-
-# 전문가 분석 (deep mode)
-pnpm support --deep "D1 마이그레이션 오류 해결"
-
-# 대화형 세션
-pnpm support --session
-```
-
-### API 엔드포인트
-
-- **URL**: https://clinic-os-support-agent.yeonseung-choe.workers.dev
-- **인증**: X-License-Key 헤더에 라이선스 키 사용
-- **문서**: [Support Agent API Reference](./docs/SUPPORT_AGENT_API.md) 참조
-
-### 사용량 제한
-
-| 티어 | 세션/일 | 메시지/세션 | Deep Mode |
-|------|---------|-------------|-----------|
-| Free | 10 | 20 | 사용 불가 |
-| Basic | 50 | 50 | 5/일 |
-| Pro | 무제한 | 무제한 | 무제한 |
-
----
-
 ## 도움이 필요하면
 
 Antigravity에게 "/help" 입력 또는 [온라인 가이드](https://clinic-os-hq.pages.dev/guide/setup) 확인
