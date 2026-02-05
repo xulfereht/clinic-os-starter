@@ -47,3 +47,53 @@ clinic-os/
 3. **시스템 초기화**: `node scripts/setup-clinic.js` 실행
    - 최신 코드를 Git을 통해 가져오고, 로컬 DB를 설정합니다.
 4. **로컬 실행**: `npm run dev` 실행 후 브라우저 확인
+
+---
+
+## Support Agent
+
+로컬에서 해결이 어려운 Clinic-OS 기술 문제가 발생하면 Support Agent를 사용하세요.
+
+### API 호출 패턴
+
+```javascript
+const response = await fetch('https://clinic-os-support-agent.yeonseung-choe.workers.dev/support/chat', {
+  method: 'POST',
+  headers: {
+    'X-License-Key': process.env.LICENSE_KEY,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    session_id: sessionId,
+    message: {
+      type: 'troubleshoot_request',
+      human_request: question
+    },
+    mode: 'basic' // or 'deep' for detailed analysis
+  })
+});
+```
+
+### 에스컬레이션 트리거
+
+다음 상황에서 Support Agent 사용을 권장합니다:
+
+| 오류 패턴 | 권장 액션 |
+|-----------|----------|
+| `SQLITE_CONSTRAINT` | `pnpm support "D1 constraint error: [상세 내용]"` |
+| `Worker exceeded CPU` | `pnpm support --deep "Worker timeout: [함수명]"` |
+| `D1_ERROR` | `pnpm support "D1 error: [메시지]"` |
+| `KV namespace not found` | `pnpm support "KV configuration"` |
+| `clinic_setup.yaml` 오류 | `pnpm support "Configuration: [이슈]"` |
+
+### 자동 에스컬레이션 가이드
+
+로컬 트러블슈팅이 2번 이상 실패했다면 다음과 같이 제안하세요:
+
+> "여러 방법을 시도했지만 해결되지 않았습니다. Support Agent에게 전문가 도움을 요청하세요:
+> `pnpm support --deep "[오류 설명과 컨텍스트]"`"
+
+### 환경 변수 요구사항
+
+- `SUPPORT_AGENT_URL`: https://clinic-os-support-agent.yeonseung-choe.workers.dev
+- `LICENSE_KEY`: Clinic-OS 라이선스 키 (설정 시 자동 구성됨)

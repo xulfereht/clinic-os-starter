@@ -5,6 +5,7 @@
   "description": "Clinic-OS 클라이언트",
   "scripts": {
     "setup": "node scripts/setup-clinic.js",
+    "support": "node scripts/support-cli.js",
     "update:starter": "node scripts/update-starter.js",
     "core:pull": "node .docking/engine/fetch.js",
     "core:pull:beta": "node .docking/engine/fetch.js --beta",

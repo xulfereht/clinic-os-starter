@@ -100,6 +100,39 @@ function openBrowser(url) {
     });
 }
 
+// --- Support Agent Configuration ---
+
+async function configureSupportAgent(licenseKey) {
+    console.log("\n🤖 Support Agent 설정\n");
+
+    const envPath = path.join(PROJECT_ROOT, '.env');
+    let envContent = '';
+
+    // Read existing .env if it exists
+    if (fs.existsSync(envPath)) {
+        envContent = await fs.readFile(envPath, 'utf8');
+    }
+
+    // Check if Support Agent is already configured
+    if (envContent.includes('SUPPORT_AGENT_URL')) {
+        console.log("   ✅ Support Agent가 이미 설정되어 있습니다.");
+        return;
+    }
+
+    // Add Support Agent configuration
+    const supportAgentConfig = `
+# Support Agent Configuration
+# AI-powered technical assistance for Clinic-OS development
+SUPPORT_AGENT_URL=https://clinic-os-support-agent.yeonseung-choe.workers.dev
+LICENSE_KEY=${licenseKey || 'your-license-key-here'}
+SUPPORT_AGENT_DEFAULT_MODE=basic
+`;
+
+    await fs.appendFile(envPath, supportAgentConfig);
+    console.log("   ✅ Support Agent 환경 변수가 .env에 추가되었습니다.");
+    console.log("   💡 도움이 필요하면: pnpm support \"질문\"");
+}
+
 // --- Browser-based Device Registration ---
 
 async function registerDeviceViaBrowser(hqUrl) {
@@ -385,6 +418,9 @@ clinic_name: "${clinicName}"
 
     await fs.writeFile(CONFIG_PATH, configContent);
     console.log("   ✅ .docking/config.yaml 생성 완료");
+
+    // 4.5 Configure Support Agent
+    await configureSupportAgent(licenseKey);
 
     // 5. Fetch & Unpack (Docking via Git)
     console.log("\n🚢 Step 5: 애플리케이션 설치 (Git)\n");
