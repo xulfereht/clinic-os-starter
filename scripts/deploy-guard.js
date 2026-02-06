@@ -132,6 +132,16 @@ async function deployGuard() {
     }
     console.log("");
 
+    // 4.5. Auto-backup local DB before deploy
+    console.log("💾 Step 4.5: 로컬 DB 백업...");
+    try {
+        const { backup: dbBackup } = await import('./db-backup.js');
+        dbBackup({ force: true });
+    } catch (e) {
+        console.log(`   ⚠️  백업 실패 (무시됨): ${e.message}`);
+    }
+    console.log("");
+
     // 5. Build
     console.log("🔨 Step 5: 애플리케이션 빌드...");
     const buildResult = await runCommand('npm run build');
