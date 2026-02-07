@@ -594,6 +594,7 @@ async function detectDriftedFiles(targetTag, alreadyInDiff) {
     });
 
     // 로컬과 upstream 내용 비교 (텍스트 파일만)
+    // 주의: runCommand는 stdout.trim()을 하므로 직접 execAsync 사용
     for (const upstreamPath of candidates) {
         const localPath = toLocalPath(upstreamPath);
         const fullLocalPath = path.join(PROJECT_ROOT, localPath);
@@ -604,11 +605,13 @@ async function detectDriftedFiles(targetTag, alreadyInDiff) {
         if (/\.(png|jpg|jpeg|gif|ico|woff2?|ttf|eot|svg|mp4|webm|pdf)$/i.test(upstreamPath)) continue;
 
         try {
-            const upstreamResult = await runCommand(`git show ${targetTag}:"${upstreamPath}"`, true);
-            if (!upstreamResult.success) continue;
+            const { stdout: upstreamContent } = await execAsync(
+                `git show ${targetTag}:"${upstreamPath}"`,
+                { cwd: PROJECT_ROOT, maxBuffer: 10 * 1024 * 1024 }
+            );
 
             const localContent = fs.readFileSync(fullLocalPath, 'utf8');
-            if (localContent !== upstreamResult.stdout) {
+            if (localContent !== upstreamContent) {
                 drifted.push(upstreamPath);
             }
         } catch {
@@ -1457,10 +1460,13 @@ async function corePull(targetVersion = 'latest', options = {}) {
                 try {
                     const localPath = toLocalPath(upstreamPath);
                     const fullLocalPath = path.join(PROJECT_ROOT, localPath);
-                    const upstreamResult = await runCommand(`git show ${version}:"${upstreamPath}"`, true);
-                    if (upstreamResult.success) {
+                    const { stdout: upstreamContent } = await execAsync(
+                        `git show ${version}:"${upstreamPath}"`,
+                        { cwd: PROJECT_ROOT, maxBuffer: 10 * 1024 * 1024 }
+                    );
+                    if (upstreamContent != null) {
                         fs.mkdirSync(path.dirname(fullLocalPath), { recursive: true });
-                        fs.writeFileSync(fullLocalPath, upstreamResult.stdout, 'utf8');
+                        fs.writeFileSync(fullLocalPath, upstreamContent, 'utf8');
                         console.log(`   ✅ ${localPath}`);
                         syncCount++;
                     }
