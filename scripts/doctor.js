@@ -57,16 +57,17 @@ function parseCreateTables(sql) {
     let match;
     while ((match = createTableRegex.exec(sql)) !== null) {
         const tableName = match[1].toLowerCase();
-        const columnsDef = match[2];
+        // Strip SQL line comments to prevent comma-in-comment false positives
+        const columnsDef = match[2].replace(/--[^\n]*/g, '');
         const columns = new Set();
 
-        const lines = columnsDef.split(',');
-        for (const line of lines) {
+        for (const line of splitTopLevelCommas(columnsDef)) {
             const trimmed = line.trim();
-            if (/^(PRIMARY\s+KEY|FOREIGN\s+KEY|UNIQUE|CHECK|CONSTRAINT)/i.test(trimmed)) {
+            if (/^(PRIMARY\s+KEY|FOREIGN\s+KEY|UNIQUE\s|UNIQUE\(|CHECK\s*\(|CONSTRAINT\s)/i.test(trimmed)) {
                 continue;
             }
-            const colMatch = trimmed.match(/^["']?(\w+)["']?\s+/);
+            if (trimmed.startsWith("'") || trimmed.startsWith("(")) continue;
+            const colMatch = trimmed.match(/^["']?(\w+)["']?\s+\w/);
             if (colMatch) {
                 columns.add(colMatch[1].toLowerCase());
             }
@@ -154,6 +155,22 @@ async function runD1Query(dbName, command) {
 }
 
 /**
+ * 괄호 깊이를 고려한 최상위 쉼표 분리 (CHECK 내부 enum 값 무시)
+ */
+function splitTopLevelCommas(str) {
+    const parts = [];
+    let depth = 0, current = '';
+    for (const ch of str) {
+        if (ch === '(') depth++;
+        else if (ch === ')') depth--;
+        if (ch === ',' && depth === 0) { parts.push(current); current = ''; }
+        else current += ch;
+    }
+    if (current) parts.push(current);
+    return parts;
+}
+
+/**
  * CREATE TABLE SQL에서 컬럼명 파싱
  */
 function parseColumnsFromSQL(sql) {
@@ -161,10 +178,11 @@ function parseColumnsFromSQL(sql) {
     if (!sql) return cols;
     const match = sql.match(/\(([^]*)\)/);
     if (!match) return cols;
-    for (const line of match[1].split(',')) {
+    for (const line of splitTopLevelCommas(match[1])) {
         const trimmed = line.trim();
-        if (/^(PRIMARY|UNIQUE|FOREIGN|CHECK|CONSTRAINT)/i.test(trimmed)) continue;
-        const colMatch = trimmed.match(/^["']?(\w+)["']?/);
+        if (/^(PRIMARY\s+KEY|FOREIGN\s+KEY|UNIQUE\s|UNIQUE\(|CHECK\s*\(|CONSTRAINT\s)/i.test(trimmed)) continue;
+        if (trimmed.startsWith("'") || trimmed.startsWith("(")) continue;
+        const colMatch = trimmed.match(/^"?(\w+)"?\s+\w/);
         if (colMatch) cols.add(colMatch[1].toLowerCase());
     }
     return cols;
