@@ -1445,7 +1445,33 @@ async function corePull(targetVersion = 'latest', options = {}) {
     console.log(`   📌 현재 버전: ${current}`);
 
     if (current === version) {
+        // 이미 최신이지만, drift 감지로 로컬/upstream 불일치 파일 확인
         console.log(`\n✅ 이미 최신입니다. (현재: ${current})`);
+        const driftedFiles = await detectDriftedFiles(version, []);
+        if (driftedFiles.length > 0) {
+            console.log(`\n🔄 Drift 감지: ${driftedFiles.length}개 파일이 upstream과 다름`);
+            driftedFiles.forEach(f => console.log(`   📄 ${f}`));
+            console.log(`\n🔧 Drift 파일 동기화 중...`);
+            let syncCount = 0;
+            for (const upstreamPath of driftedFiles) {
+                try {
+                    const localPath = toLocalPath(upstreamPath);
+                    const fullLocalPath = path.join(PROJECT_ROOT, localPath);
+                    const upstreamResult = await runCommand(`git show ${version}:"${upstreamPath}"`, true);
+                    if (upstreamResult.success) {
+                        fs.mkdirSync(path.dirname(fullLocalPath), { recursive: true });
+                        fs.writeFileSync(fullLocalPath, upstreamResult.stdout, 'utf8');
+                        console.log(`   ✅ ${localPath}`);
+                        syncCount++;
+                    }
+                } catch (e) {
+                    console.log(`   ⚠️ ${upstreamPath}: ${e.message}`);
+                }
+            }
+            if (syncCount > 0) {
+                console.log(`\n✅ ${syncCount}개 파일 동기화 완료.`);
+            }
+        }
         return;
     }
 
