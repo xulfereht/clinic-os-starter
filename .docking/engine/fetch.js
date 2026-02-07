@@ -1953,12 +1953,8 @@ async function main() {
         console.log('\n');
         await corePull(result.target, { dryRun: false });
 
-        // 업데이트 후 DB Doctor 실행 (스키마 자동복구는 corePull 내부에서 이미 완료)
-        console.log('\n🗃️  데이터베이스 상태 최종 확인 중...');
-        const dbResult = await runDbDoctorCheck();
-        if (!dbResult.ok) {
-            console.log('\n💡 잔여 DB 문제 해결: npm run doctor --fix');
-        }
+        // 스키마 자동복구는 corePull 내부에서 이미 완료
+        // 추가 Doctor 실행 불필요 (중복 실행 방지)
 
     } catch (error) {
         console.error('\n❌ Error:', error.message);

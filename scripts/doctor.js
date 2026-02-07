@@ -9,10 +9,14 @@ import { fileURLToPath } from 'url';
 const execAsync = promisify(exec);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const PROJECT_ROOT = path.join(__dirname, '..');
+const SCRIPT_ROOT = path.join(__dirname, '..');
 
-// 스타터킷 구조 감지
-const IS_STARTER_KIT = fs.existsSync(path.join(PROJECT_ROOT, 'core', 'package.json'));
+// 스타터킷 구조 감지: core/scripts/doctor.js → PROJECT_ROOT should be project root, not core/
+const IS_STARTER_KIT = fs.existsSync(path.join(SCRIPT_ROOT, 'core', 'package.json'))
+    || fs.existsSync(path.join(SCRIPT_ROOT, '..', 'core', 'package.json'));
+const PROJECT_ROOT = (IS_STARTER_KIT && fs.existsSync(path.join(SCRIPT_ROOT, '..', 'core', 'package.json')))
+    ? path.join(SCRIPT_ROOT, '..')
+    : SCRIPT_ROOT;
 const MIGRATIONS_DIR = IS_STARTER_KIT
     ? path.join(PROJECT_ROOT, 'core', 'migrations')
     : path.join(PROJECT_ROOT, 'migrations');
@@ -740,7 +744,14 @@ async function runDoctor() {
     }
 }
 
-runDoctor().catch(err => {
-    console.error('Fatal error in doctor:', err);
-    process.exit(1);
-});
+// Only run when executed directly (not when imported by fetch.js)
+const isDirectRun = process.argv[1] && (
+    process.argv[1].endsWith('/doctor.js') ||
+    process.argv[1].endsWith('\\doctor.js')
+);
+if (isDirectRun) {
+    runDoctor().catch(err => {
+        console.error('Fatal error in doctor:', err);
+        process.exit(1);
+    });
+}
