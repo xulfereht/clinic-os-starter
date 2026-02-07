@@ -594,7 +594,7 @@ async function detectDriftedFiles(targetTag, alreadyInDiff) {
     });
 
     // 로컬과 upstream 내용 비교 (텍스트 파일만)
-    // 주의: runCommand는 stdout.trim()을 하므로 직접 execAsync 사용
+    // 비교 시 trailing whitespace를 normalize (기존 runCommand.trim()으로 저장된 파일 호환)
     for (const upstreamPath of candidates) {
         const localPath = toLocalPath(upstreamPath);
         const fullLocalPath = path.join(PROJECT_ROOT, localPath);
@@ -611,7 +611,8 @@ async function detectDriftedFiles(targetTag, alreadyInDiff) {
             );
 
             const localContent = fs.readFileSync(fullLocalPath, 'utf8');
-            if (localContent !== upstreamContent) {
+            // trailing whitespace 차이는 무시 (runCommand.trim()으로 적용된 기존 파일 호환)
+            if (localContent.trimEnd() !== upstreamContent.trimEnd()) {
                 drifted.push(upstreamPath);
             }
         } catch {
@@ -674,17 +675,21 @@ async function restoreFileFromUpstream(tag, upstreamPath) {
     const localPath = toLocalPath(upstreamPath);
     const fullLocalPath = path.join(PROJECT_ROOT, localPath);
 
-    // 파일 내용 가져오기
-    const result = await runCommand(`git show ${tag}:"${upstreamPath}"`, true);
-    if (!result.success) {
+    // 파일 내용 가져오기 (trim 없이 원본 보존)
+    try {
+        const { stdout } = await execAsync(
+            `git show ${tag}:"${upstreamPath}"`,
+            { cwd: PROJECT_ROOT, maxBuffer: 10 * 1024 * 1024 }
+        );
+
+        // 디렉토리 생성 및 파일 저장
+        fs.ensureDirSync(path.dirname(fullLocalPath));
+        fs.writeFileSync(fullLocalPath, stdout);
+        return true;
+    } catch (e) {
         console.log(`   ⚠️  ${upstreamPath}: 파일 내용을 가져올 수 없음`);
         return false;
     }
-
-    // 디렉토리 생성 및 파일 저장
-    fs.ensureDirSync(path.dirname(fullLocalPath));
-    fs.writeFileSync(fullLocalPath, result.stdout);
-    return true;
 }
 
 /**
