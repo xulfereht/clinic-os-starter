@@ -154,21 +154,19 @@ async function runD1Query(dbName, command) {
 }
 
 /**
- * 현재 로컬 DB의 테이블 목록 조회
+ * 전체 테이블/컬럼 정보를 단일 쿼리로 조회 (wrangler 1회 호출)
  */
-async function getCurrentTables(dbName) {
+async function getAllTableColumns(dbName) {
     const results = await runD1Query(dbName,
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%'"
+        "SELECT m.name AS table_name, p.name AS column_name FROM sqlite_master m, pragma_table_info(m.name) p WHERE m.type='table' AND m.name NOT LIKE 'sqlite_%' AND m.name NOT LIKE '_cf_%'"
     );
-    return new Set(results.map(r => r.name.toLowerCase()));
-}
-
-/**
- * 특정 테이블의 컬럼 목록 조회
- */
-async function getTableColumns(dbName, tableName) {
-    const results = await runD1Query(dbName, `PRAGMA table_info("${tableName}")`);
-    return new Set(results.map(r => r.name.toLowerCase()));
+    const tableColumns = new Map();
+    for (const r of results) {
+        const tbl = r.table_name.toLowerCase();
+        if (!tableColumns.has(tbl)) tableColumns.set(tbl, new Set());
+        tableColumns.get(tbl).add(r.column_name.toLowerCase());
+    }
+    return tableColumns;
 }
 
 /**
@@ -176,15 +174,15 @@ async function getTableColumns(dbName, tableName) {
  */
 async function compareSchemas(dbName, required) {
     const missing = { tables: [], columns: [] };
-    const currentTables = await getCurrentTables(dbName);
+    const allTableColumns = await getAllTableColumns(dbName);
 
     for (const [tableName, requiredColumns] of required.tables) {
-        if (!currentTables.has(tableName)) {
+        if (!allTableColumns.has(tableName)) {
             missing.tables.push(tableName);
             continue;
         }
 
-        const currentColumns = await getTableColumns(dbName, tableName);
+        const currentColumns = allTableColumns.get(tableName);
         for (const col of requiredColumns) {
             if (!currentColumns.has(col)) {
                 missing.columns.push({ table: tableName, column: col });
