@@ -1628,6 +1628,27 @@ async function corePull(targetVersion = 'latest', options = {}) {
     await runAllMigrations();
 
     // ═══════════════════════════════════════════════
+    // 8.1. 스키마 자동 복구 (마이그레이션 후 누락 테이블/컬럼 보정)
+    // - IF NOT EXISTS 미적용 상태에서 partial 실행된 경우 복구
+    // - seeds 전에 실행해야 함 (seeds가 테이블 존재에 의존)
+    // ═══════════════════════════════════════════════
+    try {
+        const doctorPath = path.join(PROJECT_ROOT, 'scripts', 'doctor.js');
+        if (fs.existsSync(doctorPath)) {
+            const { runSchemaDoctor, getDbNameFromWrangler } = await import(doctorPath);
+            const dbNameForRepair = getDbNameFromWrangler();
+            if (dbNameForRepair) {
+                const schemaResult = await runSchemaDoctor(dbNameForRepair, { fix: true, verbose: true });
+                if (schemaResult.ok) {
+                    console.log('   ✅ 스키마 검증 완료');
+                }
+            }
+        }
+    } catch (e) {
+        console.log(`   ⚠️  스키마 자동 복구 건너뜀: ${e.message}`);
+    }
+
+    // ═══════════════════════════════════════════════
     // 8.5. Seeds 실행 (샘플 데이터)
     // - seeds 폴더가 있으면 미적용 파일만 실행
     // - 없으면 스킵 (기존 클라이언트는 샘플 불필요)
@@ -1910,11 +1931,11 @@ async function main() {
         console.log('\n');
         await corePull(result.target, { dryRun: false });
 
-        // 업데이트 후 DB Doctor 실행
-        console.log('\n🗃️  데이터베이스 상태 확인 중...');
+        // 업데이트 후 DB Doctor 실행 (스키마 자동복구는 corePull 내부에서 이미 완료)
+        console.log('\n🗃️  데이터베이스 상태 최종 확인 중...');
         const dbResult = await runDbDoctorCheck();
         if (!dbResult.ok) {
-            console.log('\n💡 DB 문제 해결: npm run doctor --fix');
+            console.log('\n💡 잔여 DB 문제 해결: npm run doctor --fix');
         }
 
     } catch (error) {
