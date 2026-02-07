@@ -611,8 +611,8 @@ async function detectDriftedFiles(targetTag, alreadyInDiff) {
             );
 
             const localContent = fs.readFileSync(fullLocalPath, 'utf8');
-            // trailing whitespace 차이는 무시 (runCommand.trim()으로 적용된 기존 파일 호환)
-            if (localContent.trimEnd() !== upstreamContent.trimEnd()) {
+            // 앞뒤 공백 차이는 무시 (기존 runCommand.trim()으로 저장된 파일 호환)
+            if (localContent.trim() !== upstreamContent.trim()) {
                 drifted.push(upstreamPath);
             }
         } catch {
