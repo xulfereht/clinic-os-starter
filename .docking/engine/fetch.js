@@ -171,10 +171,7 @@ const PROTECTED_EXACT = new Set([
     'src/pages/intake/new.astro',
     'src/pages/404.astro',
     'src/plugins/custom-homepage/pages/index.astro',
-    // 레이아웃/헤더 관련
-    'src/components/layout/BaseLayout.astro',
-    'src/components/layout/Navbar.astro',
-    'src/components/layout/Footer.astro',
+    // 레이아웃: 관리자 설정/CSS 변수로 커스터마이징 가능하므로 코어 업데이트 허용
     // PageHeader.astro는 코어 버그 수정 적용을 위해 보호하지 않음
     // 클라이언트 설정/스타일
     'src/config.ts',
