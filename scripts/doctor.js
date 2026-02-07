@@ -251,12 +251,12 @@ function generateRecoverySQL(missing) {
                 const colRegex = new RegExp(`["']?${column}["']?\\s+([^,]+)`, 'gi');
                 const colMatch = colRegex.exec(columnsDef);
                 if (colMatch) {
-                    const colDef = colMatch[0].trim();
+                    const typeDef = colMatch[1].trim();
                     recoveryStatements.push({
                         type: 'column',
                         table,
                         column,
-                        sql: `ALTER TABLE "${table}" ADD COLUMN ${colDef};`
+                        sql: `ALTER TABLE "${table}" ADD COLUMN "${column}" ${typeDef};`
                     });
                 }
             }

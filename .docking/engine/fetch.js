@@ -97,8 +97,11 @@ async function runDbDoctorCheck() {
     try {
         const doctorPath = path.join(PROJECT_ROOT, 'scripts', 'doctor.js');
         if (fs.existsSync(doctorPath)) {
-            const { runDbDoctor } = await import(doctorPath);
-            return await runDbDoctor();
+            const { runSchemaDoctor, getDbNameFromWrangler } = await import(doctorPath);
+            const dbName = getDbNameFromWrangler();
+            if (dbName) {
+                return await runSchemaDoctor(dbName, { fix: true, verbose: true });
+            }
         }
     } catch (e) {
         console.log('   ⚠️  DB Doctor 체크 건너뜀:', e.message);
