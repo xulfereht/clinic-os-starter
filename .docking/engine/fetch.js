@@ -1310,7 +1310,29 @@ async function corePull(targetVersion = 'latest', options = {}) {
     }
 
     // ═══════════════════════════════════════════════
-    // 0. 사전 체크: dirty면 WIP 스냅샷 커밋 (dry-run에서는 스킵)
+    // 0. 인프라 사전 동기화 (update:starter)
+    // scripts/, .docking/engine/ 등 인프라 파일을 HQ에서 최신으로 갱신
+    // ═══════════════════════════════════════════════
+    if (!dryRun) {
+        const updateStarterPath = path.join(PROJECT_ROOT, 'scripts', 'update-starter.js');
+        if (fs.existsSync(updateStarterPath)) {
+            console.log('🔄 인프라 파일 사전 동기화 중...');
+            try {
+                const { execSync } = await import('child_process');
+                execSync(`node "${updateStarterPath}"`, {
+                    cwd: PROJECT_ROOT,
+                    stdio: 'inherit',
+                    timeout: 60000
+                });
+                console.log('');
+            } catch (e) {
+                console.log(`   ⚠️  인프라 동기화 건너뜀: ${e.message}\n`);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════
+    // 0.5 사전 체크: dirty면 WIP 스냅샷 커밋 (dry-run에서는 스킵)
     // ═══════════════════════════════════════════════
     if (!dryRun && await isDirty()) {
         await createWipSnapshot();
