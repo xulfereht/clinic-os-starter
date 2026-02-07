@@ -569,6 +569,57 @@ function intersect(arr1, arr2) {
 }
 
 /**
+ * Drift 감지: upstream과 로컬이 다른 파일 찾기
+ * - 버전 간 diff에 포함되지 않았지만, 이전에 보호되어 로컬이 upstream과 다른 파일 감지
+ * - protected/local 파일은 제외
+ */
+async function detectDriftedFiles(targetTag, alreadyInDiff) {
+    const diffSet = new Set(alreadyInDiff);
+    const drifted = [];
+
+    // upstream 타겟 버전의 전체 파일 목록
+    const result = await runCommand(`git ls-tree -r --name-only ${targetTag}`, true);
+    if (!result.success || !result.stdout) return drifted;
+
+    const allUpstreamFiles = result.stdout.split('\n').filter(Boolean);
+
+    // CORE_PATHS에 속하면서 diff에 없고, protected/local이 아닌 파일만 체크
+    const candidates = allUpstreamFiles.filter(f => {
+        if (diffSet.has(f)) return false;
+        if (isProtectedPath(f)) return false;
+        if (isLocalPath(f)) return false;
+        if (f.startsWith('seeds/')) return false;
+        // CORE_PATHS에 속하는지 확인
+        return CORE_PATHS.some(cp => f.startsWith(cp));
+    });
+
+    // 로컬과 upstream 내용 비교 (텍스트 파일만)
+    for (const upstreamPath of candidates) {
+        const localPath = toLocalPath(upstreamPath);
+        const fullLocalPath = path.join(PROJECT_ROOT, localPath);
+
+        if (!fs.existsSync(fullLocalPath)) continue;
+
+        // 바이너리 확장자 스킵
+        if (/\.(png|jpg|jpeg|gif|ico|woff2?|ttf|eot|svg|mp4|webm|pdf)$/i.test(upstreamPath)) continue;
+
+        try {
+            const upstreamResult = await runCommand(`git show ${targetTag}:"${upstreamPath}"`, true);
+            if (!upstreamResult.success) continue;
+
+            const localContent = fs.readFileSync(fullLocalPath, 'utf8');
+            if (localContent !== upstreamResult.stdout) {
+                drifted.push(upstreamPath);
+            }
+        } catch {
+            continue;
+        }
+    }
+
+    return drifted;
+}
+
+/**
  * 실제 내용이 다른 충돌만 필터링
  * - upstream 타겟 버전의 파일 내용
  * - 로컬 파일 내용
@@ -1437,11 +1488,28 @@ async function corePull(targetVersion = 'latest', options = {}) {
     }
 
     // ═══════════════════════════════════════════════
+    // 6.5. Drift 감지: 이전에 보호되었다가 해제된 파일 등
+    //      upstream diff에 없지만 로컬과 upstream이 다른 파일 탐지
+    // ═══════════════════════════════════════════════
+    const driftedFiles = await detectDriftedFiles(version, filesToUpdate);
+    if (driftedFiles.length > 0) {
+        console.log(`\n🔄 Drift 감지: ${driftedFiles.length}개 파일이 upstream과 다름`);
+        driftedFiles.forEach(f => console.log(`   📄 ${f}`));
+    }
+
+    // ═══════════════════════════════════════════════
     // 7. 파일 단위 적용 (삭제 포함)
     //    순서: PROTECTED → LOCAL → SPECIAL_MERGE → 일반 → ENGINE (마지막)
     //    ⚠️ .docking/engine/ 는 self-update 안전을 위해 마지막에 적용
     // ═══════════════════════════════════════════════
     const fileOps = await gitDiffNameStatus(current, version, CORE_PATHS);
+
+    // Drift된 파일을 fileOps에 추가 (Add/Modify로 처리)
+    for (const driftPath of driftedFiles) {
+        if (!fileOps.some(op => op.path === driftPath)) {
+            fileOps.push({ status: 'M', path: driftPath });
+        }
+    }
     let appliedCount = 0;
     let deletedCount = 0;
     let protectedCount = 0;
@@ -1792,8 +1860,18 @@ async function preflightCheck(targetVersion = 'latest') {
 
     const { realConflicts: conflicts, alreadySynced } = await filterRealConflicts(potentialConflicts, version);
 
+    // 7.5. Drift 감지
+    const driftedFiles = await detectDriftedFiles(version, filesToUpdate);
+
     // 8. 상세 분석
     const fileOps = await gitDiffNameStatus(current, version, CORE_PATHS);
+
+    // Drift된 파일을 fileOps에 추가
+    for (const driftPath of driftedFiles) {
+        if (!fileOps.some(op => op.path === driftPath)) {
+            fileOps.push({ status: 'M', path: driftPath });
+        }
+    }
 
     const analysis = {
         protected: [],
@@ -1801,7 +1879,8 @@ async function preflightCheck(targetVersion = 'latest') {
         willApply: [],
         willDelete: [],
         willMerge: [],
-        engine: []
+        engine: [],
+        drifted: []
     };
 
     for (const { status, path: filePath } of fileOps) {
@@ -1820,6 +1899,9 @@ async function preflightCheck(targetVersion = 'latest') {
         }
     }
 
+    // Drift된 파일을 별도 표시
+    analysis.drifted = driftedFiles;
+
     // 9. 결과 출력
     console.log('\n═══════════════════════════════════════════════');
     console.log('📊 Preflight 분석 결과');
@@ -1837,6 +1919,12 @@ async function preflightCheck(targetVersion = 'latest') {
         console.log('   → 업데이트 시 로컬 변경사항이 백업됩니다.\n');
     } else {
         console.log('✅ 실제 충돌 없음\n');
+    }
+
+    if (driftedFiles.length > 0) {
+        console.log(`🔄 Drift 감지: ${driftedFiles.length}개 파일 (upstream과 로컬 불일치)`);
+        driftedFiles.forEach(f => console.log(`   - ${f}`));
+        console.log('   → 업데이트 시 upstream 버전으로 동기화됩니다.\n');
     }
 
     console.log(`📝 적용 예정: ${analysis.willApply.length}개 (추가/수정)`);
