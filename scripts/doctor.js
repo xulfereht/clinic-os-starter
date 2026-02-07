@@ -154,17 +154,34 @@ async function runD1Query(dbName, command) {
 }
 
 /**
+ * CREATE TABLE SQL에서 컬럼명 파싱
+ */
+function parseColumnsFromSQL(sql) {
+    const cols = new Set();
+    if (!sql) return cols;
+    const match = sql.match(/\(([^]*)\)/);
+    if (!match) return cols;
+    for (const line of match[1].split(',')) {
+        const trimmed = line.trim();
+        if (/^(PRIMARY|UNIQUE|FOREIGN|CHECK|CONSTRAINT)/i.test(trimmed)) continue;
+        const colMatch = trimmed.match(/^["']?(\w+)["']?/);
+        if (colMatch) cols.add(colMatch[1].toLowerCase());
+    }
+    return cols;
+}
+
+/**
  * 전체 테이블/컬럼 정보를 단일 쿼리로 조회 (wrangler 1회 호출)
+ * sqlite_master.sql 파싱 방식 - pragma_table_info보다 안정적
  */
 async function getAllTableColumns(dbName) {
     const results = await runD1Query(dbName,
-        "SELECT m.name AS table_name, p.name AS column_name FROM sqlite_master m, pragma_table_info(m.name) p WHERE m.type='table' AND m.name NOT LIKE 'sqlite_%' AND m.name NOT LIKE '_cf_%'"
+        "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%'"
     );
     const tableColumns = new Map();
     for (const r of results) {
-        const tbl = r.table_name.toLowerCase();
-        if (!tableColumns.has(tbl)) tableColumns.set(tbl, new Set());
-        tableColumns.get(tbl).add(r.column_name.toLowerCase());
+        const tbl = r.name.toLowerCase();
+        tableColumns.set(tbl, parseColumnsFromSQL(r.sql));
     }
     return tableColumns;
 }
