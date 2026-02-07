@@ -232,12 +232,16 @@ function generateRecoverySQL(missing) {
     for (const { table, column } of missing.columns) {
         const alterRegex = new RegExp(
             `ALTER\\s+TABLE\\s+["']?${table}["']?\\s+ADD\\s+(?:COLUMN\\s+)?["']?${column}["']?\\s+([^;]+);`,
-            'gi'
+            'i'
         );
-        const match = allSql.match(alterRegex);
+        const alterMatch = alterRegex.exec(allSql);
 
-        if (match) {
-            recoveryStatements.push({ type: 'column', table, column, sql: match[0] });
+        if (alterMatch) {
+            const typeDef = alterMatch[1].trim();
+            recoveryStatements.push({
+                type: 'column', table, column,
+                sql: `ALTER TABLE "${table}" ADD COLUMN "${column}" ${typeDef};`
+            });
         } else {
             const createRegex = new RegExp(
                 `CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?["']?${table}["']?\\s*\\(([\\s\\S]*?)\\);`,
