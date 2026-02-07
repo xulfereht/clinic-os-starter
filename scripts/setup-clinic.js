@@ -729,12 +729,6 @@ exit 0
         }
 
         const wranglerCmd = getWranglerCmd();
-        console.log(`   🚀 스키마 생성 중 (${wranglerCmd.includes('node_modules') ? 'Local binary' : 'npx'})...`);
-        const initOk = await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file=${fs.existsSync(path.join(PROJECT_ROOT, 'migrations/0000_initial_schema.sql')) ? 'migrations/0000_initial_schema.sql' : 'core/migrations/0000_initial_schema.sql'} --yes`);
-
-        // 모든 마이그레이션 파일을 d1_migrations 테이블에 "이미 적용됨"으로 기록
-        // (초기 스키마가 최신 상태이므로 실행할 필요 없음, 나중에 새 마이그레이션만 실행됨)
-        console.log("   🚀 마이그레이션 기록 초기화 중...");
 
         // migrations 폴더 찾기
         let migrationsDir = path.join(PROJECT_ROOT, 'core/migrations');
@@ -742,19 +736,30 @@ exit 0
             migrationsDir = path.join(PROJECT_ROOT, 'migrations');
         }
 
+        // 모든 마이그레이션 파일을 순서대로 실제 실행
+        // (0000이 기본 스키마를 생성하고, 이후 마이그레이션이 ALTER TABLE/INSERT 등을 수행)
         if (fs.existsSync(migrationsDir)) {
             const migrationFiles = fs.readdirSync(migrationsDir)
                 .filter(f => f.endsWith('.sql') && !f.startsWith('_'))
                 .sort();
 
-            // d1_migrations 테이블 생성 (없으면)
+            // d1_migrations 테이블 생성
             await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, applied_at TEXT DEFAULT (datetime('now')))" --yes`);
 
-            // 모든 마이그레이션 파일을 기록 (실행 없이)
+            console.log(`   🚀 ${migrationFiles.length}개 마이그레이션 실행 중...`);
+            let appliedCount = 0;
             for (const migFile of migrationFiles) {
-                await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_migrations (name) VALUES ('${migFile}')" --yes`);
+                const filePath = path.join(migrationsDir, migFile);
+                const relPath = path.relative(PROJECT_ROOT, filePath);
+                const ok = await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file="${relPath}" --yes`);
+                if (ok) {
+                    await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_migrations (name) VALUES ('${migFile}')" --yes`);
+                    appliedCount++;
+                } else {
+                    console.log(`   ⚠️  마이그레이션 실패 (건너뜀): ${migFile}`);
+                }
             }
-            console.log(`   ✅ ${migrationFiles.length}개 마이그레이션 기록 완료 (초기 설치)`);
+            console.log(`   ✅ ${appliedCount}/${migrationFiles.length}개 마이그레이션 실행 완료`);
         }
 
         console.log("   🚀 샘플 데이터 삽입 중...");
@@ -820,10 +825,10 @@ exit 0
             console.log(`   ✅ ${seedFiles.length}개 seeds 기록 완료 (초기 설치)`);
         }
 
-        if (initOk && seedOk) {
+        if (seedOk) {
             console.log("   ✅ 데이터베이스 초기화 및 전체 시딩 완료");
         } else {
-            console.log("   ❌ 데이터베이스 초기화 실패. 위 오류를 확인해 주세요.");
+            console.log("   ❌ 데이터베이스 시딩 실패. 위 오류를 확인해 주세요.");
         }
     } else {
         console.log("   ⚠️  마이그레이션 파일을 찾을 수 없습니다.");
