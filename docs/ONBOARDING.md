@@ -126,4 +126,5 @@ npm run deploy
 
 - [운영 가이드](./OPERATIONS_GUIDE.md) - 일상 운영 방법
 - [터미널 꾸미기](./TERMINAL_BEAUTIFY.md) - 터미널 UX 개선
-- [플러그인 개발](./PLUGIN_DEVELOPMENT_GUIDE.md) - 커스터마이징
+- [플러그인 개발](./PLUGIN_DEVELOPMENT_GUIDE.md) - 플러그인 시스템 이해
+- [커스터마이징 가이드](./CUSTOMIZATION_GUIDE.md) - 홈페이지 커스터마이징 (AI 어시스턴트 활용)

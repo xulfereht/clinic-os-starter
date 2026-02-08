@@ -306,6 +306,7 @@ t('common.bookNow')  // "예약하기" or "Book Now"
 | `docs/API-REFERENCE.md` | Admin API 전체 |
 | `SCHEMA.md` | DB 스키마 |
 | `docs/PLUGIN_DEVELOPMENT_GUIDE.md` | 플러그인 개발 |
+| `docs/CUSTOMIZATION_GUIDE.md` | 홈페이지 커스터마이징 가이드 |
 
 ### 기능별 문서
 | 문서 | 용도 |
