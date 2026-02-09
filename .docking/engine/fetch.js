@@ -996,6 +996,92 @@ async function ensureMigrationsTable(dbName) {
 }
 
 /**
+ * Check if the system is in bootstrap mode
+ * Bootstrap mode: d1_migrations table is missing OR empty (row count = 0)
+ */
+async function isBootstrapMode(dbName) {
+    try {
+        // First check if table exists and get row count in one query
+        const result = await runCommand(
+            `npx wrangler d1 execute ${dbName} --local --command "SELECT COUNT(*) as count FROM d1_migrations" --json 2>&1`,
+            true
+        );
+
+        if (result.success && result.stdout) {
+            try {
+                const data = JSON.parse(result.stdout);
+                if (data && data[0] && data[0].results && data[0].results[0]) {
+                    const rowCount = data[0].results[0].count;
+                    // Table exists but empty = bootstrap mode
+                    return rowCount === 0;
+                }
+            } catch (parseError) {
+                // JSON parse failed - treat as bootstrap
+                return true;
+            }
+        }
+        // Query failed - likely table doesn't exist = bootstrap mode
+        return true;
+    } catch (e) {
+        // Error checking = bootstrap mode
+        return true;
+    }
+}
+
+/**
+ * Parse ALTER TABLE ADD COLUMN SQL to extract table name and column name
+ * Supports: ALTER TABLE table_name ADD COLUMN column_name ...
+ */
+function parseAlterTableSql(sql) {
+    // Normalize whitespace for easier parsing
+    const normalized = sql.replace(/\s+/g, ' ').trim();
+
+    // Regex pattern: ALTER TABLE table_name ADD COLUMN column_name ...
+    const alterRegex = /ALTER\s+TABLE\s+([^\s(]+)\s+ADD\s+COLUMN\s+([^\s(]+)/i;
+    const match = normalized.match(alterRegex);
+
+    if (match && match.length >= 3) {
+        return {
+            tableName: match[1],
+            columnName: match[2]
+        };
+    }
+
+    return null;
+}
+
+/**
+ * Check if a column exists in a table using PRAGMA table_info()
+ * This is the ONLY reliable way to check column existence in SQLite
+ */
+async function columnExists(dbName, tableName, columnName) {
+    try {
+        const result = await runCommand(
+            `npx wrangler d1 execute ${dbName} --local --command "PRAGMA table_info(${tableName})" --json 2>&1`,
+            true
+        );
+
+        if (result.success && result.stdout) {
+            try {
+                const data = JSON.parse(result.stdout);
+                if (data && data[0] && data[0].results) {
+                    // PRAGMA table_info returns array of column info objects
+                    // Each has 'name' property containing column name
+                    return data[0].results.some(col => col.name === columnName);
+                }
+            } catch (parseError) {
+                // JSON parse failed - assume column doesn't exist
+                return false;
+            }
+        }
+        return false;
+    } catch (e) {
+        // Error checking = assume column doesn't exist
+        return false;
+    }
+}
+
+/**
  * d1_migrations 테이블에서 적용된 마이그레이션 목록 조회
  */
 async function getAppliedMigrations(dbName) {
@@ -1064,8 +1150,9 @@ async function updateSchemaDoc() {
  * - d1_migrations 테이블로 적용 여부 추적
  * - 새 마이그레이션만 실행 (기존: 매번 전체 실행)
  * - 적용 후 스키마 문서 자동 갱신
+ * - Bootstrap mode: Handles first run with PRAGMA-based column existence check
  */
-async function runAllMigrations() {
+async function runAllMigrations(forceBootstrap = false) {
     // wrangler.toml에서 DB 이름 가져오기
     let dbName = 'local-clinic-db';
     const wranglerPath = path.join(PROJECT_ROOT, 'wrangler.toml');
@@ -1098,6 +1185,9 @@ async function runAllMigrations() {
     // d1_migrations 테이블 존재 확인 및 생성
     await ensureMigrationsTable(dbName);
 
+    // Check bootstrap mode: table is missing OR empty (row count = 0)
+    const bootstrapMode = forceBootstrap || await isBootstrapMode(dbName);
+
     // 이미 적용된 마이그레이션 조회
     const appliedMigrations = await getAppliedMigrations(dbName);
     const isFirstRun = appliedMigrations.size === 0;
@@ -1111,8 +1201,11 @@ async function runAllMigrations() {
         return;
     }
 
-    // 최초 실행 시 안내 메시지
-    if (isFirstRun) {
+    // Bootstrap mode 안내 메시지
+    if (bootstrapMode) {
+        console.log(`\n🗃️  Bootstrap Mode: 마이그레이션 (${pendingMigrations.length}개)`);
+        console.log(`   → PRAMA 기반 컬럼 존재 확인으로 안전 실행`);
+    } else if (isFirstRun) {
         console.log(`\n🗃️  마이그레이션 트래킹 초기화 + 누락분 적용 (${pendingMigrations.length}개)`);
         console.log(`   → 실행 후 결과 기반으로 트래킹 등록`);
     } else {
@@ -1120,11 +1213,32 @@ async function runAllMigrations() {
     }
 
     let newlyApplied = 0;      // 실제로 새로 적용됨
-    let alreadyExists = 0;     // 이미 존재 (기록만)
+    let skippedExists = 0;     // 이미 존재하여 스킵 (bootstrap only)
+    let alreadyExists = 0;     // 이미 존재 (기존 로직)
     let errorCount = 0;
 
     for (const fileName of pendingMigrations) {
         const filePath = path.join(migrationsDir, fileName);
+
+        // Read migration SQL to determine type
+        const migrationSql = fs.readFileSync(filePath, 'utf8');
+        const parsedAlter = parseAlterTableSql(migrationSql);
+        const isAlterTable = parsedAlter !== null;
+
+        // Bootstrap mode: Handle ALTER TABLE ADD COLUMN with PRAGMA check
+        if (bootstrapMode && isAlterTable) {
+            const { tableName, columnName } = parsedAlter;
+            const colExists = await columnExists(dbName, tableName, columnName);
+
+            if (colExists) {
+                // Column already exists - skip SQL, record as applied
+                skippedExists++;
+                await recordMigration(dbName, fileName);
+                console.log(`   \u23ED\uFE0F  ${fileName} (컬럼 ${tableName}.${columnName} 이미 존재)`);
+                continue;
+            }
+            // Column doesn't exist - proceed with execution
+        }
 
         // TASK-002: SQLITE_BUSY 재시도 래퍼 적용 (Exponential Backoff)
         let result;
@@ -1152,6 +1266,11 @@ async function runAllMigrations() {
             // 최대 재시도 후에도 실패
             console.log(`   \u26A0\uFE0F  ${fileName}: ${retryError.message}`);
             errorCount++;
+            // Bootstrap mode failures should STOP execution
+            if (bootstrapMode) {
+                console.log(`   ⛔ Bootstrap mode 실패로 실행 중단`);
+                break;
+            }
             continue;
         }
 
@@ -1161,18 +1280,30 @@ async function runAllMigrations() {
             await recordMigration(dbName, fileName);
             console.log(`   \u2705 ${fileName} (\uC801\uC6A9\uB428)`);
         } else if (output.includes('already exists') || output.includes('duplicate')) {
-            // 이미 존재 - 기록만 추가
+            // 이미 존재 - 기록만 추가 (bootstrap mode에서는 여기 도달하지 않아야 함)
             alreadyExists++;
             await recordMigration(dbName, fileName);
             console.log(`   \u23ED\uFE0F  ${fileName} (\uC774\uBBF8 \uC874\uC7AC)`);
         } else {
             console.log(`   \u274C ${fileName}: ${output.substring(0, 100)}`);
             errorCount++;
+            // Bootstrap mode failures should STOP execution
+            if (bootstrapMode) {
+                console.log(`   ⛔ Bootstrap mode 실패로 실행 중단`);
+                break;
+            }
         }
     }
 
     // 결과 요약
-    if (isFirstRun) {
+    if (bootstrapMode) {
+        console.log(`   → 새로 적용: ${newlyApplied}, 스킵 (이미 존재): ${skippedExists}, 오류: ${errorCount}`);
+        if (errorCount === 0) {
+            console.log(`   ✅ Bootstrap 완료 - 정상 모드로 전환 가능`);
+        } else {
+            console.log(`   ⚠️  Bootstrap 실패 - 수동 확인 필요`);
+        }
+    } else if (isFirstRun) {
         console.log(`   → 새로 적용: ${newlyApplied}, 이미 존재: ${alreadyExists}, 오류: ${errorCount}`);
         console.log(`   ✅ 트래킹 초기화 완료 (총 ${newlyApplied + alreadyExists}개 등록)`);
     } else {
@@ -1343,7 +1474,7 @@ async function runAllSeeds() {
 // ═══════════════════════════════════════════════════════════════
 
 async function corePull(targetVersion = 'latest', options = {}) {
-    const { dryRun = false, force = false } = options;
+    const { dryRun = false, force = false, forceBootstrap = false } = options;
 
     if (dryRun) {
         console.log('\uD83D\uDD0D Clinic-OS Core Pull DRY-RUN \uBAA8\uB4DC\n');
@@ -1752,7 +1883,7 @@ async function corePull(targetVersion = 'latest', options = {}) {
     // ═══════════════════════════════════════════════
     // 8. 모든 마이그레이션 체크 및 적용
     // ═══════════════════════════════════════════════
-    await runAllMigrations();
+    await runAllMigrations(forceBootstrap);
 
     // ═══════════════════════════════════════════════
     // 8.1. 스키마 자동 복구 (마이그레이션 후 누락 테이블/컬럼 보정)
@@ -2013,6 +2144,7 @@ async function main() {
     let dryRun = false;
     let skipConfirm = false;
     let checkOnly = false;
+    let forceBootstrap = false;
 
     for (const arg of args) {
         if (arg === '--dry-run') {
@@ -2029,13 +2161,15 @@ async function main() {
             skipConfirm = true;
         } else if (arg === '--check') {
             checkOnly = true;
+        } else if (arg === '--force-bootstrap') {
+            forceBootstrap = true;
         }
     }
 
     try {
         // --dry-run: 기존 동작 (상세 분석 후 종료)
         if (dryRun) {
-            await corePull(targetVersion, { dryRun: true });
+            await corePull(targetVersion, { dryRun: true, forceBootstrap });
             return;
         }
 
@@ -2076,7 +2210,7 @@ async function main() {
 
         // 실제 업데이트 진행
         console.log('\n');
-        await corePull(result.target, { dryRun: false });
+        await corePull(result.target, { dryRun: false, forceBootstrap });
 
         // 스키마 자동복구는 corePull 내부에서 이미 완료
         // 추가 Doctor 실행 불필요 (중복 실행 방지)
@@ -2088,11 +2222,12 @@ async function main() {
 }
 
 // 사용법:
-// npm run core:pull              → preflight 체크 후 확인 받고 적용 (기본)
-// npm run core:pull -- -y        → 확인 없이 바로 적용
-// npm run core:pull -- --check   → preflight 체크만 (적용 안 함)
-// npm run core:pull -- --beta    → latest-beta 채널
-// npm run core:pull -- --dry-run → 상세 변경 사항 미리보기 (기존 동작)
-// npm run core:pull -- v1.0.93   → 특정 버전 직접 지정
+// npm run core:pull                   → preflight 체크 후 확인 받고 적용 (기본)
+// npm run core:pull -- -y             → 확인 없이 바로 적용
+// npm run core:pull -- --check        → preflight 체크만 (적용 안 함)
+// npm run core:pull -- --beta         → latest-beta 채널
+// npm run core:pull -- --dry-run      → 상세 변경 사항 미리보기 (기존 동작)
+// npm run core:pull -- v1.0.93        → 특정 버전 직접 지정
+// npm run core:pull -- --force-bootstrap → 마이그레이션 bootstrap 모드 강제 실행
 
 main();
