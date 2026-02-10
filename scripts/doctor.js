@@ -194,16 +194,20 @@ function parseColumnsFromSQL(sql) {
 
 /**
  * 전체 테이블/컬럼 정보를 단일 쿼리로 조회 (wrangler 1회 호출)
- * sqlite_master.sql 파싱 방식 - pragma_table_info보다 안정적
+ * pragma_table_info 사용 - ALTER TABLE ADD COLUMN으로 추가된 컬럼도 정확히 감지
+ * (sqlite_master.sql은 ALTER TABLE 변경을 반영하지 않아 false positive 발생)
  */
 async function getAllTableColumns(dbName) {
     const results = await runD1Query(dbName,
-        "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%'"
+        "SELECT m.name as table_name, p.name as column_name FROM sqlite_master m, pragma_table_info(m.name) p WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite_%' AND m.name NOT LIKE '_cf_%'"
     );
     const tableColumns = new Map();
     for (const r of results) {
-        const tbl = r.name.toLowerCase();
-        tableColumns.set(tbl, parseColumnsFromSQL(r.sql));
+        const tbl = r.table_name.toLowerCase();
+        if (!tableColumns.has(tbl)) {
+            tableColumns.set(tbl, new Set());
+        }
+        tableColumns.get(tbl).add(r.column_name.toLowerCase());
     }
     return tableColumns;
 }
