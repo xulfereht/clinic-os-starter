@@ -2010,6 +2010,13 @@ async function preflightCheck(targetVersion = 'latest') {
 
     // 4. 버전 동일 여부 확인
     if (current === version) {
+        // Drift 감지: 버전은 같지만 누락/변경된 파일이 있을 수 있음
+        const driftedFiles = await detectDriftedFiles(version, []);
+        if (driftedFiles.length > 0) {
+            console.log(`\n⚠️  버전은 최신이지만 ${driftedFiles.length}개 파일이 누락/변경됨`);
+            driftedFiles.forEach(f => console.log(`   📄 ${f}`));
+            return { needsUpdate: true, current, target: version, driftOnly: true };
+        }
         console.log(`\n✅ 이미 최신 버전입니다. (${current})`);
         return { needsUpdate: false, current, target: version };
     }
