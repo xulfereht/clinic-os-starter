@@ -337,41 +337,42 @@ async function assertTagExists(tag) {
 }
 
 /**
- * 설정 파일에서 HQ URL과 device_token 읽기
+ * 설정 파일에서 HQ URL, device_token, license_key 읽기
  */
 function getConfig() {
     const clinicJsonPath = path.join(PROJECT_ROOT, 'clinic.json');
     const configYamlPath = path.join(PROJECT_ROOT, '.docking/config.yaml');
 
     let hqUrl = 'https://clinic-os-hq.pages.dev';
+    let licenseKey = null;
     let deviceToken = null;
     let channel = 'stable';
 
-    // 1. clinic.json에서 읽기 (우선)
+    // 1. clinic.json에서 license_key 읽기
     if (fs.existsSync(clinicJsonPath)) {
         try {
             const clinicConfig = fs.readJsonSync(clinicJsonPath);
             hqUrl = clinicConfig.hq_url || hqUrl;
-            deviceToken = clinicConfig.license_key || deviceToken;
+            licenseKey = clinicConfig.license_key || null;
             channel = clinicConfig.channel || channel;
         } catch (e) {
             // ignore
         }
     }
 
-    // 2. .docking/config.yaml에서 읽기 (device_token 우선)
+    // 2. .docking/config.yaml에서 device_token 읽기
     if (fs.existsSync(configYamlPath)) {
         try {
             const configContent = fs.readFileSync(configYamlPath, 'utf8');
             const config = yaml.load(configContent);
             hqUrl = config.hq_url || hqUrl;
-            deviceToken = config.device_token || deviceToken;
+            deviceToken = config.device_token || null;
         } catch (e) {
             // ignore
         }
     }
 
-    return { hqUrl, deviceToken, channel };
+    return { hqUrl, deviceToken, licenseKey, channel };
 }
 
 /**
@@ -379,10 +380,10 @@ function getConfig() {
  * setup-clinic.js와 동일한 인증 방식 사용
  */
 async function getAuthenticatedGitUrl() {
-    const { hqUrl, deviceToken, channel } = getConfig();
+    const { hqUrl, deviceToken, licenseKey, channel } = getConfig();
 
-    if (!deviceToken) {
-        console.log('   ⚠️  device_token이 없습니다. npm run setup을 먼저 실행하세요.');
+    if (!deviceToken && !licenseKey) {
+        console.log('   ⚠️  인증 정보가 없습니다. npm run setup을 먼저 실행하세요.');
         return null;
     }
 
@@ -390,7 +391,7 @@ async function getAuthenticatedGitUrl() {
         const response = await fetch(`${hqUrl}/api/v1/update/git-url`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ device_token: deviceToken, channel: channel })
+            body: JSON.stringify({ device_token: deviceToken, license_key: licenseKey, channel: channel })
         });
 
         if (!response.ok) {
