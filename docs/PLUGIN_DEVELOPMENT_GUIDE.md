@@ -79,6 +79,10 @@ src/plugins/{plugin-id}/
 │   └── [...path].astro # Catch-all 라우트
 ├── api/                # API 엔드포인트
 ├── components/         # UI 컴포넌트
+├── migrations/         # DB 마이그레이션 파일 (선택)
+│   ├── 0001_create_tables.sql
+│   ├── 0001_create_tables.rollback.sql  # 롤백 SQL (선택)
+│   └── 0002_add_indexes.sql
 └── lib/                # 비즈니스 로직
     └── hooks.ts        # 이벤트 훅 핸들러
 ```
@@ -152,7 +156,8 @@ src/plugins/{plugin-id}/
   "hooks": [
     { "event": "onPatientCreated", "handler": "handlePatientCreated" }
   ],
-  "migration": "migration.sql",    // DB 마이그레이션 파일
+  "migration": "migration.sql",    // DB 마이그레이션 파일 (레거시, 단일 파일)
+  // 또는 migrations/ 디렉토리 사용 권장 (순차 실행, 롤백 지원)
   "tables": ["custom_my_table"],   // 생성되는 테이블 목록
   "settings": {
     "option1": { "type": "string", "label": "옵션1", "default": "value" }
@@ -206,12 +211,78 @@ const action = segments[1]; // 'result' 등
 
 ## 플러그인 설치 과정
 
-1. `src/plugins/` 폴더에 플러그인 디렉토리 생성
+### 방법 1: HQ 마켓플레이스에서 설치 (권장)
+1. Admin UI → Plugin Store 페이지 접속
+2. 원하는 플러그인의 "Install" 버튼 클릭
+3. 권한 승인 (위험한 권한이 있는 경우)
+4. 자동 다운로드 → SHA-256 검증 → `src/plugins/local/{id}/`에 추출
+5. "Rebuild" 버튼 클릭 → Astro 리빌드 → 플러그인 활성화
+
+> **참고**: HQ에서 설치한 플러그인은 `src/plugins/local/` 디렉토리에 추출됩니다. `import.meta.glob`이 빌드 타임에 플러그인을 인식하므로, 파일 추출 후 반드시 리빌드가 필요합니다.
+
+### 방법 2: 직접 개발 (로컬)
+1. `src/plugins/local/` 폴더에 플러그인 디렉토리 생성
 2. `manifest.json` 파일 작성
 3. 페이지/API/컴포넌트 추가
-4. **끝!** (코어 수정 불필요)
+4. `bun run dev` 또는 `bun run build`로 반영
 
 플러그인은 `import.meta.glob('../plugins/*/manifest.json')`으로 빌드 타임에 자동 인식됩니다.
+
+---
+
+## DB 마이그레이션
+
+플러그인이 DB 스키마를 필요로 하는 경우, `migrations/` 디렉토리에 SQL 파일을 추가합니다.
+
+### 파일 명명 규칙
+```
+migrations/
+├── 0001_create_tables.sql          # 순차 번호_설명.sql
+├── 0001_create_tables.rollback.sql # 롤백 파일 (선택)
+├── 0002_add_indexes.sql
+└── 0002_add_indexes.rollback.sql
+```
+
+- 파일명은 `NNNN_description.sql` 형식 (알파벳순 = 실행순)
+- `.rollback.sql` 파일이 있으면 자동으로 롤백 SQL로 저장됨
+- 이미 적용된 마이그레이션은 자동 스킵
+
+### 마이그레이션 실행
+설치 후 Admin UI에서 "Run Migrations" 버튼으로 실행하거나:
+```
+POST /api/plugins/migrate
+body: { "pluginId": "my-plugin" }
+```
+
+### 테이블명 규칙 (기존 규칙 유지)
+```sql
+-- custom_ 접두사 필수
+CREATE TABLE custom_my_table (...);
+```
+
+---
+
+## HQ 마켓플레이스 제출
+
+로컬에서 개발한 플러그인을 HQ 마켓플레이스에 제출할 수 있습니다.
+
+### 제출 조건
+- 유효한 `manifest.json` 필수 (validateManifest 통과)
+- 클리닉 라이선스 키 등록 필수
+- Dev 모드에서만 동작
+
+### 제출 방법
+1. Admin UI → Plugins → "로컬 플러그인" 탭
+2. 제출할 플러그인의 "HQ에 제출" 버튼 클릭
+3. manifest 미리보기 확인 후 제출
+
+또는 API 직접 호출:
+```
+POST /api/plugins/submit
+body: { "pluginId": "my-plugin" }
+```
+
+자동으로 zip 패키징 → SHA-256 생성 → HQ API 전송이 진행됩니다.
 
 ---
 
@@ -340,6 +411,17 @@ const apiKey = await sdk.settings.get('api_key');
 
 ---
 
+## SDK 위반 보고
+
+플러그인이 승인되지 않은 권한을 사용하려 하면:
+1. 해당 API 호출이 차단됩니다 (`PluginPermissionError`)
+2. 위반 내역이 HQ에 자동 보고됩니다 (비동기, fire-and-forget)
+3. 동일 플러그인에서 위반이 10회 이상 발생하면 **자동 비활성화**됩니다
+
+> **중요**: manifest.json의 `permissions`에 필요한 권한을 모두 선언하고, 관리자가 설치 시 승인해야 합니다.
+
+---
+
 ## 권장 패턴 (SHOULD)
 
 ### 1. 에러 처리
@@ -377,25 +459,71 @@ import BaseLayout from "../../../components/layout/BaseLayout.astro";
 
 ## 권한 목록
 
-| 권한 | 설명 |
-|------|------|
-| `read:patients` | 환자 정보 읽기 |
-| `write:patients` | 환자 정보 수정 |
-| `read:reservations` | 예약 정보 읽기 |
-| `read:payments` | 결제 정보 읽기 |
-| `database:read` | 커스텀 테이블 조회 |
-| `database:write` | 커스텀 테이블 수정 |
+### 읽기 권한
+| 권한 | 설명 | 위험도 |
+|------|------|--------|
+| `read:patients` | 환자 정보 읽기 | medium |
+| `read:reservations` | 예약 정보 읽기 | low |
+| `read:payments` | 결제 정보 읽기 | high |
+| `read:staff` | 직원 정보 읽기 | low |
+| `read:settings` | 설정 읽기 | low |
+| `read:analytics` | 분석 데이터 읽기 | medium |
+
+### 쓰기 권한
+| 권한 | 설명 | 위험도 |
+|------|------|--------|
+| `write:patients` | 환자 정보 수정 | high |
+| `write:reservations` | 예약 수정 | medium |
+| `write:payments` | 결제 수정 | **critical** |
+| `write:messages` | 메시지 발송 | high |
+| `write:settings` | 설정 수정 | high |
+
+### 특수 권한
+| 권한 | 설명 | 위험도 |
+|------|------|--------|
+| `network:*` | 외부 HTTP 요청 (127.0.0.1, 192.168.*, 10.* 차단) | high |
+| `storage:*` | 플러그인 KV 스토리지 | low |
+| `ui:notifications` | 토스트 알림 표시 | low |
+| `ui:dialogs` | 모달 다이얼로그 표시 | low |
+
+> **주의**: `critical`/`high` 위험도 권한을 요청하면 설치 시 관리자 승인이 필요합니다.
 
 ---
 
 ## 훅 이벤트
 
+### 예약 관련
+| 이벤트 | 설명 |
+|--------|------|
+| `onReservationCreated` | 예약 생성 시 |
+| `onReservationUpdated` | 예약 수정 시 |
+| `onReservationCancelled` | 예약 취소 시 |
+
+### 환자 관련
 | 이벤트 | 설명 |
 |--------|------|
 | `onPatientCreated` | 환자 생성 시 |
+| `onPatientUpdated` | 환자 정보 수정 시 |
+| `onPatientCheckedIn` | 환자 체크인 시 |
+
+### 결제 관련
+| 이벤트 | 설명 |
+|--------|------|
 | `onPaymentCompleted` | 결제 완료 시 |
-| `onReservationCreated` | 예약 생성 시 |
-| `onVisitCheckin` | 내원 체크인 시 |
+| `onPaymentRefunded` | 환불 처리 시 |
+
+### 리드 관련
+| 이벤트 | 설명 |
+|--------|------|
+| `onLeadCreated` | 리드 생성 시 |
+| `onLeadConverted` | 리드 전환 시 |
+
+### 시스템
+| 이벤트 | 설명 |
+|--------|------|
+| `onCampaignSent` | 캠페인 발송 시 |
+| `onDailySchedule` | 일일 스케줄 (매일 실행) |
+| `onWeeklyReport` | 주간 리포트 (주 1회 실행) |
 
 ---
 
