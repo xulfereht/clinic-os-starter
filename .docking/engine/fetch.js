@@ -599,7 +599,11 @@ async function detectDriftedFiles(targetTag, alreadyInDiff) {
         const localPath = toLocalPath(upstreamPath);
         const fullLocalPath = path.join(PROJECT_ROOT, localPath);
 
-        if (!fs.existsSync(fullLocalPath)) continue;
+        if (!fs.existsSync(fullLocalPath)) {
+            // Missing locally but exists in upstream → treat as drifted
+            drifted.push(upstreamPath);
+            continue;
+        }
 
         // 바이너리 확장자 스킵
         if (/\.(png|jpg|jpeg|gif|ico|woff2?|ttf|eot|svg|mp4|webm|pdf)$/i.test(upstreamPath)) continue;
