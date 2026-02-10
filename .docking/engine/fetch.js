@@ -1394,16 +1394,33 @@ async function runAllSeeds() {
         return;
     }
 
-    // 프로덕션 전용 또는 특수 목적 seeds (로컬 개발 시 제외)
+    // 항상 제외되는 seeds
     const SKIP_SEEDS = [
-        'go_live.sql',           // 프로덕션 전용 (UNIQUE constraint 등)
-        'seed_digestive_content.sql',  // 대용량 컨텐츠 (선택적)
+        'go_live.sql',               // 프로덕션 전용 (수동 실행)
+        'seed_digestive_content.sql', // 대용량 컨텐츠 (선택적)
+    ];
+
+    // 샘플/더미 데이터 seeds (개발용, 클라이언트 제외)
+    const SAMPLE_SEEDS = [
+        'generated_faqs.sql',              // sample_clinic 의존
+        'prepare_samples.sql',             // 샘플 데이터 준비
+        'knowledge_cards.sql',             // is_sample=1 데이터
+        'knowledge_seed.sql',              // is_sample=1 데이터
+        'program_translations_sample.sql', // 샘플 번역
     ];
 
     // 모든 .sql 파일 가져오기 (정렬됨, 제외 목록 필터링)
     const seedFiles = fs.readdirSync(seedsDir)
         .filter(f => f.endsWith('.sql'))
         .filter(f => !SKIP_SEEDS.includes(f))
+        .filter(f => {
+            // 스타터킷(클라이언트)에서는 sample_*, dummy_* 패턴 + SAMPLE_SEEDS 제외
+            if (IS_STARTER_KIT) {
+                if (f.startsWith('sample_') || f.startsWith('dummy_')) return false;
+                if (SAMPLE_SEEDS.includes(f)) return false;
+            }
+            return true;
+        })
         .sort();
 
     if (seedFiles.length === 0) {
@@ -1472,6 +1489,86 @@ async function runAllSeeds() {
     }
 
     console.log(`   → 적용: ${appliedCount}, 오류: ${errorCount}`);
+
+    // 스타터킷(클라이언트)에서 이전에 적용된 샘플 시드 데이터 정리
+    if (IS_STARTER_KIT) {
+        await cleanupSampleData(dbName);
+    }
+}
+
+/**
+ * 스타터킷에서 이전에 적용된 샘플/더미 데이터를 정리
+ * - is_sample = 1 데이터를 모든 테이블에서 삭제
+ * - d1_seeds에서 샘플 시드 기록 제거
+ * - 한 번 정리되면 다시 실행되지 않음
+ */
+async function cleanupSampleData(dbName) {
+    const appliedSeeds = await getAppliedSeeds(dbName);
+
+    // 이전에 적용된 샘플/더미 시드가 있는지 확인
+    const sampleSeedNames = [...appliedSeeds].filter(name =>
+        name.startsWith('sample_') || name.startsWith('dummy_') ||
+        name === 'generated_faqs.sql' || name === 'prepare_samples.sql' ||
+        name === 'knowledge_cards.sql' || name === 'knowledge_seed.sql' ||
+        name === 'program_translations_sample.sql'
+    );
+
+    if (sampleSeedNames.length === 0) return;
+
+    console.log(`\n🧹 샘플 데이터 정리 중... (${sampleSeedNames.length}개 시드 감지)`);
+
+    // is_sample = 1 데이터가 있는 모든 테이블에서 삭제 (임시 SQL 파일 사용)
+    const cleanupSql = [
+        'DELETE FROM patients WHERE is_sample = 1;',
+        'DELETE FROM reservations WHERE is_sample = 1;',
+        'DELETE FROM payments WHERE is_sample = 1;',
+        'DELETE FROM posts WHERE is_sample = 1;',
+        'DELETE FROM medical_records WHERE is_sample = 1;',
+        'DELETE FROM knowledge_cards WHERE is_sample = 1;',
+        'DELETE FROM faq_items WHERE is_sample = 1;',
+        'DELETE FROM vendors WHERE is_sample = 1;',
+        'DELETE FROM inventory_items WHERE is_sample = 1;',
+        'DELETE FROM products WHERE is_sample = 1;',
+        'DELETE FROM promotions WHERE is_sample = 1;',
+        'DELETE FROM manual_pages WHERE is_sample = 1;',
+        'DELETE FROM tasks WHERE is_sample = 1;',
+        'DELETE FROM task_templates WHERE is_sample = 1;',
+        'DELETE FROM leads WHERE is_sample = 1;',
+        'DELETE FROM programs WHERE is_sample = 1;',
+        "DELETE FROM web_members WHERE id LIKE 'member_sample_%';",
+        "DELETE FROM site_settings WHERE category = 'features' AND key = 'sample_mode';",
+    ].join('\n');
+
+    const tmpFile = path.join(PROJECT_ROOT, '.cleanup_sample_data.sql');
+    try {
+        fs.writeFileSync(tmpFile, cleanupSql, 'utf8');
+        const result = await runCommand(
+            `npx wrangler d1 execute ${dbName} --local --file="${tmpFile}" --yes 2>&1`,
+            true
+        );
+        const output = result.stderr || result.stdout || '';
+        if (result.success) {
+            console.log(`   ✅ is_sample = 1 데이터 삭제 완료`);
+        } else {
+            console.log(`   ⚠️  일부 테이블 정리 실패 (무시): ${output.substring(0, 200)}`);
+        }
+    } catch (e) {
+        console.log(`   ⚠️  샘플 데이터 정리 실패 (무시): ${e.message}`);
+    } finally {
+        try { fs.unlinkSync(tmpFile); } catch (_) {}
+    }
+
+    // d1_seeds에서 샘플 시드 기록 제거 (재적용 방지)
+    for (const seedName of sampleSeedNames) {
+        try {
+            await runCommand(
+                `npx wrangler d1 execute ${dbName} --local --command "DELETE FROM d1_seeds WHERE name = '${seedName}'" --yes 2>&1`,
+                true
+            );
+        } catch (e) { /* ignore */ }
+    }
+
+    console.log(`   ✅ ${sampleSeedNames.length}개 샘플 시드 기록 제거 완료`);
 }
 
 // ═══════════════════════════════════════════════════════════════
