@@ -69,21 +69,38 @@ Astro는 `src/pages/` 내 파일만 라우팅하지만, Clinic-OS는 2-Track 아
 
 ## 플러그인 구조
 
+### 타입별 필수 파일
+
+| 파일/디렉토리 | new-route | override | 설명 |
+|---------------|-----------|----------|------|
+| `manifest.json` | **필수** | **필수** | 플러그인 메타정보 |
+| `README.md` | **필수** | **필수** | 사용 설명서 |
+| `pages/` | **필수** | **필수** | Astro 페이지 (최소 1개) |
+| `api/` | 선택 | - | API 엔드포인트 |
+| `components/` | 선택 | 선택 | UI 컴포넌트 |
+| `lib/` | 선택 | 선택 | 비즈니스 로직/유틸리티 |
+| `migrations/` | 선택 | 선택 | DB 마이그레이션 (순차 번호) |
+| `migration.sql` | 선택 | 선택 | DB 마이그레이션 (단일 파일) |
+
+> **참고**: `main.js`는 필수가 아닙니다. 모든 플러그인 타입은 Astro 페이지 기반(`pages/`)으로 동작합니다.
+
+### 전체 디렉토리 구조
+
 ```
 src/plugins/{plugin-id}/
-├── manifest.json       # 필수: 플러그인 메타정보
-├── README.md           # 권장: 사용 설명서
-├── migration.sql       # 선택: DB 스키마
-├── pages/              # Astro 페이지 (라우팅 대상)
+├── manifest.json       # 필수: 플러그인 메타정보 (type 필드 포함)
+├── README.md           # 필수: 사용 설명서
+├── pages/              # 필수: Astro 페이지 (라우팅 대상)
 │   ├── index.astro     # /ext/{plugin-id}/ 또는 Override 대상
 │   └── [...path].astro # Catch-all 라우트
-├── api/                # API 엔드포인트
-├── components/         # UI 컴포넌트
-├── migrations/         # DB 마이그레이션 파일 (선택)
+├── api/                # 선택: API 엔드포인트
+├── components/         # 선택: UI 컴포넌트
+├── migrations/         # 선택: DB 마이그레이션 파일
 │   ├── 0001_create_tables.sql
 │   ├── 0001_create_tables.rollback.sql  # 롤백 SQL (선택)
 │   └── 0002_add_indexes.sql
-└── lib/                # 비즈니스 로직
+├── migration.sql       # 선택: DB 스키마 (단일 파일, migrations/ 대안)
+└── lib/                # 선택: 비즈니스 로직
     └── hooks.ts        # 이벤트 훅 핸들러
 ```
 
@@ -136,16 +153,25 @@ src/plugins/{plugin-id}/
 }
 ```
 
-### 선택 필드
+### 문서화 필드 (HQ 제출 시 필수)
 
 ```json
 {
   "documentation": {
-    "summary": "플러그인 요약 (2-3문장)",
-    "features": ["기능1", "기능2"],
-    "requirements": ["필요 조건"],
-    "howToEdit": "수정 방법 안내"
+    "summary": "플러그인 요약 (최소 10자, 2-3문장 권장)",
+    "features": ["기능1", "기능2"],       // 최소 1개 필수
+    "requirements": ["필요 조건"],         // 선택
+    "howToEdit": "수정 방법 안내",         // 선택
+    "category": "integration"             // 선택: core|marketing|integration|customization|analytics|utility|communication|automation|ui
   },
+```
+
+> **HQ 제출 시**: `documentation.summary` (최소 10자)와 `documentation.features` (최소 1개) 는 필수입니다. 누락 시 검증 실패합니다.
+
+### 선택 필드
+
+```json
+{
   "permissions": ["database:read", "database:write"],
   "pages": [                     // 어드민 허브에 표시
     { "path": "manage", "title": "관리 페이지" }
@@ -268,8 +294,13 @@ CREATE TABLE custom_my_table (...);
 
 ### 제출 조건
 - 유효한 `manifest.json` 필수 (validateManifest 통과)
+- `manifest.json`에 `type` 필드 필수 (`"new-route"` 또는 `"override"`)
+- `documentation` 필드 필수: `summary` (최소 10자), `features` (최소 1개 배열)
+- `pages/` 디렉토리 필수 (new-route, override 모두)
 - 클리닉 라이선스 키 등록 필수
+- 개발자 등록 완료 필수
 - Dev 모드에서만 동작
+- 보안 스캔 통과: `eval()`, `new Function()`, `document.write`, `localStorage` 직접 접근 금지
 
 ### 제출 방법
 1. Admin UI → Plugins → "로컬 플러그인" 탭
