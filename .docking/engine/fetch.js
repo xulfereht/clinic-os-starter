@@ -1698,6 +1698,12 @@ async function corePull(targetVersion = 'latest', options = {}) {
             let syncCount = 0;
             for (const upstreamPath of driftedFiles) {
                 try {
+                    // package.json uses smart merge, not raw overwrite
+                    if (upstreamPath === 'package.json') {
+                        await mergePackageJson(version);
+                        syncCount++;
+                        continue;
+                    }
                     const localPath = toLocalPath(upstreamPath);
                     const fullLocalPath = path.join(PROJECT_ROOT, localPath);
                     const { stdout: upstreamContent } = await execAsync(
