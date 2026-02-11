@@ -938,6 +938,7 @@ async function mergePackageJson(targetTag) {
                     }
                 }
 
+
                 if (rootUpdated) {
                     fs.writeJsonSync(rootPkgPath, rootPkg, { spaces: 4 });
                     console.log(`   🔄 루트 package.json 동기화: v${merged.version}`);

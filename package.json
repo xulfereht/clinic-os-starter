@@ -1,6 +1,6 @@
 {
   "name": "clinic-os-client",
-  "version": "1.16.1",
+  "version": "1.16.2",
   "type": "module",
   "description": "Clinic-OS 클라이언트",
   "scripts": {
@@ -21,6 +21,7 @@
     "db:pull": "npm run db:pull --prefix core"
   },
   "dependencies": {
+    "fflate": "^0.8.2",
     "fs-extra": "^11.2.0",
     "js-yaml": "^4.1.0"
   }
