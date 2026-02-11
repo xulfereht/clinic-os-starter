@@ -112,13 +112,14 @@ src/plugins/{plugin-id}/
 
 ```json
 {
-  "id": "plugin-id",           // 고유 ID (폴더명과 일치)
-  "name": "플러그인 이름",      // UI 표시 이름
-  "description": "설명",        // 간단한 설명
-  "version": "1.0.0",          // 시맨틱 버전
+  "id": "plugin-id",              // 소문자, 숫자, 하이픈, 언더스코어만 (/^[a-z0-9_-]+$/)
+  "name": "플러그인 이름",
+  "description": "설명",
+  "version": "1.0.0",             // 시맨틱 버전 필수 (예: 1.0.0, 2.1.0-beta)
   "author": "작성자",
-  "type": "new-route",         // "new-route" | "override"
-  "category": "utility"        // core|marketing|integration|customization|analytics|utility
+  "type": "new-route",            // "new-route" | "override"
+  "category": "utility",          // core|marketing|integration|customization|analytics|utility|communication|automation|ui
+  "permissions": []               // 권한 배열 (빈 배열이라도 필수)
 }
 ```
 
@@ -172,7 +173,6 @@ src/plugins/{plugin-id}/
 
 ```json
 {
-  "permissions": ["database:read", "database:write"],
   "pages": [                     // 어드민 허브에 표시
     { "path": "manage", "title": "관리 페이지" }
   ],
@@ -292,15 +292,32 @@ CREATE TABLE custom_my_table (...);
 
 로컬에서 개발한 플러그인을 HQ 마켓플레이스에 제출할 수 있습니다.
 
-### 제출 조건
-- 유효한 `manifest.json` 필수 (validateManifest 통과)
-- `manifest.json`에 `type` 필드 필수 (`"new-route"` 또는 `"override"`)
-- `documentation` 필드 필수: `summary` (최소 10자), `features` (최소 1개 배열)
-- `pages/` 디렉토리 필수 (new-route, override 모두)
-- 클리닉 라이선스 키 등록 필수
-- 개발자 등록 완료 필수
-- Dev 모드에서만 동작
-- 보안 스캔 통과: `eval()`, `new Function()`, `document.write`, `localStorage` 직접 접근 금지
+### 제출 전제 조건
+- 클리닉 라이선스 키 등록 필수 (`clinic.json`의 `license_key`)
+- HQ 개발자 등록 완료 필수 (Admin UI → 개발자 등록)
+- Dev 모드에서만 동작 (`npm run dev` 또는 `bun run dev`)
+
+### manifest.json 검증 (로컬)
+로컬에서 제출 시 `validateManifest`가 먼저 실행됩니다:
+- `id`: 필수, 소문자/숫자/하이픈/언더스코어만 허용
+- `name`: 필수
+- `version`: 필수, 시맨틱 버전 형식 (예: 1.0.0)
+- `description`: 필수
+- `permissions`: 필수 (배열, 빈 배열 `[]` 허용)
+
+### HQ 서버 검증
+HQ에 도달하면 추가 검증이 진행됩니다:
+1. **문서화 검증**: `documentation.summary` (최소 10자), `documentation.features` (최소 1개 배열)
+2. **파일 검증**: `manifest.json`, `README.md` 필수. `new-route`/`override` 타입은 `pages/` 필수
+3. **보안 스캔**: `eval()`, `new Function()`, `document.write`, `localStorage` 직접 접근 차단
+
+### 자동 생성 필드
+다음 정보는 HQ에서 자동으로 생성됩니다:
+- **아이콘**: DiceBear API로 카테고리별 색상 아이콘 자동 생성 (별도 업로드 불필요)
+- **상세 설명**: `documentation.summary` + `documentation.features`에서 자동 조합
+- **플러그인 타입**: `community`로 기본 설정
+
+> **참고**: 동일 버전 재제출이 가능합니다. 패키지가 갱신되고 리뷰 상태가 `pending`으로 초기화됩니다.
 
 ### 제출 방법
 1. Admin UI → Plugins → "로컬 플러그인" 탭
@@ -396,10 +413,13 @@ await sdk.database.query(
 );
 ```
 
-### 4. 플러그인 ID는 폴더명과 일치
+### 4. 플러그인 ID 규칙
+- ID는 폴더명과 반드시 일치
+- 허용 문자: 소문자, 숫자, 하이픈, 언더스코어 (`/^[a-z0-9_-]+$/`)
+
 ```
 src/plugins/survey-tools/
-└── manifest.json → "id": "survey-tools"
+└── manifest.json → "id": "survey-tools"  ✅
 ```
 
 ---
