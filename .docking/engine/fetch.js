@@ -157,6 +157,7 @@ const CORE_PATHS = [
 const LOCAL_PREFIXES = [
     'src/lib/local/',
     'src/plugins/local/',
+    'src/pages/_local/',
     'src/survey-tools/local/',
     'public/local/',
 ];
@@ -1796,6 +1797,53 @@ async function corePull(targetVersion = 'latest', options = {}) {
         willMerge: [],
         engine: []
     };
+
+    // ═══════════════════════════════════════════════
+    // 4.5 Protected Pages Auto-Migration
+    // config.yaml의 protected_pages에 지정된 페이지를
+    // src/pages/_local/로 자동 복사 (이미 없는 경우에만)
+    // Vite clinicLocalOverrides 플러그인이 빌드/dev 시 _local 우선 적용
+    // ═══════════════════════════════════════════════
+    const configYamlPath = path.join(PROJECT_ROOT, '.docking/config.yaml');
+    if (fs.existsSync(configYamlPath)) {
+        try {
+            const configContent = fs.readFileSync(configYamlPath, 'utf8');
+            const config = yaml.load(configContent);
+            const protectedPages = config?.protected_pages || [];
+
+            if (protectedPages.length > 0) {
+                const localPagesDir = path.join(PROJECT_ROOT, 'src', 'pages', '_local');
+                let migratedCount = 0;
+
+                for (const pagePath of protectedPages) {
+                    // pagePath example: "src/pages/doctors/index.astro"
+                    if (!pagePath.startsWith('src/pages/')) continue;
+
+                    const relativePath = pagePath.replace(/^src\/pages\//, '');
+                    const sourcePath = path.join(PROJECT_ROOT, pagePath);
+                    const targetPath = path.join(localPagesDir, relativePath);
+
+                    // Only migrate if source exists and target doesn't
+                    if (fs.existsSync(sourcePath) && !fs.existsSync(targetPath)) {
+                        if (dryRun) {
+                            console.log(`   📄 Would migrate: ${pagePath} → src/pages/_local/${relativePath}`);
+                        } else {
+                            fs.ensureDirSync(path.dirname(targetPath));
+                            fs.copySync(sourcePath, targetPath);
+                            console.log(`   📄 Migrated: ${pagePath} → src/pages/_local/${relativePath}`);
+                        }
+                        migratedCount++;
+                    }
+                }
+
+                if (migratedCount > 0) {
+                    console.log(`   ✅ ${migratedCount}개 페이지를 _local/로 보호 완료`);
+                }
+            }
+        } catch (e) {
+            console.log(`   ⚠️  protected_pages 처리 실패: ${e.message}`);
+        }
+    }
 
     if (dryRun) {
         console.log('\n📋 변경 예정 파일 분석 중...\n');

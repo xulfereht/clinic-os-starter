@@ -13,3 +13,15 @@ clinic_name: ""
 
 # Legacy field - deprecated, use device_token instead
 # license_key: "YOUR-LICENSE-KEY"
+
+# Protected Pages (core:pull auto-migration)
+# Pages listed here will be auto-copied to src/pages/_local/{relative_path}
+# before core:pull applies the new core version. The _local/ directory is
+# excluded from Astro routing (underscore convention) and takes priority
+# at build/dev time via the clinicLocalOverrides Vite plugin.
+# Example:
+#   protected_pages:
+#     - src/pages/doctors/index.astro
+#     - src/pages/intake.astro
+#     - src/pages/reviews.astro
+protected_pages: []

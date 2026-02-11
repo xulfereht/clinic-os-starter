@@ -4,9 +4,30 @@
 
 ---
 
-## 핵심 원칙: 코어 수정 없는 플러그인
+## 핵심 원칙: 커스터마이징 방식 구분
 
-**플러그인 추가 시 `src/pages/` 등 코어 코드를 수정하면 안 됩니다.**
+### 페이지 오버라이드 vs 플러그인
+
+Clinic-OS는 두 가지 커스터마이징 방식을 제공합니다:
+
+| 목적 | 방법 | 위치 |
+|------|------|------|
+| **기존 코어 페이지 수정** | 페이지 오버라이드 | `src/pages/_local/{경로}` |
+| **새 기능/경로/API 추가** | 플러그인 개발 | `src/plugins/local/{plugin-id}/` |
+
+**페이지 오버라이드** (플러그인 불필요):
+```bash
+# 의료진 소개 페이지를 커스터마이징하려면
+cp src/pages/doctors/index.astro src/pages/_local/doctors/index.astro
+# src/pages/_local/doctors/index.astro를 수정하면 자동으로 코어 페이지를 대체
+```
+
+Vite `clinicLocalOverrides` 플러그인이 빌드/dev 시 `_local/` 버전을 자동으로 우선 적용합니다.
+`_local/`은 Astro `_` prefix 컨벤션으로 라우팅에서 자동 제외됩니다.
+
+**플러그인 개발** (새 기능 추가 시):
+
+플러그인 추가 시 `src/pages/` 등 코어 코드를 수정하면 안 됩니다.
 
 Astro는 `src/pages/` 내 파일만 라우팅하지만, Clinic-OS는 2-Track 아키텍처로 이 제약을 해결합니다:
 - 플러그인은 `src/plugins/{plugin-id}/` 에 위치
@@ -336,11 +357,38 @@ body: { "pluginId": "my-plugin" }
 
 ## 로컬 오버라이드 (Local Override)
 
-**문제**: 클라이언트가 코어 플러그인(예: custom-homepage)을 커스터마이징한 후 `core:pull`하면 변경사항이 덮어씌워짐.
+**문제**: 클라이언트가 커스터마이징한 내용이 `core:pull` 시 덮어씌워짐.
 
-**해결책**: `src/plugins/local/` 폴더 사용
+### 방법 1: 페이지 오버라이드 (기존 코어 페이지 수정)
 
-### 폴더 구조
+기존 코어 페이지를 커스터마이징할 때는 `src/pages/_local/`에 동일 경로로 파일을 만듭니다.
+manifest.json이나 플러그인 구조가 필요 없습니다.
+
+```
+src/pages/
+├── doctors/index.astro        ← 코어 원본 (core:pull 시 업데이트됨)
+├── reviews/index.astro        ← 코어 원본
+└── _local/                    ← 클라이언트 전용 (보호됨)
+    ├── doctors/index.astro    ← 로컬 오버라이드 (이게 우선)
+    └── reviews/index.astro    ← 로컬 오버라이드
+```
+
+**동작 방식:**
+1. Vite `clinicLocalOverrides` 플러그인이 빌드/dev 시 `_local/` 버전을 자동 적용
+2. `_local/`은 Astro `_` prefix 컨벤션으로 URL 라우팅에서 제외
+3. `core:pull`의 `LOCAL_PREFIXES`에 `src/pages/_local/`이 포함되어 보호됨
+
+```bash
+# 커스터마이징 방법
+mkdir -p src/pages/_local/doctors
+cp src/pages/doctors/index.astro src/pages/_local/doctors/index.astro
+# src/pages/_local/doctors/index.astro를 수정하면 끝!
+npm run dev
+```
+
+### 방법 2: 플러그인 오버라이드 (홈페이지 등)
+
+홈페이지(`/`) 등 플러그인 Override Point는 기존 방식을 사용합니다.
 
 ```
 src/plugins/
@@ -350,13 +398,10 @@ src/plugins/
     └── custom-homepage/       ← 로컬 오버라이드 (우선순위 높음)
 ```
 
-### 동작 방식
-
+**동작 방식:**
 1. **로컬 우선**: `src/plugins/local/custom-homepage/`가 있으면 이것 사용
 2. **코어 폴백**: 없으면 `src/plugins/custom-homepage/` 사용
-3. **보호됨**: `local/` 폴더는 `.gitignore`에 포함되어 `core:pull`에 영향 안 받음
-
-### 커스터마이징 방법
+3. **보호됨**: `local/` 폴더는 `core:pull`에 영향 안 받음
 
 ```bash
 # 1. 코어 플러그인을 local 폴더로 복사
@@ -378,6 +423,16 @@ src/survey-tools/
     └── stress-check/          ← 로컬 오버라이드
     └── my-custom-tool/        ← 새 검사도구
 ```
+
+### 선택 가이드
+
+| 하고 싶은 것 | 사용할 방법 |
+|-------------|-----------|
+| 의료진 소개 페이지 수정 | `src/pages/_local/doctors/index.astro` |
+| 리뷰 페이지 레이아웃 변경 | `src/pages/_local/reviews/index.astro` |
+| 홈페이지 완전히 변경 | `src/plugins/local/custom-homepage/` |
+| 새 페이지 추가 (이벤트 등) | `src/plugins/local/my-plugin/` (new-route) |
+| 새 검사도구 추가 | `src/survey-tools/local/my-tool/` |
 
 ---
 
@@ -428,9 +483,11 @@ src/plugins/survey-tools/
 
 ### 1. 코어 파일 수정 금지
 ```
-❌ src/pages/ 에 파일 추가
+❌ src/pages/ 에 코어 파일 직접 수정
 ❌ src/lib/ 의 코어 로직 수정
 ❌ src/components/layout/ 수정
+
+✅ src/pages/_local/ 에 페이지 오버라이드 추가 (허용)
 ```
 
 ### 2. 코어 테이블 수정 금지

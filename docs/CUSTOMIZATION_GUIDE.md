@@ -25,24 +25,48 @@
 
 ### 1.1 커스터마이징이란? (What is Customization?)
 
-커스터마이징은 **코어 코드를 수정하지 않고** 플러그인만으로 홈페이지를 변경하는 방법입니다.
+커스터마이징은 **코어 코드를 직접 수정하지 않고** 로컬 오버라이드 또는 플러그인을 통해 사이트를 변경하는 방법입니다.
 
 **핵심 원칙:**
-- 코어 파일 (`src/pages/`, `src/components/`)은 절대 수정하지 않습니다
-- 플러그인 폴더 (`src/plugins/local/`)에서만 작업합니다
-- `core:pull` 업데이트 시 플러그인은 보존됩니다
+- 코어 파일 (`src/pages/`, `src/components/`)을 직접 수정하지 않습니다
+- **기존 페이지 커스터마이징**: `src/pages/_local/`에 동일 경로로 파일을 만듭니다
+- **새 기능/경로 추가**: `src/plugins/local/`에 플러그인을 만듭니다
+- `core:pull` 업데이트 시 `_local/`과 플러그인은 보존됩니다
 
 ### 1.2 커스터마이징 위치 (Customization Location)
 
-**파일 경로:**
+**방법 1: 기존 코어 페이지 커스터마이징 (페이지 오버라이드)**
+
+기존 페이지를 수정하고 싶을 때는 `src/pages/_local/`에 동일한 경로 구조로 파일을 만듭니다.
+Astro `_` prefix 컨벤션으로 라우팅에서 자동 제외되며, Vite 플러그인이 빌드/dev 시 자동으로 코어 페이지를 오버라이드합니다.
+
 ```
-src/plugins/local/custom-homepage/pages/index.astro
+src/pages/doctors/index.astro              ← 코어 원본
+src/pages/_local/doctors/index.astro       ← 로컬 오버라이드 (이게 우선)
 ```
 
-**설정 위치:**
+```bash
+# 예: 의료진 소개 페이지를 커스터마이징하려면
+mkdir -p src/pages/_local/doctors
+cp src/pages/doctors/index.astro src/pages/_local/doctors/index.astro
+# src/pages/_local/doctors/index.astro를 수정
+```
+
+**방법 2: 홈페이지 커스터마이징 (플러그인 오버라이드)**
+
+홈페이지(`/`)는 플러그인 Override 시스템을 사용합니다:
+
 ```
 src/plugins/custom-homepage/  # 코어 제공 (수정하지 마세요)
 src/plugins/local/custom-homepage/  # 로컬 커스터마이징 (여기서 작업하세요)
+```
+
+**방법 3: 새 페이지/기능 추가 (new-route 플러그인)**
+
+완전히 새로운 페이지를 추가할 때는 `src/plugins/local/`에 플러그인을 만듭니다:
+
+```
+src/plugins/local/my-plugin/  # 새 기능 추가
 ```
 
 ### 1.3 기본 구조 이해 (Understanding Basic Structure)
@@ -1319,6 +1343,7 @@ const sections = [
 다음 위치의 파일은 `core:pull` 업데이트 시 **절대 수정되지 않습니다.**
 
 ```bash
+src/pages/_local/         # 로컬 페이지 오버라이드
 src/plugins/local/        # 로컬 클라이언트 플러그인
 src/survey-tools/local/   # 로컬 검사도구
 src/lib/local/           # 로컬 유틸리티
@@ -1329,9 +1354,10 @@ public/local/            # 로컬 에셋
 
 #### Level 1: LOCAL_PREFIXES
 
-`local/` 접두사 파일은 항상 보존됩니다.
+`local/` 또는 `_local/` 접두사 파일은 항상 보존됩니다.
 
 **적용 대상:**
+- `src/pages/_local/` - 페이지 오버라이드 파일
 - `src/lib/local/` - 모든 파일
 - `src/plugins/local/` - 모든 파일
 - `src/survey-tools/local/` - 모든 파일
@@ -1405,6 +1431,7 @@ git commit -m "migrate: core files to local"
 
 | 작업 유형 | 위치 | 안전성 | 업데이트 영향 | 롤백 방법 |
 |----------|------|--------|---------------|-----------|
+| 페이지 오버라이드 | `src/pages/_local/` | ✅ 안전 | 보존됨 | 파일 삭제 |
 | 섹션 데이터 수정 | `local/` 플러그인 | ✅ 안전 | 보존됨 | Git revert |
 | 새 페이지 추가 | `local/` 플러그인 | ✅ 안전 | 보존됨 | 플러그인 삭제 |
 | 다국어 추가 | `tr` 객체 | ✅ 안전 | 보존됨 | 번역 삭제 |
