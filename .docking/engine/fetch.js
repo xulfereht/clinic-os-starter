@@ -212,7 +212,7 @@ function toLocalPath(upstreamPath) {
     }
 
     // 앱 설정 파일도 core/ 안으로 이동 (스타터킷에서 core/가 실제 앱)
-    const appConfigFiles = ['tsconfig.json', 'astro.config.mjs'];
+    const appConfigFiles = ['tsconfig.json', 'astro.config.mjs', 'package.json'];
     if (appConfigFiles.includes(upstreamPath)) {
         return CORE_DIR + upstreamPath;
     }
