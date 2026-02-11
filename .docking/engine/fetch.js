@@ -553,8 +553,13 @@ async function gitDiffNameStatus(fromTag, toTag, paths) {
     if (!result.stdout) return [];
 
     return result.stdout.split('\n').filter(Boolean).map(line => {
-        const [status, ...pathParts] = line.split('\t');
-        return { status: status.charAt(0), path: pathParts.join('\t') };
+        const parts = line.split('\t');
+        const status = parts[0].charAt(0);
+        if (status === 'R' || status === 'C') {
+            // Rename/Copy: git outputs "R100\told_path\tnew_path"
+            return { status, oldPath: parts[1], path: parts[2] };
+        }
+        return { status, path: parts.slice(1).join('\t') };
     });
 }
 
@@ -1858,7 +1863,37 @@ async function corePull(targetVersion = 'latest', options = {}) {
         console.log('\n🔄 코어 파일 적용 중...');
     }
 
-    for (const { status, path: filePath } of fileOps) {
+    for (const op of fileOps) {
+        const { status, path: filePath, oldPath } = op;
+
+        // Rename: expand to delete old + add new
+        if (status === 'R') {
+            if (dryRun) {
+                dryRunReport.willDelete.push({ status: 'D', path: oldPath });
+                dryRunReport.willApply.push({ status: 'A', path: filePath });
+            } else {
+                // Delete old path
+                const oldLocal = toLocalPath(oldPath);
+                const fullOld = path.join(PROJECT_ROOT, oldLocal);
+                if (fs.existsSync(fullOld)) {
+                    fs.removeSync(fullOld);
+                    deletedCount++;
+                }
+                // Restore new path from upstream
+                try {
+                    if (isBinaryFile(filePath)) {
+                        await restoreBinaryFromUpstream(version, filePath);
+                    } else {
+                        await restoreFileFromUpstream(version, filePath);
+                    }
+                    appliedCount++;
+                } catch (e) {
+                    console.log(`   ⚠️  ${filePath}: 적용 실패 - ${e.message}`);
+                }
+            }
+            continue;
+        }
+
         // 1. PROTECTED_PATHS → 절대 건드리지 않음 (restore/delete 모두 차단)
         if (isProtectedPath(filePath)) {
             if (dryRun) {
@@ -2215,7 +2250,14 @@ async function preflightCheck(targetVersion = 'latest') {
         drifted: []
     };
 
-    for (const { status, path: filePath } of fileOps) {
+    for (const op of fileOps) {
+        const { status, path: filePath, oldPath } = op;
+        // Rename: treat as delete old + add new
+        if (status === 'R') {
+            analysis.willDelete.push({ status: 'D', path: oldPath });
+            analysis.willApply.push({ status: 'A', path: filePath });
+            continue;
+        }
         if (isProtectedPath(filePath)) {
             analysis.protected.push({ status, path: filePath });
         } else if (isLocalPath(filePath)) {
