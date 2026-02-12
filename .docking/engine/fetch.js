@@ -175,8 +175,9 @@ const PROTECTED_EXACT = new Set([
 ]);
 
 const PROTECTED_PREFIXES = [
-    '.env',           // .env, .env.local, .env.production 등
-    '.core/',         // 버전 메타데이터
+    '.env',                  // .env, .env.local, .env.production 등
+    '.core/',                // 버전 메타데이터
+    'src/plugins/local/',    // 로컬 플러그인 (클라이언트 커스텀)
     // .docking/engine/는 보호하지 않음 - fetch.js 업데이트 필요
 ];
 
