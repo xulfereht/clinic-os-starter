@@ -163,18 +163,13 @@ const LOCAL_PREFIXES = [
 ];
 
 // 클라이언트 설정 파일 (양쪽에 존재하지만 클라이언트 버전 보호)
+// ⚠️ 여기에는 모든 클라이언트에 공통되는 항목만 넣을 것
+//    클라이언트별 커스텀 페이지는 .docking/config.yaml의 protected_pages 사용
 const PROTECTED_EXACT = new Set([
     'wrangler.toml',
     'clinic.json',
     '.docking/config.yaml',
-    // 백록담 커스텀 페이지들
-    'src/pages/intake.astro',
-    'src/pages/intake/new.astro',
-    'src/pages/404.astro',
-    'src/plugins/custom-homepage/pages/index.astro',
-    // 레이아웃: 관리자 설정/CSS 변수로 커스터마이징 가능하므로 코어 업데이트 허용
-    // PageHeader.astro는 코어 버그 수정 적용을 위해 보호하지 않음
-    // 클라이언트 설정/스타일
+    // 클라이언트 설정/스타일 (모든 클라이언트가 커스터마이징하는 공통 파일)
     'src/config.ts',
     'src/styles/global.css',
 ]);
@@ -182,7 +177,6 @@ const PROTECTED_EXACT = new Set([
 const PROTECTED_PREFIXES = [
     '.env',           // .env, .env.local, .env.production 등
     '.core/',         // 버전 메타데이터
-    'src/pages/intake/',  // intake 관련 페이지 전체 보호
     // .docking/engine/는 보호하지 않음 - fetch.js 업데이트 필요
 ];
 
@@ -190,6 +184,37 @@ const PROTECTED_PREFIXES = [
 const SPECIAL_MERGE_FILES = new Set([
     'package.json',
 ]);
+
+// ═══════════════════════════════════════════════════════════════
+// 동적 보호: config.yaml의 protected_pages 로드
+// 클라이언트별 커스텀 페이지 보호를 하드코딩 없이 처리
+// ═══════════════════════════════════════════════════════════════
+const CLIENT_PROTECTED_PAGES = new Set();
+const CLIENT_PROTECTED_PREFIXES = [];
+
+function loadClientProtectedPages() {
+    const configPath = path.join(PROJECT_ROOT, '.docking/config.yaml');
+    if (!fs.existsSync(configPath)) return;
+
+    try {
+        const config = yaml.load(fs.readFileSync(configPath, 'utf8'));
+        const pages = config?.protected_pages || [];
+        const prefixes = config?.protected_prefixes || [];
+
+        for (const page of pages) {
+            CLIENT_PROTECTED_PAGES.add(page);
+        }
+        for (const prefix of prefixes) {
+            CLIENT_PROTECTED_PREFIXES.push(prefix);
+        }
+
+        if (CLIENT_PROTECTED_PAGES.size > 0 || CLIENT_PROTECTED_PREFIXES.length > 0) {
+            console.log(`   📋 클라이언트 보호 설정 로드: ${CLIENT_PROTECTED_PAGES.size}개 페이지, ${CLIENT_PROTECTED_PREFIXES.length}개 prefix`);
+        }
+    } catch (e) {
+        console.log(`   ⚠️  config.yaml 로드 실패: ${e.message}`);
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════
 // Helper 함수들
@@ -239,10 +264,14 @@ function isLocalPath(filePath) {
 }
 
 function isProtectedPath(filePath) {
-    // Exact match
+    // Static exact match
     if (PROTECTED_EXACT.has(filePath)) return true;
-    // Prefix match
-    return PROTECTED_PREFIXES.some(prefix => filePath.startsWith(prefix));
+    // Static prefix match
+    if (PROTECTED_PREFIXES.some(prefix => filePath.startsWith(prefix))) return true;
+    // Dynamic: client config.yaml protected_pages
+    if (CLIENT_PROTECTED_PAGES.has(filePath)) return true;
+    // Dynamic: client config.yaml protected_prefixes
+    return CLIENT_PROTECTED_PREFIXES.some(prefix => filePath.startsWith(prefix));
 }
 
 function isSpecialMergeFile(filePath) {
@@ -780,8 +809,9 @@ async function backupModifiedFiles(conflicts, currentVersion, targetVersion) {
 }
 
 function suggestLocalPath(filePath) {
+    // 페이지는 _local/ 오버라이드 (Vite 플러그인 자동 적용)
     if (filePath.startsWith('src/pages/')) {
-        return filePath.replace('src/pages/', 'src/plugins/local/pages/');
+        return filePath.replace('src/pages/', 'src/pages/_local/');
     }
     if (filePath.startsWith('src/components/')) {
         return filePath.replace('src/components/', 'src/plugins/local/components/');
@@ -802,13 +832,15 @@ function printMigrationGuide(conflicts, backupDir) {
     console.log(`│  충돌 파일 ${conflicts.length}개가 백업되었습니다.`);
     console.log(`│  백업 위치: ${backupDir.replace(PROJECT_ROOT, '.')}`);
     console.log('│                                                             │');
-    console.log('│  💡 다음 단계:                                               │');
-    console.log('│  AI에게 "백업 확인하고 local로 이전해줘" 라고 요청하세요.     │');
+    console.log('│  💡 페이지(src/pages/) 충돌은 자동으로 _local/에 보존됩니다.  │');
+    console.log('│  빌드 시 _local/ 버전이 우선 적용됩니다.                     │');
     console.log('│                                                             │');
-    console.log('│  또는 수동으로:                                              │');
+    console.log('│  기타 파일 충돌은 수동 이전이 필요합니다:                     │');
     console.log('│  1. .core-backup/*/manifest.json 확인                       │');
     console.log('│  2. 변경 내용을 src/lib/local/ 등으로 이동                   │');
     console.log('│  3. 백업 폴더 삭제                                          │');
+    console.log('│                                                             │');
+    console.log('│  또는 AI에게 "백업 확인하고 local로 이전해줘"                 │');
     console.log('└─────────────────────────────────────────────────────────────┘');
 }
 
@@ -1606,7 +1638,12 @@ async function corePull(targetVersion = 'latest', options = {}) {
     }
 
     // ═══════════════════════════════════════════════
-    // 0. 인프라 사전 동기화 (update:starter)
+    // 0. 클라이언트 보호 설정 로드 (config.yaml)
+    // ═══════════════════════════════════════════════
+    loadClientProtectedPages();
+
+    // ═══════════════════════════════════════════════
+    // 0.1 인프라 사전 동기화 (update:starter)
     // scripts/, .docking/engine/ 등 인프라 파일을 HQ에서 최신으로 갱신
     // ═══════════════════════════════════════════════
     if (!dryRun) {
@@ -1768,6 +1805,42 @@ async function corePull(targetVersion = 'latest', options = {}) {
     if (conflicts.length > 0) {
         console.log(`\n⚠️  실제 충돌 감지: 코어 파일 ${conflicts.length}개가 로컬과 다름`);
         backupDir = await backupModifiedFiles(conflicts, current, version);
+
+        // ═══════════════════════════════════════════════
+        // Auto-migration: 페이지 충돌 시 자동으로 _local/에 보존
+        // config 없이도 클라이언트 수정 사항이 보호됨
+        // Vite clinicLocalOverrides 플러그인이 _local/ 우선 적용
+        // ═══════════════════════════════════════════════
+        if (!dryRun) {
+            const autoMigrated = [];
+            for (const file of conflicts) {
+                // src/pages/ 파일만 자동 마이그레이션 (_local/ Vite 오버라이드 지원)
+                if (!file.startsWith('src/pages/')) continue;
+                // 이미 _local에 있으면 스킵
+                const relativePage = file.replace(/^src\/pages\//, '');
+                const localOverridePath = path.join(
+                    PROJECT_ROOT,
+                    toLocalPath('src/pages/_local/' + relativePage)
+                );
+                if (fs.existsSync(localOverridePath)) continue;
+
+                // 현재 클라이언트 버전을 _local/에 복사
+                const clientFilePath = path.join(PROJECT_ROOT, toLocalPath(file));
+                if (fs.existsSync(clientFilePath)) {
+                    fs.ensureDirSync(path.dirname(localOverridePath));
+                    fs.copySync(clientFilePath, localOverridePath);
+                    autoMigrated.push(file);
+                }
+            }
+            if (autoMigrated.length > 0) {
+                console.log(`\n🔀 Auto-migration: ${autoMigrated.length}개 페이지를 _local/로 보존`);
+                autoMigrated.forEach(f => {
+                    const rel = f.replace(/^src\/pages\//, '');
+                    console.log(`   📄 ${f} → src/pages/_local/${rel}`);
+                });
+                console.log(`   💡 코어는 정상 업데이트되고, 빌드 시 _local/ 버전이 우선 적용됩니다.`);
+            }
+        }
     }
 
     // ═══════════════════════════════════════════════

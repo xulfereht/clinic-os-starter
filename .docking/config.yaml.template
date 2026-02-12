@@ -14,14 +14,24 @@ clinic_name: ""
 # Legacy field - deprecated, use device_token instead
 # license_key: "YOUR-LICENSE-KEY"
 
-# Protected Pages (core:pull auto-migration)
-# Pages listed here will be auto-copied to src/pages/_local/{relative_path}
-# before core:pull applies the new core version. The _local/ directory is
-# excluded from Astro routing (underscore convention) and takes priority
-# at build/dev time via the clinicLocalOverrides Vite plugin.
+# Protected Pages (core:pull protection + auto-migration to _local/)
+# Pages listed here are:
+#   1. Protected from core:pull overwrite (isProtectedPath returns true)
+#   2. Auto-copied to src/pages/_local/{relative_path} if not already there
+# The _local/ directory is excluded from Astro routing (underscore convention)
+# and takes priority at build/dev time via the clinicLocalOverrides Vite plugin.
 # Example:
 #   protected_pages:
 #     - src/pages/doctors/index.astro
 #     - src/pages/intake.astro
 #     - src/pages/reviews.astro
 protected_pages: []
+
+# Protected Prefixes (core:pull protection by path prefix)
+# All files matching these prefixes are protected from core:pull overwrite.
+# Useful for protecting entire directories of client-specific pages.
+# Example:
+#   protected_prefixes:
+#     - src/pages/intake/
+#     - src/pages/custom/
+protected_prefixes: []
