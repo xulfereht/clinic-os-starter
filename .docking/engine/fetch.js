@@ -2184,6 +2184,60 @@ async function corePull(targetVersion = 'latest', options = {}) {
     // ═══════════════════════════════════════════════
     await writeCoreVersion(version);
 
+    // ═══════════════════════════════════════════════
+    // 9.1. Content Doctor: prevent recurring build breaks
+    // - Some files have historically been corrupted into a single path string
+    //   (e.g. "../../../features/.../members.ts") or symlink loops.
+    // - Fix by restoring the real upstream content.
+    // ═══════════════════════════════════════════════
+    try {
+        const DOCTOR_TARGETS = [
+            'src/pages/api/vip-management/members.ts',
+            'src/features/vip-management/api/members.ts',
+        ];
+
+        for (const upstreamPath of DOCTOR_TARGETS) {
+            const localPath = toLocalPath(upstreamPath);
+            const fullLocalPath = path.join(PROJECT_ROOT, localPath);
+
+            if (!fs.existsSync(fullLocalPath)) continue;
+
+            // If it's a symlink, unlink and restore (avoids ELOOP during Astro route scan)
+            try {
+                const st = fs.lstatSync(fullLocalPath);
+                if (st.isSymbolicLink()) {
+                    fs.unlinkSync(fullLocalPath);
+                    await restoreFileFromUpstream(version, upstreamPath);
+                    console.log(`   🩺 Doctor: restored symlinked file from upstream: ${localPath}`);
+                    continue;
+                }
+            } catch {
+                // ignore
+            }
+
+            // If file content looks like a pointer/path-only stub, restore.
+            try {
+                const raw = String(fs.readFileSync(fullLocalPath, 'utf8') || '');
+                const trimmed = raw.trim();
+                const looksLikePointer =
+                    trimmed.length > 0 &&
+                    trimmed.length < 200 &&
+                    (trimmed.startsWith('../') || trimmed.startsWith('./')) &&
+                    !trimmed.includes('export') &&
+                    !trimmed.includes('import');
+
+                if (looksLikePointer) {
+                    await restoreFileFromUpstream(version, upstreamPath);
+                    console.log(`   🩺 Doctor: restored pointer-stub file from upstream: ${localPath}`);
+                }
+            } catch {
+                // ignore
+            }
+        }
+    } catch (e) {
+        console.log(`   ⚠️  Content doctor skipped: ${e.message}`);
+    }
+
     // ═══════════════════════════════════���═══════════
     // 10. 자동 커밋 (변경 없으면 커밋 생략)
     // ═══════════════════════════════════════════════
