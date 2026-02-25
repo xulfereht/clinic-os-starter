@@ -461,32 +461,32 @@ clinic_name: "${clinicName}"
     // Bucket name follows DB name pattern
     const bucketName = dbName.replace(/-db$/, '-uploads');
 
-    // Function to write wrangler.toml
+    // DG7: Pages 형식 wrangler.toml 생성 (Workers 형식이 아님)
     const writeWrangler = async (dId) => {
         const content = `# Clinic-OS Configuration for ${clinicName}
 name = "${cleanName}"
-main = "core/dist/_worker.js"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "dist"
 
-[site]
-bucket = "./core/dist"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "${dbName}"
-database_id = "${dId}"
-
+# R2 버킷 (이미지/파일 업로드용)
 [[r2_buckets]]
 binding = "BUCKET"
 bucket_name = "${bucketName}"
 
-[[kv_namespaces]]
-binding = "SESSION"
-id = "local-session-placeholder"
-
+# 환경 변수
 [vars]
 CLINIC_NAME = "${clinicName}"
+ADMIN_PASSWORD = "change-me-in-production"
+ALIGO_TESTMODE = "Y"
+# 커스텀 도메인 연결 후 아래 주석 해제 및 URL 수정
+# CLOUDFLARE_URL = "https://${cleanName}.pages.dev"
+
+# D1 데이터베이스
+[[d1_databases]]
+binding = "DB"
+database_name = "${dbName}"
+database_id = "${dId}"
 `;
         await fs.writeFile(wranglerPath, content);
     };

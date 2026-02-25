@@ -50,7 +50,7 @@ graph TD
 
 ### B. 데이터 구조를 고쳤을 때 (Schema Change)
 "환자 테이블에 '혈액형' 칸을 추가했다"와 같이 **'정보의 구조'**가 바뀌었을 때입니다.
-*   **명령어**: `npm run db:push` (개발 예정 기능) 또는 `npx wrangler d1 migrations apply`
+*   **명령어**: `npm run db:migrate` (로컬) 또는 `npx wrangler d1 migrations apply --remote` (프로덕션)
 *   **주의**: 이 작업은 신중해야 합니다. 데이터 구조가 바뀌면 기존 데이터와 충돌이 날 수 있습니다. **반드시 백업 후 진행하세요.**
 
 ### C. 콘텐츠만 추가했을 때 (Content)
