@@ -21,8 +21,8 @@ Clinic-OS HQ의 Google 로그인 기능을 활성화하기 위한 키 발급 절
 1. 좌측 메뉴 **[사용자 인증 정보]** → **[+ 사용자 인증 정보 만들기]** → **[OAuth 클라이언트 ID]**.
 2. **애플리케이션 유형**: `웹 애플리케이션`.
 3. **이름**: `HQ Web Client`.
-4. **승인된 리디렉션 URI** 항목에 **[URI 추가]**를 누르고 아래 주소 입력:
-   - `https://clinic-os-hq.pages.dev/auth/google/callback`
+4. **승인된 리디렉션 URI** 항목에 **[URI 추가]**를 누르고 실제 배포 URL 입력:
+   - `https://YOUR-HQ-DOMAIN/auth/google/callback` (예: `https://clinic-os-hq.pages.dev/auth/google/callback`)
    - (로컬 개발용): `http://localhost:8787/auth/google/callback` (선택사항)
 5. **[만들기]** 클릭.
 
