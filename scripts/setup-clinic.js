@@ -461,32 +461,32 @@ clinic_name: "${clinicName}"
     // Bucket name follows DB name pattern
     const bucketName = dbName.replace(/-db$/, '-uploads');
 
-    // Function to write wrangler.toml
+    // DG7: Pages 형식 wrangler.toml 생성 (Workers 형식이 아님)
     const writeWrangler = async (dId) => {
         const content = `# Clinic-OS Configuration for ${clinicName}
 name = "${cleanName}"
-main = "core/dist/_worker.js"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "dist"
 
-[site]
-bucket = "./core/dist"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "${dbName}"
-database_id = "${dId}"
-
+# R2 버킷 (이미지/파일 업로드용)
 [[r2_buckets]]
 binding = "BUCKET"
 bucket_name = "${bucketName}"
 
-[[kv_namespaces]]
-binding = "SESSION"
-id = "local-session-placeholder"
-
+# 환경 변수
 [vars]
 CLINIC_NAME = "${clinicName}"
+ADMIN_PASSWORD = "change-me-in-production"
+ALIGO_TESTMODE = "Y"
+# 커스텀 도메인 연결 후 아래 주석 해제 및 URL 수정
+# CLOUDFLARE_URL = "https://${cleanName}.pages.dev"
+
+# D1 데이터베이스
+[[d1_databases]]
+binding = "DB"
+database_name = "${dbName}"
+database_id = "${dId}"
 `;
         await fs.writeFile(wranglerPath, content);
     };
@@ -872,23 +872,59 @@ exit 0
         console.log("   ⏭️  프로덕션 설정을 건너뜁니다.");
     }
 
-    // Done
-    console.log("\n═══════════════════════════════════════════════════════════");
-    console.log("   🎉  설정 완료!  🎉");
-    // ... rest of the logs
+    // 10. Generate Claude Code protection settings
+    console.log("\n🛡️  Step 10: AI 에이전트 보호 규칙 생성\n");
 
+    const claudeDir = path.join(PROJECT_ROOT, '.claude');
+    const claudeSettingsPath = path.join(claudeDir, 'settings.json');
+    await fs.ensureDir(claudeDir);
 
-    // 11. Done!
-    console.log("\n═══════════════════════════════════════════════════════════");
-    console.log("   🎉  설정 완료!  🎉");
-    console.log("═══════════════════════════════════════════════════════════");
+    const claudeSettings = {
+        permissions: {
+            deny: [
+                "Edit(src/pages/**)",
+                "Edit(src/components/**)",
+                "Edit(src/layouts/**)",
+                "Edit(src/styles/**)",
+                "Edit(src/lib/**)",
+                "Edit(src/plugins/custom-homepage/**)",
+                "Edit(src/plugins/survey-tools/**)",
+                "Edit(src/survey-tools/stress-check/**)",
+                "Edit(migrations/**)",
+                "Edit(seeds/**)",
+                "Edit(docs/**)",
+                "Edit(scripts/**)",
+                "Edit(.docking/engine/**)",
+                "Write(wrangler.toml)",
+                "Write(clinic.json)",
+                "Write(.docking/config.yaml)",
+                "Write(src/config.ts)",
+                "Write(src/styles/global.css)",
+                "Write(package.json)",
+                "Write(astro.config.mjs)",
+                "Write(tsconfig.json)"
+            ],
+            allow: [
+                "Edit(src/lib/local/**)",
+                "Edit(src/plugins/local/**)",
+                "Edit(src/pages/_local/**)",
+                "Edit(src/survey-tools/local/**)",
+                "Edit(public/local/**)"
+            ]
+        }
+    };
 
-    // 12. Auto-run core:pull to fetch initial core files
-    console.log("\n📦 코어 파일을 가져오는 중...");
+    await fs.writeFile(claudeSettingsPath, JSON.stringify(claudeSettings, null, 2) + '\n');
+    console.log("   ✅ .claude/settings.json 생성 완료");
+    console.log("   → 코어 파일 수정 차단, local/ 경로만 허용");
+
+    // 11. Auto-run core:pull to fetch initial core files
+    // core:pull이 먼저 실행되어야 onboarding-registry.json이 최신 상태로 존재함
+    console.log("\n📦 Step 11: 코어 파일 가져오기\n");
     try {
-        const channel = config.hq?.channel || 'stable';
-        const args = channel === 'beta' ? '--beta' : (channel === 'stable' ? '--stable' : '');
-        const fetchCmd = `node .docking/engine/fetch.js ${args}`;
+        const fetchChannel = channel || 'stable';
+        const fetchArgs = fetchChannel === 'beta' ? '--beta' : (fetchChannel === 'stable' ? '--stable' : '');
+        const fetchCmd = `node .docking/engine/fetch.js ${fetchArgs}`;
 
         console.log(`   실행: ${fetchCmd}`);
         await execAsync(fetchCmd);
@@ -896,6 +932,54 @@ exit 0
     } catch (e) {
         console.log("   ⚠️  코어 파일 가져오기 실패 (나중에 npm run core:pull로 다시 시도하세요)");
     }
+
+    // 12. Initialize onboarding state (core:pull 이후 실행 → registry 확보됨)
+    console.log("\n📋 Step 12: 온보딩 상태 초기화\n");
+    const agentDir = path.join(PROJECT_ROOT, '.agent');
+    const onboardingStatePath = path.join(agentDir, 'onboarding-state.json');
+
+    if (!fs.existsSync(onboardingStatePath)) {
+        const registryPath = path.join(agentDir, 'onboarding-registry.json');
+        let featureStates = {};
+
+        if (fs.existsSync(registryPath)) {
+            try {
+                const registry = fs.readJsonSync(registryPath);
+                for (const feature of registry.features) {
+                    featureStates[feature.id] = {
+                        status: "pending",
+                        updated_at: null,
+                        notes: null
+                    };
+                }
+                console.log(`   ✅ 레지스트리에서 ${Object.keys(featureStates).length}개 기능 로드`);
+            } catch (e) {
+                console.log("   ⚠️  레지스트리 읽기 실패:", e.message);
+            }
+        } else {
+            console.log("   ⚠️  onboarding-registry.json 미발견 (core:pull 후 다시 시도)");
+        }
+
+        await fs.ensureDir(agentDir);
+        const state = {
+            initialized_at: new Date().toISOString(),
+            last_updated: new Date().toISOString(),
+            current_tier: 1,
+            deployment_count: 0,
+            clinic_name: clinicName,
+            features: featureStates
+        };
+
+        await fs.writeFile(onboardingStatePath, JSON.stringify(state, null, 2) + '\n');
+        console.log("   ✅ .agent/onboarding-state.json 생성 완료");
+    } else {
+        console.log("   ⏭️  기존 온보딩 상태 유지");
+    }
+
+    // Done
+    console.log("\n═══════════════════════════════════════════════════════════");
+    console.log("   🎉  설정 완료!  🎉");
+    console.log("═══════════════════════════════════════════════════════════");
 
     console.log(`
    디바이스가 HQ에 등록되었습니다.
@@ -905,8 +989,8 @@ exit 0
    1. 로컬 개발 서버 실행:
       npm run dev
 
-   2. 업데이트 확인:
-      npm run core:pull
+   2. 온보딩 시작:
+      AI 에이전트에게 "온보딩 시작" 이라고 말해주세요.
 
    3. 프로덕션 배포:
       npm run deploy
