@@ -323,12 +323,31 @@ t('common.bookNow')  // "예약하기" or "Book Now"
 |------|------|
 | `docs/CLINIC_INFO_SETUP.md` | 병원 정보 설정 |
 | `docs/DESIGN_SYSTEM_GUIDE.md` | 디자인 커스터마이징 |
-| `docs/LOCAL_GIT_ARCHITECTURE.md` | Git 아키텍처 |
-| `DB_GUIDE.md` | 로컬/리모트 DB |
+| `docs/GITHUB_SETUP_GUIDE.md` | GitHub 연동 (코드 백업) |
+| `docs/BACKUP_GUIDE.md` | D1 백업 & 복원 |
+| `docs/R2_STORAGE_GUIDE.md` | R2 스토리지 관리 |
+| `docs/DEVICE_MIGRATION_GUIDE.md` | 디바이스 마이그레이션 |
+| `docs/WORKFLOW_GUIDE.md` | 안전한 작업 흐름 |
+| `docs/CLINIC_JSON_REFERENCE.md` | clinic.json 구조 |
+
+### 에이전트 워크플로우
+| 파일 | 용도 |
+|------|------|
+| `.agent/workflows/softgate.md` | 소프트게이트 가드레일 |
+| `.agent/workflows/onboarding.md` | 온보딩 대화 흐름 |
+| `.agent/onboarding-registry.json` | 기능 레지스트리 (SOT) |
+| `.agent/clinic-profile.json` | 클리닉 프로파일 (Gate 0) |
+| `.agent/softgate-state.json` | 게이트 통과 상태 |
 
 ---
 
 ## 11. 작업 전 체크리스트
+
+### 소프트게이트 체크 (세션 시작 시)
+- [ ] `.agent/clinic-profile.json` 존재? (Gate 0)
+- [ ] `git remote -v`에 github.com origin? (Gate 1)
+- [ ] 최근 7일 이내 DB 백업? (Gate 2)
+- [ ] `wrangler.toml`에 R2 binding? (Gate 3)
 
 ### 코드 수정 전
 - [ ] `local/` 폴더에서 작업하는가? (코어 파일 보호)
@@ -336,6 +355,7 @@ t('common.bookNow')  // "예약하기" or "Book Now"
 - [ ] 플러그인으로 해결 가능한가?
 
 ### DB 작업 전
+- [ ] `npm run db:backup` 실행 (자동 백업)
 - [ ] API를 통해 수정 가능한가? (직접 SQL 지양)
 - [ ] 스키마 변경 시 마이그레이션 파일 작성했는가?
 - [ ] custom_ 접두사를 사용했는가? (새 테이블)
@@ -344,6 +364,7 @@ t('common.bookNow')  // "예약하기" or "Book Now"
 - [ ] `npm run dev`로 로컬 테스트했는가?
 - [ ] TypeScript 에러 없는가?
 - [ ] 환경변수 설정 완료했는가?
+- [ ] Git commit + push 완료? (Gate 1)
 
 ---
 

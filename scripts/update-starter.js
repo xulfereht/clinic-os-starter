@@ -28,7 +28,11 @@ const FALLBACK_INFRA_FILES = [
     'scripts/check-system.js',
     'scripts/dev-preflight.js',
     'scripts/deploy-guard.js',
-    'scripts/update-starter.js'
+    'scripts/update-starter.js',
+
+    // 건강 진단
+    'scripts/health-audit.js',
+    'scripts/doctor.js'
 ];
 
 async function fetchManifest(hqUrl, deviceToken) {
