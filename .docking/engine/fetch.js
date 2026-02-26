@@ -128,63 +128,42 @@ const IS_STARTER_KIT = detectStarterKitStructure();
 const CORE_DIR = IS_STARTER_KIT ? 'core/' : '';
 
 // ═══════════════════════════════════════════════════════════════
-// 경로 정의 (LOCAL_GIT_ARCHITECTURE.md와 동기화)
+// Protection Rules — loaded from manifest (SOT)
+// Fallback to hardcoded values if manifest not found (bootstrap)
+// SOT: .docking/protection-manifest.yaml
 // ═══════════════════════════════════════════════════════════════
+let CORE_PATHS, LOCAL_PREFIXES, PROTECTED_EXACT, PROTECTED_PREFIXES, SPECIAL_MERGE_FILES;
 
-const CORE_PATHS = [
-    // 앱 코드
-    'src/pages/',
-    'src/components/',
-    'src/layouts/',
-    'src/styles/',
-    'src/lib/',
-    'src/plugins/custom-homepage/',
-    'src/plugins/survey-tools/',
-    'src/survey-tools/stress-check/',
-    'migrations/',
-    'seeds/',
-    'docs/',
-
-    // 인프라 (Option D: starter 통합)
-    'scripts/',
-    '.docking/engine/',
-    'package.json',
-    'astro.config.mjs',
-    'tsconfig.json',
-];
-
-// 클라이언트 전용 경로 (upstream에 없음, 절대 건드리지 않음)
-const LOCAL_PREFIXES = [
-    'src/lib/local/',
-    'src/plugins/local/',
-    'src/pages/_local/',
-    'src/survey-tools/local/',
-    'public/local/',
-];
-
-// 클라이언트 설정 파일 (양쪽에 존재하지만 클라이언트 버전 보호)
-// ⚠️ 여기에는 모든 클라이언트에 공통되는 항목만 넣을 것
-//    클라이언트별 커스텀 페이지는 .docking/config.yaml의 protected_pages 사용
-const PROTECTED_EXACT = new Set([
-    'wrangler.toml',
-    'clinic.json',
-    '.docking/config.yaml',
-    // 클라이언트 설정/스타일 (모든 클라이언트가 커스터마이징하는 공통 파일)
-    'src/config.ts',
-    'src/styles/global.css',
-]);
-
-const PROTECTED_PREFIXES = [
-    '.env',                  // .env, .env.local, .env.production 등
-    '.core/',                // 버전 메타데이터
-    'src/plugins/local/',    // 로컬 플러그인 (클라이언트 커스텀)
-    // .docking/engine/는 보호하지 않음 - fetch.js 업데이트 필요
-];
-
-// 특수 머지가 필요한 파일
-const SPECIAL_MERGE_FILES = new Set([
-    'package.json',
-]);
+try {
+    const manifestPath = path.join(PROJECT_ROOT, '.docking/protection-manifest.yaml');
+    const manifest = yaml.load(fs.readFileSync(manifestPath, 'utf8'));
+    CORE_PATHS = manifest.core_paths;
+    LOCAL_PREFIXES = manifest.local_prefixes;
+    PROTECTED_EXACT = new Set(manifest.protected_exact);
+    PROTECTED_PREFIXES = manifest.protected_prefixes;
+    SPECIAL_MERGE_FILES = new Set(manifest.special_merge);
+} catch (e) {
+    // Fallback: bootstrap 또는 manifest 미존재 시 (하드코딩 값 유지)
+    CORE_PATHS = [
+        'src/pages/', 'src/components/', 'src/layouts/', 'src/styles/',
+        'src/lib/', 'src/plugins/custom-homepage/', 'src/plugins/survey-tools/',
+        'src/survey-tools/stress-check/', 'migrations/', 'seeds/', 'docs/',
+        '.agent/onboarding-registry.json', '.agent/workflows/',
+        'scripts/', '.docking/engine/', 'package.json', 'astro.config.mjs',
+        'tsconfig.json',
+    ];
+    LOCAL_PREFIXES = [
+        'src/lib/local/', 'src/plugins/local/', 'src/pages/_local/',
+        'src/survey-tools/local/', 'public/local/', 'docs/internal/',
+    ];
+    PROTECTED_EXACT = new Set([
+        'wrangler.toml', 'clinic.json', '.docking/config.yaml',
+        'src/config.ts', 'src/styles/global.css',
+        '.agent/onboarding-state.json',
+    ]);
+    PROTECTED_PREFIXES = ['.env', '.core/', 'src/plugins/local/'];
+    SPECIAL_MERGE_FILES = new Set(['package.json']);
+}
 
 // ═══════════════════════════════════════════════════════════════
 // 동적 보호: config.yaml의 protected_pages 로드
@@ -215,6 +194,54 @@ function loadClientProtectedPages() {
     } catch (e) {
         console.log(`   ⚠️  config.yaml 로드 실패: ${e.message}`);
     }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Starter Version 관리
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * .core/starter-version 읽기
+ * 없으면 현재 package.json 버전으로 자동 생성
+ */
+function readStarterVersion() {
+    const starterVersionPath = path.join(PROJECT_ROOT, '.core', 'starter-version');
+    if (fs.existsSync(starterVersionPath)) {
+        return fs.readFileSync(starterVersionPath, 'utf8').trim();
+    }
+
+    // 자동 생성: 현재 package.json 버전 사용
+    const pkgPath = IS_STARTER_KIT
+        ? path.join(PROJECT_ROOT, 'core', 'package.json')
+        : path.join(PROJECT_ROOT, 'package.json');
+
+    let version = 'v0.0.0';
+    if (fs.existsSync(pkgPath)) {
+        try {
+            const pkg = fs.readJsonSync(pkgPath);
+            if (pkg.version) {
+                version = pkg.version.startsWith('v') ? pkg.version : `v${pkg.version}`;
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    const coreDir = path.join(PROJECT_ROOT, '.core');
+    fs.ensureDirSync(coreDir);
+    fs.writeFileSync(starterVersionPath, version);
+    console.log(`   ℹ️  .core/starter-version 자동 생성: ${version}`);
+    return version;
+}
+
+/**
+ * Semver 비교: a < b ?
+ */
+function semverLt(a, b) {
+    const parse = (v) => (v || '').replace(/^v/, '').split('.').map(Number);
+    const av = parse(a), bv = parse(b);
+    for (let i = 0; i < 3; i++) {
+        if ((av[i] || 0) !== (bv[i] || 0)) return (av[i] || 0) < (bv[i] || 0);
+    }
+    return false;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1680,6 +1707,28 @@ async function corePull(targetVersion = 'latest', options = {}) {
     }
 
     // ═══════════════════════════════════════════════
+    // 0.6 Pre-pull 건강 검진 + 자동 수정
+    // ═══════════════════════════════════════════════
+    if (!dryRun) {
+        try {
+            const healthPath = path.join(PROJECT_ROOT, 'scripts/health-audit.js');
+            if (fs.existsSync(healthPath)) {
+                const { runHealthAudit } = await import(healthPath);
+                const health = await runHealthAudit({ quiet: true, fix: true });
+                if (health.score < 30 && !force) {
+                    throw new Error(`건강 점수 ${health.score}/100 — npm run health:fix 후 재시도`);
+                }
+                if (health.score < 70) {
+                    console.log(`   ⚠️  건강 점수 ${health.score}/100 — 계속 진행합니다`);
+                }
+            }
+        } catch (e) {
+            if (e.message?.includes('건강 점수') && !force) throw e;
+            // health-audit.js 로드 실패 → 건너뜀
+        }
+    }
+
+    // ═══════════════════════════════════════════════
     // 1. HQ에서 인증된 Git URL 받아서 upstream 등록/업데이트 후 fetch
     // ═══════════════════════════════════════════════
     console.log('🔑 HQ에서 인증된 Git URL 가져오는 중...');
@@ -2184,6 +2233,60 @@ async function corePull(targetVersion = 'latest', options = {}) {
     // ═══════════════════════════════════════════════
     await writeCoreVersion(version);
 
+    // ═══════════════════════════════════════════════
+    // 9.1. Content Doctor: prevent recurring build breaks
+    // - Some files have historically been corrupted into a single path string
+    //   (e.g. "../../../features/.../members.ts") or symlink loops.
+    // - Fix by restoring the real upstream content.
+    // ═══════════════════════════════════════════════
+    try {
+        const DOCTOR_TARGETS = [
+            'src/pages/api/vip-management/members.ts',
+            'src/features/vip-management/api/members.ts',
+        ];
+
+        for (const upstreamPath of DOCTOR_TARGETS) {
+            const localPath = toLocalPath(upstreamPath);
+            const fullLocalPath = path.join(PROJECT_ROOT, localPath);
+
+            if (!fs.existsSync(fullLocalPath)) continue;
+
+            // If it's a symlink, unlink and restore (avoids ELOOP during Astro route scan)
+            try {
+                const st = fs.lstatSync(fullLocalPath);
+                if (st.isSymbolicLink()) {
+                    fs.unlinkSync(fullLocalPath);
+                    await restoreFileFromUpstream(version, upstreamPath);
+                    console.log(`   🩺 Doctor: restored symlinked file from upstream: ${localPath}`);
+                    continue;
+                }
+            } catch {
+                // ignore
+            }
+
+            // If file content looks like a pointer/path-only stub, restore.
+            try {
+                const raw = String(fs.readFileSync(fullLocalPath, 'utf8') || '');
+                const trimmed = raw.trim();
+                const looksLikePointer =
+                    trimmed.length > 0 &&
+                    trimmed.length < 200 &&
+                    (trimmed.startsWith('../') || trimmed.startsWith('./')) &&
+                    !trimmed.includes('export') &&
+                    !trimmed.includes('import');
+
+                if (looksLikePointer) {
+                    await restoreFileFromUpstream(version, upstreamPath);
+                    console.log(`   🩺 Doctor: restored pointer-stub file from upstream: ${localPath}`);
+                }
+            } catch {
+                // ignore
+            }
+        }
+    } catch (e) {
+        console.log(`   ⚠️  Content doctor skipped: ${e.message}`);
+    }
+
     // ═══════════════════════════════════���═══════════
     // 10. 자동 커밋 (변경 없으면 커밋 생략)
     // ═══════════════════════════════════════════════
@@ -2269,6 +2372,21 @@ async function preflightCheck(targetVersion = 'latest') {
 
     console.log(`\n   📌 현재 버전: ${current}`);
     console.log(`   🎯 타겟 버전: ${version}`);
+
+    // 3.5 스타터 호환성 검사
+    try {
+        const starterVer = readStarterVersion();
+        // upstream package.json에서 minStarterVersion 확인
+        const upstreamPkgResult = await runCommand(`git show ${version}:package.json`, true);
+        if (upstreamPkgResult.success) {
+            const upstreamPkg = JSON.parse(upstreamPkgResult.stdout);
+            const minStarter = upstreamPkg?.clinicOs?.minStarterVersion;
+            if (minStarter && semverLt(starterVer, minStarter)) {
+                console.log(`\n   ⚠️  스타터 ${starterVer} < 최소 요구 ${minStarter}`);
+                console.log(`   💡 npm run update:starter 실행을 권장합니다`);
+            }
+        }
+    } catch { /* 호환성 검사 실패 무시 */ }
 
     // 4. 버전 동일 여부 확인
     if (current === version) {

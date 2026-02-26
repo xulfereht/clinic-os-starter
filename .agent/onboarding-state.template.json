@@ -1,0 +1,8 @@
+{
+  "$comment": "이 파일은 npm run setup 시 .agent/onboarding-state.json으로 복사됩니다. 에이전트가 진행 상태를 추적합니다.",
+  "initialized_at": null,
+  "last_updated": null,
+  "current_tier": 1,
+  "deployment_count": 0,
+  "features": {}
+}
