@@ -1,3 +1,10 @@
+---
+hq_slug: review-management
+hq_title: "리뷰 관리 가이드"
+hq_category: "06. 콘텐츠 관리"
+hq_sort: 3
+hq_active: true
+---
 # 리뷰 관리 가이드
 
 이 가이드는 홈페이지 및 외부 서비스(영수증 리뷰 등)를 통해 수집된 환자들의 소중한 리뷰를 관리하고 활용하는 방법을 설명합니다.
