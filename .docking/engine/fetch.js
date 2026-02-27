@@ -48,6 +48,27 @@ try {
     recoverFromPreviousFailure = async () => {};
 }
 
+// Smart Update Strategy 모듈 임포트
+let selectUpdateStrategy, extractClientChanges, executeFreshWithMigration;
+try {
+    const smartUpdate = await import('./smart-update.js');
+    selectUpdateStrategy = smartUpdate.selectUpdateStrategy;
+    extractClientChanges = smartUpdate.extractClientChanges;
+    executeFreshWithMigration = smartUpdate.executeFreshWithMigration;
+} catch (e) {
+    // 모듈 없으면 기본 구현 (fetch.js 내부에 있는 함수 사용)
+    console.log('   ℹ️  smart-update.js 모듈 없음, 기본 구현 사용');
+}
+
+// 통합 마이그레이션 엔진 (PRAGMA 기반 컬럼 안전 체크 포함)
+let migrateEngine;
+try {
+    migrateEngine = await import('./migrate.js');
+} catch (e) {
+    console.log('   ℹ️  migrate.js 모듈 없음, 내장 마이그레이션 사용');
+    migrateEngine = null;
+}
+
 const execAsync = promisify(exec);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -128,63 +149,44 @@ const IS_STARTER_KIT = detectStarterKitStructure();
 const CORE_DIR = IS_STARTER_KIT ? 'core/' : '';
 
 // ═══════════════════════════════════════════════════════════════
-// 경로 정의 (LOCAL_GIT_ARCHITECTURE.md와 동기화)
+// Protection Rules — loaded from manifest (SOT)
+// Fallback to hardcoded values if manifest not found (bootstrap)
+// SOT: .docking/protection-manifest.yaml
 // ═══════════════════════════════════════════════════════════════
+let CORE_PATHS, LOCAL_PREFIXES, PROTECTED_EXACT, PROTECTED_PREFIXES, SPECIAL_MERGE_FILES;
 
-const CORE_PATHS = [
-    // 앱 코드
-    'src/pages/',
-    'src/components/',
-    'src/layouts/',
-    'src/styles/',
-    'src/lib/',
-    'src/plugins/custom-homepage/',
-    'src/plugins/survey-tools/',
-    'src/survey-tools/stress-check/',
-    'migrations/',
-    'seeds/',
-    'docs/',
-
-    // 인프라 (Option D: starter 통합)
-    'scripts/',
-    '.docking/engine/',
-    'package.json',
-    'astro.config.mjs',
-    'tsconfig.json',
-];
-
-// 클라이언트 전용 경로 (upstream에 없음, 절대 건드리지 않음)
-const LOCAL_PREFIXES = [
-    'src/lib/local/',
-    'src/plugins/local/',
-    'src/pages/_local/',
-    'src/survey-tools/local/',
-    'public/local/',
-];
-
-// 클라이언트 설정 파일 (양쪽에 존재하지만 클라이언트 버전 보호)
-// ⚠️ 여기에는 모든 클라이언트에 공통되는 항목만 넣을 것
-//    클라이언트별 커스텀 페이지는 .docking/config.yaml의 protected_pages 사용
-const PROTECTED_EXACT = new Set([
-    'wrangler.toml',
-    'clinic.json',
-    '.docking/config.yaml',
-    // 클라이언트 설정/스타일 (모든 클라이언트가 커스터마이징하는 공통 파일)
-    'src/config.ts',
-    'src/styles/global.css',
-]);
-
-const PROTECTED_PREFIXES = [
-    '.env',                  // .env, .env.local, .env.production 등
-    '.core/',                // 버전 메타데이터
-    'src/plugins/local/',    // 로컬 플러그인 (클라이언트 커스텀)
-    // .docking/engine/는 보호하지 않음 - fetch.js 업데이트 필요
-];
-
-// 특수 머지가 필요한 파일
-const SPECIAL_MERGE_FILES = new Set([
-    'package.json',
-]);
+try {
+    const manifestPath = path.join(PROJECT_ROOT, '.docking/protection-manifest.yaml');
+    const manifest = yaml.load(fs.readFileSync(manifestPath, 'utf8'));
+    CORE_PATHS = manifest.core_paths;
+    LOCAL_PREFIXES = manifest.local_prefixes;
+    PROTECTED_EXACT = new Set(manifest.protected_exact);
+    PROTECTED_PREFIXES = manifest.protected_prefixes;
+    SPECIAL_MERGE_FILES = new Set(manifest.special_merge);
+} catch (e) {
+    // Fallback: bootstrap 또는 manifest 미존재 시 (하드코딩 값 유지)
+    CORE_PATHS = [
+        'src/pages/', 'src/components/', 'src/layouts/', 'src/styles/',
+        'src/lib/', 'src/plugins/custom-homepage/', 'src/plugins/survey-tools/',
+        'src/survey-tools/stress-check/', 'src/content/aeo/',
+        'migrations/', 'seeds/', 'docs/',
+        '.agent/onboarding-registry.json', '.agent/workflows/',
+        '.claude/commands/', '.claude/rules/',
+        'scripts/', '.docking/engine/', 'package.json', 'astro.config.mjs',
+        'tsconfig.json',
+    ];
+    LOCAL_PREFIXES = [
+        'src/lib/local/', 'src/plugins/local/', 'src/pages/_local/',
+        'src/survey-tools/local/', 'public/local/', 'docs/internal/',
+    ];
+    PROTECTED_EXACT = new Set([
+        'wrangler.toml', 'clinic.json', '.docking/config.yaml',
+        'src/config.ts', 'src/styles/global.css',
+        '.agent/onboarding-state.json',
+    ]);
+    PROTECTED_PREFIXES = ['.env', '.core/', 'src/plugins/local/'];
+    SPECIAL_MERGE_FILES = new Set(['package.json']);
+}
 
 // ═══════════════════════════════════════════════════════════════
 // 동적 보호: config.yaml의 protected_pages 로드
@@ -215,6 +217,54 @@ function loadClientProtectedPages() {
     } catch (e) {
         console.log(`   ⚠️  config.yaml 로드 실패: ${e.message}`);
     }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Starter Version 관리
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * .core/starter-version 읽기
+ * 없으면 현재 package.json 버전으로 자동 생성
+ */
+function readStarterVersion() {
+    const starterVersionPath = path.join(PROJECT_ROOT, '.core', 'starter-version');
+    if (fs.existsSync(starterVersionPath)) {
+        return fs.readFileSync(starterVersionPath, 'utf8').trim();
+    }
+
+    // 자동 생성: 현재 package.json 버전 사용
+    const pkgPath = IS_STARTER_KIT
+        ? path.join(PROJECT_ROOT, 'core', 'package.json')
+        : path.join(PROJECT_ROOT, 'package.json');
+
+    let version = 'v0.0.0';
+    if (fs.existsSync(pkgPath)) {
+        try {
+            const pkg = fs.readJsonSync(pkgPath);
+            if (pkg.version) {
+                version = pkg.version.startsWith('v') ? pkg.version : `v${pkg.version}`;
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    const coreDir = path.join(PROJECT_ROOT, '.core');
+    fs.ensureDirSync(coreDir);
+    fs.writeFileSync(starterVersionPath, version);
+    console.log(`   ℹ️  .core/starter-version 자동 생성: ${version}`);
+    return version;
+}
+
+/**
+ * Semver 비교: a < b ?
+ */
+function semverLt(a, b) {
+    const parse = (v) => (v || '').replace(/^v/, '').split('.').map(Number);
+    const av = parse(a), bv = parse(b);
+    for (let i = 0; i < 3; i++) {
+        if ((av[i] || 0) !== (bv[i] || 0)) return (av[i] || 0) < (bv[i] || 0);
+    }
+    return false;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -283,12 +333,13 @@ function isCorePath(filePath) {
     return CORE_PATHS.some(corePath => filePath.startsWith(corePath));
 }
 
-async function runCommand(cmd, silent = false) {
+async function runCommand(cmd, silent = false, timeoutMs = 120000) {
     if (!silent) console.log(`   > ${cmd}`);
     try {
         const { stdout, stderr } = await execAsync(cmd, {
             cwd: PROJECT_ROOT,
-            maxBuffer: 10 * 1024 * 1024
+            maxBuffer: 10 * 1024 * 1024,
+            timeout: timeoutMs
         });
         return { success: true, stdout: stdout?.trim() || '', stderr: stderr?.trim() || '' };
     } catch (error) {
@@ -296,6 +347,19 @@ async function runCommand(cmd, silent = false) {
         const stdout = error.stdout?.trim() || '';
         const stderr = error.stderr?.trim() || error.message || '';
         return { success: false, stdout, stderr };
+    }
+}
+
+/**
+ * AbortController 기반 fetch 타임아웃 래퍼
+ */
+async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+        clearTimeout(timeoutId);
     }
 }
 
@@ -419,11 +483,11 @@ async function getAuthenticatedGitUrl() {
     }
 
     try {
-        const response = await fetch(`${hqUrl}/api/v1/update/git-url`, {
+        const response = await fetchWithTimeout(`${hqUrl}/api/v1/update/git-url`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ device_token: deviceToken, license_key: licenseKey, channel: channel })
-        });
+        }, 15000);
 
         if (!response.ok) {
             const err = await response.json().catch(() => ({}));
@@ -447,7 +511,7 @@ async function getVersionFromHQ(channel = 'stable') {
 
     try {
         // HQ API 호출 (간단한 fetch)
-        const response = await fetch(`${hqUrl}/api/v1/update/channel-version?channel=${channel}`);
+        const response = await fetchWithTimeout(`${hqUrl}/api/v1/update/channel-version?channel=${channel}`, {}, 10000);
         if (!response.ok) {
             return null;
         }
@@ -1040,91 +1104,8 @@ async function ensureMigrationsTable(dbName) {
     );
 }
 
-/**
- * Check if the system is in bootstrap mode
- * Bootstrap mode: d1_migrations table is missing OR empty (row count = 0)
- */
-async function isBootstrapMode(dbName) {
-    try {
-        // First check if table exists and get row count in one query
-        const result = await runCommand(
-            `npx wrangler d1 execute ${dbName} --local --command "SELECT COUNT(*) as count FROM d1_migrations" --json 2>&1`,
-            true
-        );
-
-        if (result.success && result.stdout) {
-            try {
-                const data = JSON.parse(result.stdout);
-                if (data && data[0] && data[0].results && data[0].results[0]) {
-                    const rowCount = data[0].results[0].count;
-                    // Table exists but empty = bootstrap mode
-                    return rowCount === 0;
-                }
-            } catch (parseError) {
-                // JSON parse failed - treat as bootstrap
-                return true;
-            }
-        }
-        // Query failed - likely table doesn't exist = bootstrap mode
-        return true;
-    } catch (e) {
-        // Error checking = bootstrap mode
-        return true;
-    }
-}
-
-/**
- * Parse ALTER TABLE ADD COLUMN SQL to extract table name and column name
- * Supports: ALTER TABLE table_name ADD COLUMN column_name ...
- */
-function parseAlterTableSql(sql) {
-    // Normalize whitespace for easier parsing
-    const normalized = sql.replace(/\s+/g, ' ').trim();
-
-    // Regex pattern: ALTER TABLE table_name ADD COLUMN column_name ...
-    const alterRegex = /ALTER\s+TABLE\s+([^\s(]+)\s+ADD\s+COLUMN\s+([^\s(]+)/i;
-    const match = normalized.match(alterRegex);
-
-    if (match && match.length >= 3) {
-        return {
-            tableName: match[1],
-            columnName: match[2]
-        };
-    }
-
-    return null;
-}
-
-/**
- * Check if a column exists in a table using PRAGMA table_info()
- * This is the ONLY reliable way to check column existence in SQLite
- */
-async function columnExists(dbName, tableName, columnName) {
-    try {
-        const result = await runCommand(
-            `npx wrangler d1 execute ${dbName} --local --command "PRAGMA table_info(${tableName})" --json 2>&1`,
-            true
-        );
-
-        if (result.success && result.stdout) {
-            try {
-                const data = JSON.parse(result.stdout);
-                if (data && data[0] && data[0].results) {
-                    // PRAGMA table_info returns array of column info objects
-                    // Each has 'name' property containing column name
-                    return data[0].results.some(col => col.name === columnName);
-                }
-            } catch (parseError) {
-                // JSON parse failed - assume column doesn't exist
-                return false;
-            }
-        }
-        return false;
-    } catch (e) {
-        // Error checking = assume column doesn't exist
-        return false;
-    }
-}
+// parseAlterTableSql, isBootstrapMode, columnExists — migrate.js 통합 엔진으로 이관됨
+// fetch.js에서 직접 사용하지 않음. fallback 경로에서도 불필요 (파일 전체 실행 방식)
 
 /**
  * d1_migrations 테이블에서 적용된 마이그레이션 목록 조회
@@ -1148,21 +1129,7 @@ async function getAppliedMigrations(dbName) {
     return new Set();
 }
 
-/**
- * 기존 마이그레이션을 d1_migrations 테이블에 일괄 등록 (최초 1회)
- * - 테이블이 비어있으면 모든 마이그레이션을 "이미 적용됨"으로 등록
- * - 이를 통해 기존 클라이언트도 새 트래킹 시스템으로 전환
- */
-async function bootstrapMigrationTracking(dbName, migrationFiles) {
-    // 각 마이그레이션을 등록 (INSERT OR IGNORE로 중복 방지)
-    const values = migrationFiles.map(f => `('${f}')`).join(',');
-    if (values) {
-        await runCommand(
-            `npx wrangler d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_migrations (name) VALUES ${values}" --yes 2>&1`,
-            true
-        );
-    }
-}
+// bootstrapMigrationTracking — migrate.js 통합 엔진으로 이관됨
 
 /**
  * 마이그레이션 적용 후 d1_migrations 테이블에 기록
@@ -1191,14 +1158,47 @@ async function updateSchemaDoc() {
 }
 
 /**
- * 마이그레이션 파일을 스캔하고 DB에 적용 (최적화 버전)
- * - d1_migrations 테이블로 적용 여부 추적
- * - 새 마이그레이션만 실행 (기존: 매번 전체 실행)
- * - 적용 후 스키마 문서 자동 갱신
- * - Bootstrap mode: Handles first run with PRAGMA-based column existence check
+ * 마이그레이션 실행 — migrate.js 통합 엔진 사용
+ *
+ * migrate.js의 runMigrations()로 위임:
+ * - PRAGMA table_info 기반 컬럼 존재 확인 (모든 ALTER TABLE에 대해)
+ * - 다중 ALTER TABLE 파일 지원 (parseAllAlterTableStatements)
+ * - SQLITE_BUSY exponential backoff 재시도
+ * - 혼합 파일(ALTER+UPDATE) 임시파일 분리 실행
+ * - 부분 실패 시 미기록 → 재시도 가능
+ *
+ * migrate.js가 없으면 기본 fallback (파일 전체 실행)
  */
 async function runAllMigrations(forceBootstrap = false) {
-    // wrangler.toml에서 DB 이름 가져오기
+    // migrate.js 통합 엔진 사용
+    if (migrateEngine) {
+        console.log('\n🗃️  통합 마이그레이션 엔진 실행 (PRAGMA 안전 모드)');
+        try {
+            const result = await migrateEngine.runMigrations({
+                local: true,
+                verbose: true,
+                verify: true
+            });
+
+            if (result.applied > 0) {
+                await updateSchemaDoc();
+            }
+
+            if (!result.success) {
+                console.log(`   ⚠️  일부 마이그레이션 실패 (${result.failed}개)`);
+                if (result.errors) {
+                    for (const err of result.errors) {
+                        console.log(`      - ${err.file}: ${err.error}`);
+                    }
+                }
+            }
+            return;
+        } catch (e) {
+            console.log(`   ⚠️  통합 엔진 오류, fallback 사용: ${e.message}`);
+        }
+    }
+
+    // ── Fallback: migrate.js가 없을 때 기본 동작 ──
     let dbName = 'local-clinic-db';
     const wranglerPath = path.join(PROJECT_ROOT, 'wrangler.toml');
     if (fs.existsSync(wranglerPath)) {
@@ -1207,7 +1207,6 @@ async function runAllMigrations(forceBootstrap = false) {
         if (match) dbName = match[1];
     }
 
-    // 마이그레이션 폴더 경로 (스타터킷 구조 지원)
     const migrationsDir = IS_STARTER_KIT
         ? path.join(PROJECT_ROOT, 'core', 'migrations')
         : path.join(PROJECT_ROOT, 'migrations');
@@ -1217,7 +1216,6 @@ async function runAllMigrations(forceBootstrap = false) {
         return;
     }
 
-    // 모든 .sql 파일 가져오기 (정렬됨)
     const migrationFiles = fs.readdirSync(migrationsDir)
         .filter(f => f.endsWith('.sql'))
         .sort();
@@ -1227,136 +1225,40 @@ async function runAllMigrations(forceBootstrap = false) {
         return;
     }
 
-    // d1_migrations 테이블 존재 확인 및 생성
     await ensureMigrationsTable(dbName);
-
-    // Check bootstrap mode: table is missing OR empty (row count = 0)
-    const bootstrapMode = forceBootstrap || await isBootstrapMode(dbName);
-
-    // 이미 적용된 마이그레이션 조회
     const appliedMigrations = await getAppliedMigrations(dbName);
-    const isFirstRun = appliedMigrations.size === 0;
-
-    // 새로 적용해야 할 마이그레이션 필터링
     const pendingMigrations = migrationFiles.filter(f => !appliedMigrations.has(f));
 
     if (pendingMigrations.length === 0) {
-        console.log(`\n🗃️  마이그레이션 (${migrationFiles.length}개 파일)`);
-        console.log(`   → 모든 마이그레이션 이미 적용됨`);
+        console.log(`\n🗃️  마이그레이션 (${migrationFiles.length}개 파일) — 모두 적용됨`);
         return;
     }
 
-    // Bootstrap mode 안내 메시지
-    if (bootstrapMode) {
-        console.log(`\n🗃️  Bootstrap Mode: 마이그레이션 (${pendingMigrations.length}개)`);
-        console.log(`   → PRAMA 기반 컬럼 존재 확인으로 안전 실행`);
-    } else if (isFirstRun) {
-        console.log(`\n🗃️  마이그레이션 트래킹 초기화 + 누락분 적용 (${pendingMigrations.length}개)`);
-        console.log(`   → 실행 후 결과 기반으로 트래킹 등록`);
-    } else {
-        console.log(`\n🗃️  마이그레이션 (${pendingMigrations.length}개 새 파일 / 전체 ${migrationFiles.length}개)`);
-    }
+    console.log(`\n🗃️  마이그레이션 (${pendingMigrations.length}개 적용 예정, fallback 모드)`);
 
-    let newlyApplied = 0;      // 실제로 새로 적용됨
-    let skippedExists = 0;     // 이미 존재하여 스킵 (bootstrap only)
-    let alreadyExists = 0;     // 이미 존재 (기존 로직)
-    let errorCount = 0;
+    let applied = 0;
+    let errors = 0;
 
     for (const fileName of pendingMigrations) {
         const filePath = path.join(migrationsDir, fileName);
+        const result = await runCommand(
+            `npx wrangler d1 execute ${dbName} --local --file="${filePath}" --yes 2>&1`,
+            true
+        );
+        const output = (result.stdout || '') + (result.stderr || '');
 
-        // Read migration SQL to determine type
-        const migrationSql = fs.readFileSync(filePath, 'utf8');
-        const parsedAlter = parseAlterTableSql(migrationSql);
-        const isAlterTable = parsedAlter !== null;
-
-        // Bootstrap mode: Handle ALTER TABLE ADD COLUMN with PRAGMA check
-        if (bootstrapMode && isAlterTable) {
-            const { tableName, columnName } = parsedAlter;
-            const colExists = await columnExists(dbName, tableName, columnName);
-
-            if (colExists) {
-                // Column already exists - skip SQL, record as applied
-                skippedExists++;
-                await recordMigration(dbName, fileName);
-                console.log(`   \u23ED\uFE0F  ${fileName} (컬럼 ${tableName}.${columnName} 이미 존재)`);
-                continue;
-            }
-            // Column doesn't exist - proceed with execution
-        }
-
-        // TASK-002: SQLITE_BUSY 재시도 래퍼 적용 (Exponential Backoff)
-        let result;
-        let output;
-
-        try {
-            result = await executeWithRetry(async () => {
-                const res = await runCommand(
-                    `npx wrangler d1 execute ${dbName} --local --file="${filePath}" --yes 2>&1`,
-                    true
-                );
-                const out = res.stdout + res.stderr;
-
-                // SQLITE_BUSY 오류는 재시도 가능하도록 throw
-                if (!res.success && (out.includes('SQLITE_BUSY') || out.includes('database is locked'))) {
-                    const error = new Error(`SQLITE_BUSY: ${fileName}`);
-                    error.output = out;
-                    throw error;
-                }
-
-                return { ...res, output: out };
-            });
-            output = result.output;
-        } catch (retryError) {
-            // 최대 재시도 후에도 실패
-            console.log(`   \u26A0\uFE0F  ${fileName}: ${retryError.message}`);
-            errorCount++;
-            // Bootstrap mode failures should STOP execution
-            if (bootstrapMode) {
-                console.log(`   ⛔ Bootstrap mode 실패로 실행 중단`);
-                break;
-            }
-            continue;
-        }
-
-        if (result.success) {
-            // 성공적으로 새로 적용됨
-            newlyApplied++;
+        if (result.success || output.includes('already exists') || output.includes('duplicate')) {
+            applied++;
             await recordMigration(dbName, fileName);
-            console.log(`   \u2705 ${fileName} (\uC801\uC6A9\uB428)`);
-        } else if (output.includes('already exists') || output.includes('duplicate')) {
-            // 이미 존재 - 기록만 추가 (bootstrap mode에서는 여기 도달하지 않아야 함)
-            alreadyExists++;
-            await recordMigration(dbName, fileName);
-            console.log(`   \u23ED\uFE0F  ${fileName} (\uC774\uBBF8 \uC874\uC7AC)`);
+            console.log(`   ✅ ${fileName}`);
         } else {
-            console.log(`   \u274C ${fileName}: ${output.substring(0, 100)}`);
-            errorCount++;
-            // Bootstrap mode failures should STOP execution
-            if (bootstrapMode) {
-                console.log(`   ⛔ Bootstrap mode 실패로 실행 중단`);
-                break;
-            }
+            errors++;
+            console.log(`   ❌ ${fileName}: ${output.substring(0, 100)}`);
         }
     }
 
-    // 결과 요약
-    if (bootstrapMode) {
-        console.log(`   → 새로 적용: ${newlyApplied}, 스킵 (이미 존재): ${skippedExists}, 오류: ${errorCount}`);
-        if (errorCount === 0) {
-            console.log(`   ✅ Bootstrap 완료 - 정상 모드로 전환 가능`);
-        } else {
-            console.log(`   ⚠️  Bootstrap 실패 - 수동 확인 필요`);
-        }
-    } else if (isFirstRun) {
-        console.log(`   → 새로 적용: ${newlyApplied}, 이미 존재: ${alreadyExists}, 오류: ${errorCount}`);
-        console.log(`   ✅ 트래킹 초기화 완료 (총 ${newlyApplied + alreadyExists}개 등록)`);
-    } else {
-        console.log(`   → 적용: ${newlyApplied}, 오류: ${errorCount}`);
-    }
-
-    // 마이그레이션 적용 시 스키마 문서 갱신
-    if (newlyApplied > 0) {
+    console.log(`   → 적용: ${applied}, 오류: ${errors}`);
+    if (applied > 0) {
         await updateSchemaDoc();
     }
 }
@@ -1616,7 +1518,7 @@ async function cleanupSampleData(dbName) {
 // ═══════════════════════════════════════════════════════════════
 
 async function corePull(targetVersion = 'latest', options = {}) {
-    const { dryRun = false, force = false, forceBootstrap = false } = options;
+    const { dryRun = false, force = false, forceBootstrap = false, autoMode = false } = options;
 
     if (dryRun) {
         console.log('\uD83D\uDD0D Clinic-OS Core Pull DRY-RUN \uBAA8\uB4DC\n');
@@ -1680,6 +1582,28 @@ async function corePull(targetVersion = 'latest', options = {}) {
     }
 
     // ═══════════════════════════════════════════════
+    // 0.6 Pre-pull 건강 검진 + 자동 수정
+    // ═══════════════════════════════════════════════
+    if (!dryRun) {
+        try {
+            const healthPath = path.join(PROJECT_ROOT, 'scripts/health-audit.js');
+            if (fs.existsSync(healthPath)) {
+                const { runHealthAudit } = await import(healthPath);
+                const health = await runHealthAudit({ quiet: true, fix: true });
+                if (health.score < 30 && !force) {
+                    throw new Error(`건강 점수 ${health.score}/100 — npm run health:fix 후 재시도`);
+                }
+                if (health.score < 70) {
+                    console.log(`   ⚠️  건강 점수 ${health.score}/100 — 계속 진행합니다`);
+                }
+            }
+        } catch (e) {
+            if (e.message?.includes('건강 점수') && !force) throw e;
+            // health-audit.js 로드 실패 → 건너뜀
+        }
+    }
+
+    // ═══════════════════════════════════════════════
     // 1. HQ에서 인증된 Git URL 받아서 upstream 등록/업데이트 후 fetch
     // ═══════════════════════════════════════════════
     console.log('🔑 HQ에서 인증된 Git URL 가져오는 중...');
@@ -1730,6 +1654,35 @@ async function corePull(targetVersion = 'latest', options = {}) {
     await assertTagExists(current);
     console.log(`   📌 현재 버전: ${current}`);
 
+    // ═══════════════════════════════════════════════
+    // 3.1 스타터킷 호환성 검사 (차단)
+    //     스타터 버전이 최소 요구보다 낮으면 update:starter 먼저 실행 강제
+    // ═══════════════════════════════════════════════
+    if (IS_STARTER_KIT) {
+        try {
+            const starterVer = readStarterVersion();
+            const upstreamPkgResult = await runCommand(`git show upstream/${version}:package.json`, true);
+            if (upstreamPkgResult.success) {
+                const upstreamPkg = JSON.parse(upstreamPkgResult.stdout);
+                const minStarter = upstreamPkg?.clinicOs?.minStarterVersion;
+                if (minStarter && semverLt(starterVer, minStarter)) {
+                    const msg = `\n❌ 스타터킷 업데이트가 필요합니다.\n` +
+                        `   현재 스타터: ${starterVer}\n` +
+                        `   최소 요구:   ${minStarter}\n\n` +
+                        `   👉 먼저 실행: npm run update:starter\n` +
+                        `   그 후 다시:  npm run core:pull`;
+                    if (!force) {
+                        throw new Error(msg);
+                    }
+                    console.log(`   ⚠️  스타터 ${starterVer} < 최소 요구 ${minStarter} (--force로 무시됨)`);
+                }
+            }
+        } catch (e) {
+            if (e.message?.includes('스타터킷 업데이트가 필요합니다')) throw e;
+            // 호환성 검사 자체 실패는 무시 (네트워크 등)
+        }
+    }
+
     if (current === version) {
         // 이미 최신이지만, drift 감지로 로컬/upstream 불일치 파일 확인
         console.log(`\n✅ 이미 최신입니다. (현재: ${current})`);
@@ -1771,7 +1724,71 @@ async function corePull(targetVersion = 'latest', options = {}) {
     }
 
     // ═══════════════════════════════════════════════
-    // 4. 업데이트 대상 파일 (현재태그 ↔ target 태그) 계산
+    // 3.5. 업데이트 전략 선택 (incremental vs fresh-with-migration)
+    //      Major 버전 diff ≥ 1 또는 마이그레이션 10개 초과 시
+    //      fresh-with-migration 전략으로 전환
+    // ═══════════════════════════════════════════════
+    console.log('\n🎯 업데이트 전략 분석 중...');
+    const strategy = await selectUpdateStrategy(
+        current, version,
+        `upstream/${current}`, `upstream/${version}`
+    );
+    console.log(`   전략: ${strategy.type}`);
+    console.log(`   사유: ${strategy.reason}`);
+
+    if (strategy.type === 'fresh-with-migration') {
+        if (dryRun) {
+            console.log('\n[DRY-RUN] Fresh-with-Migration 전략이 선택됨');
+            console.log('   → 클라이언트 변경사항 추출 후 클린 설치 + DB 마이그레이션 실행 예정');
+            return;
+        }
+
+        console.log('\n🔄 Fresh-with-Migration 전략으로 전환합니다...');
+        const freshResult = await executeFreshWithMigration(
+            current, version,
+            { dryRun, forceBootstrap, autoMode }
+        );
+
+        // 스키마 Doctor 실행 (마이그레이션 후 누락 테이블/컬럼 보정)
+        try {
+            const doctorPath = path.join(PROJECT_ROOT, 'scripts', 'doctor.js');
+            if (fs.existsSync(doctorPath)) {
+                const { runSchemaDoctor, getDbNameFromWrangler } = await import(doctorPath);
+                const dbNameForRepair = getDbNameFromWrangler();
+                if (dbNameForRepair) {
+                    await runSchemaDoctor(dbNameForRepair, { fix: true, verbose: true });
+                }
+            }
+        } catch (e) {
+            console.log(`   ⚠️  스키마 자동 복구 건너뜀: ${e.message}`);
+        }
+
+        // 자동 커밋
+        await runCommand('git add -A', true);
+        if (await hasStagedChanges()) {
+            await runCommand(`git commit -m "Core update (fresh): ${current} → ${version}" --no-verify`, true);
+            console.log(`\n✅ 완료: ${version} 적용됨 (Fresh-with-Migration)`);
+        }
+
+        // 완료 메시지
+        console.log('\n════════════════════════════════════════════');
+        console.log(`✅ Core Pull 완료: ${current} → ${version} (Fresh-with-Migration)`);
+        if (freshResult.backupTag) {
+            console.log(`🏷️  복구 태그: ${freshResult.backupTag}`);
+        }
+        console.log('');
+        console.log('Next steps:');
+        console.log('  1. npm install (if package.json changed)');
+        console.log('  2. npm run dev (to test locally)');
+        if (freshResult.changes?.length > 0) {
+            console.log('  3. .core/client-changes/ 에서 추출된 변경사항 확인');
+        }
+        console.log('════════════════════════════════════════════');
+        return;
+    }
+
+    // ═══════════════════════════════════════════════
+    // 4. [Incremental] 업데이트 대상 파일 (현재태그 ↔ target 태그) 계산
     // ═══════════════════════════════════════════════
     const filesToUpdate = await gitDiffNameOnly(current, version, CORE_PATHS);
 
@@ -2184,6 +2201,60 @@ async function corePull(targetVersion = 'latest', options = {}) {
     // ═══════════════════════════════════════════════
     await writeCoreVersion(version);
 
+    // ═══════════════════════════════════════════════
+    // 9.1. Content Doctor: prevent recurring build breaks
+    // - Some files have historically been corrupted into a single path string
+    //   (e.g. "../../../features/.../members.ts") or symlink loops.
+    // - Fix by restoring the real upstream content.
+    // ═══════════════════════════════════════════════
+    try {
+        const DOCTOR_TARGETS = [
+            'src/pages/api/vip-management/members.ts',
+            'src/features/vip-management/api/members.ts',
+        ];
+
+        for (const upstreamPath of DOCTOR_TARGETS) {
+            const localPath = toLocalPath(upstreamPath);
+            const fullLocalPath = path.join(PROJECT_ROOT, localPath);
+
+            if (!fs.existsSync(fullLocalPath)) continue;
+
+            // If it's a symlink, unlink and restore (avoids ELOOP during Astro route scan)
+            try {
+                const st = fs.lstatSync(fullLocalPath);
+                if (st.isSymbolicLink()) {
+                    fs.unlinkSync(fullLocalPath);
+                    await restoreFileFromUpstream(version, upstreamPath);
+                    console.log(`   🩺 Doctor: restored symlinked file from upstream: ${localPath}`);
+                    continue;
+                }
+            } catch {
+                // ignore
+            }
+
+            // If file content looks like a pointer/path-only stub, restore.
+            try {
+                const raw = String(fs.readFileSync(fullLocalPath, 'utf8') || '');
+                const trimmed = raw.trim();
+                const looksLikePointer =
+                    trimmed.length > 0 &&
+                    trimmed.length < 200 &&
+                    (trimmed.startsWith('../') || trimmed.startsWith('./')) &&
+                    !trimmed.includes('export') &&
+                    !trimmed.includes('import');
+
+                if (looksLikePointer) {
+                    await restoreFileFromUpstream(version, upstreamPath);
+                    console.log(`   🩺 Doctor: restored pointer-stub file from upstream: ${localPath}`);
+                }
+            } catch {
+                // ignore
+            }
+        }
+    } catch (e) {
+        console.log(`   ⚠️  Content doctor skipped: ${e.message}`);
+    }
+
     // ═══════════════════════════════════���═══════════
     // 10. 자동 커밋 (변경 없으면 커밋 생략)
     // ═══════════════════════════════════════════════
@@ -2269,6 +2340,23 @@ async function preflightCheck(targetVersion = 'latest') {
 
     console.log(`\n   📌 현재 버전: ${current}`);
     console.log(`   🎯 타겟 버전: ${version}`);
+
+    // 3.5 스타터 호환성 검사 (차단)
+    if (IS_STARTER_KIT) {
+        try {
+            const starterVer = readStarterVersion();
+            const upstreamPkgResult = await runCommand(`git show upstream/${version}:package.json`, true);
+            if (upstreamPkgResult.success) {
+                const upstreamPkg = JSON.parse(upstreamPkgResult.stdout);
+                const minStarter = upstreamPkg?.clinicOs?.minStarterVersion;
+                if (minStarter && semverLt(starterVer, minStarter)) {
+                    console.log(`\n   ❌ 스타터 ${starterVer} < 최소 요구 ${minStarter}`);
+                    console.log(`   👉 먼저 실행: npm run update:starter`);
+                    return { needsUpdate: false, blocked: true, reason: 'starter_outdated', starterVer, minStarter };
+                }
+            }
+        } catch { /* 호환성 검사 실패 무시 */ }
+    }
 
     // 4. 버전 동일 여부 확인
     if (current === version) {
@@ -2399,7 +2487,13 @@ async function preflightCheck(targetVersion = 'latest') {
     };
 }
 
-async function promptUserConfirmation(message = '계속 진행하시겠습니까?') {
+async function promptUserConfirmation(message = '계속 진행하시겠습니까?', autoMode = false) {
+    // Auto 모드에서는 자동으로 true 반환
+    if (autoMode || isAutoMode(process.argv.slice(2))) {
+        console.log(`   🤖 Auto 모드: "${message}" → 예`);
+        return true;
+    }
+
     const readline = await import('readline');
     const rl = readline.createInterface({
         input: process.stdin,
@@ -2418,6 +2512,201 @@ async function promptUserConfirmation(message = '계속 진행하시겠습니까
 // CLI Entry Point
 // ═══════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════
+// Zero-Interaction Mode & Smart Update Strategy
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Auto 모드 감지
+ * --auto 플래그 또는 CI/CLINIC_OS_AUTO 환경 변수
+ */
+function isAutoMode(args) {
+    if (args.includes('--auto')) return true;
+    if (process.env.CI === 'true' || process.env.CI === '1') return true;
+    if (process.env.CLINIC_OS_AUTO === 'true' || process.env.CLINIC_OS_AUTO === '1') return true;
+    return false;
+}
+
+/**
+ * 버전 차이 계산
+ * @returns {Object} { major, minor, patch, totalMigrations }
+ */
+function calculateVersionDiff(currentVersion, targetVersion, migrationCount = 0) {
+    const parse = (v) => {
+        const cleaned = (v || '0.0.0').replace(/^v/, '');
+        const parts = cleaned.split('.').map(Number);
+        return {
+            major: parts[0] || 0,
+            minor: parts[1] || 0,
+            patch: parts[2] || 0
+        };
+    };
+
+    const current = parse(currentVersion);
+    const target = parse(targetVersion);
+
+    return {
+        major: target.major - current.major,
+        minor: target.minor - current.minor,
+        patch: target.patch - current.patch,
+        totalMigrations: migrationCount
+    };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Smart Update Fallback 함수들
+// smart-update.js가 없을 때 사용되는 내장 구현
+// 상단의 let 변수에 할당됨 (smart-update.js import 실패 시)
+// ═══════════════════════════════════════════════════════════════
+
+if (!selectUpdateStrategy) {
+    selectUpdateStrategy = async function(currentVersion, targetVersion, currentTag, targetTag) {
+        const migrationResult = await runCommand(
+            `git diff --name-only ${currentTag} ${targetTag} -- migrations/`,
+            true
+        );
+        const migrationCount = migrationResult.success
+            ? migrationResult.stdout.split('\n').filter(f => f.endsWith('.sql')).length
+            : 0;
+
+        const diff = calculateVersionDiff(currentVersion, targetVersion, migrationCount);
+        const isMajorUpdate = diff.major >= 1;
+        const isManyMigrations = migrationCount > 10;
+
+        if (isMajorUpdate || isManyMigrations) {
+            return {
+                type: 'fresh-with-migration', backup: true, extractClientChanges: true,
+                schemaReset: true,
+                reason: isMajorUpdate ? `Major version diff (${diff.major})` : `Too many migrations (${migrationCount} > 10)`
+            };
+        }
+        return {
+            type: 'incremental', backup: false, extractClientChanges: false,
+            schemaReset: false,
+            reason: `Minor update (${diff.major}.${diff.minor}.${diff.patch}, migrations: ${migrationCount})`
+        };
+    };
+}
+
+if (!extractClientChanges) {
+    extractClientChanges = async function(currentTag) {
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+        const changesDir = path.join(PROJECT_ROOT, '.core', 'client-changes', timestamp);
+        console.log(`\n📦 클라이언트 변경사항 추출 중...`);
+        const diffResult = await runCommand(`git diff upstream/${currentTag} HEAD --name-only`, true);
+        if (!diffResult.success || !diffResult.stdout) {
+            console.log('   ⚠️  변경사항 추출 실패');
+            return { changes: [], changesDir: null, timestamp };
+        }
+        const allFiles = diffResult.stdout.split('\n').filter(Boolean);
+        const coreModifications = allFiles.filter(f => isCorePath(f) && !isLocalPath(f) && !isProtectedPath(f));
+        if (coreModifications.length === 0) {
+            console.log('   ℹ️  추출할 클라이언트 변경사항 없음');
+            return { changes: [], changesDir: null, timestamp };
+        }
+        fs.ensureDirSync(changesDir);
+        const changes = [];
+        for (const file of coreModifications) {
+            const dr = await runCommand(`git diff upstream/${currentTag} HEAD -- "${file}"`, true);
+            if (dr.success && dr.stdout) {
+                changes.push({
+                    file, diff: dr.stdout,
+                    type: dr.stdout.startsWith('new file') ? 'add' : dr.stdout.includes('deleted file') ? 'delete' : 'modify',
+                    suggestedLocalPath: suggestLocalPath(file)
+                });
+                fs.writeFileSync(path.join(changesDir, `${file.replace(/[\/\\]/g, '_')}.diff`), dr.stdout, 'utf8');
+            }
+        }
+        fs.writeJsonSync(path.join(changesDir, 'manifest.json'), {
+            timestamp, extractedAt: new Date().toISOString(), currentTag,
+            changes: changes.map(c => ({ file: c.file, type: c.type, suggestedLocalPath: c.suggestedLocalPath }))
+        }, { spaces: 2 });
+        console.log(`   ✅ ${changes.length}개 파일 추출 완료: .core/client-changes/${timestamp}/`);
+        return { changes, changesDir, timestamp };
+    };
+}
+
+if (!executeFreshWithMigration) {
+    executeFreshWithMigration = async function(currentVersion, targetVersion, options = {}) {
+        const { dryRun = false, forceBootstrap = false, autoMode = false } = options;
+        console.log('\n═══════════════════════════════════════════════');
+        console.log('🔄 Fresh-with-Migration 전략 실행');
+        console.log('═══════════════════════════════════════════════\n');
+
+        // 1. 클라이언트 변경사항 추출 (리셋 전)
+        const { changes, changesDir, timestamp } = await extractClientChanges(currentVersion);
+
+        // 2. 백업 태그 생성
+        let backupTag = null;
+        if (!dryRun) {
+            const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '');
+            const tagName = `backup/pre-update-${currentVersion}-${ts}`;
+            const tagResult = await runCommand(`git tag -a "${tagName}" -m "Auto backup before core update from ${currentVersion}"`, true);
+            if (tagResult.success) { backupTag = tagName; console.log(`   ✅ 백업 태그: ${tagName}`); }
+        }
+
+        if (!dryRun) {
+            // 3. 새 버전 클린 설치
+            console.log(`\n📥 새 버전 클린 설치: ${targetVersion}`);
+            const filesResult = await runCommand(`git ls-tree -r --name-only upstream/${targetVersion} -- ${CORE_PATHS.join(' ')}`, true);
+            if (filesResult.success && filesResult.stdout) {
+                let cnt = 0;
+                for (const file of filesResult.stdout.split('\n').filter(Boolean)) {
+                    if (isProtectedPath(file) || isLocalPath(file)) continue;
+                    try {
+                        if (isBinaryFile(file)) await restoreBinaryFromUpstream(targetVersion, file);
+                        else await restoreFileFromUpstream(targetVersion, file);
+                        cnt++;
+                    } catch (e) { console.log(`   ⚠️  ${file}: ${e.message}`); }
+                }
+                console.log(`   ✅ ${cnt}개 파일 설치 완료`);
+            }
+
+            // 4. 추출된 변경사항을 _local/ 경로로 자동 마이그레이션
+            if (changes.length > 0) {
+                console.log(`\n🔄 변경사항을 local/* 경로로 마이그레이션...`);
+                let migratedCount = 0;
+                for (const change of changes) {
+                    const { file: changeFile, suggestedLocalPath } = change;
+                    if (!suggestedLocalPath) continue;
+                    const sourcePath = path.join(PROJECT_ROOT, toLocalPath(changeFile));
+                    const targetPath = path.join(PROJECT_ROOT, suggestedLocalPath);
+                    // 원본이 없거나 대상이 이미 있으면 스킵
+                    if (!fs.existsSync(sourcePath) || fs.existsSync(targetPath)) continue;
+                    try {
+                        fs.ensureDirSync(path.dirname(targetPath));
+                        fs.copySync(sourcePath, targetPath);
+                        migratedCount++;
+                        console.log(`   ✅ ${changeFile} → ${suggestedLocalPath}`);
+                    } catch (e) {
+                        console.log(`   ⚠️  ${changeFile}: ${e.message}`);
+                    }
+                }
+                if (migratedCount > 0) {
+                    console.log(`   → ${migratedCount}개 파일 마이그레이션 완료`);
+                }
+            }
+
+            // 5. package.json 스마트 머지 + DB 마이그레이션 + 시드
+            await mergePackageJson(targetVersion);
+            await runAllMigrations(forceBootstrap);
+            await runAllSeeds();
+            await writeCoreVersion(targetVersion);
+        }
+
+        console.log('\n═══════════════════════════════════════════════');
+        console.log('✅ Fresh-with-Migration 완료');
+        if (changesDir) {
+            console.log(`📦 변경사항 백업: .core/client-changes/${timestamp}/`);
+        }
+        if (backupTag) {
+            console.log(`🏷️  복구 태그: ${backupTag}`);
+        }
+        console.log('═══════════════════════════════════════════════\n');
+        return { success: true, changes, backupTag };
+    };
+}
+
 async function main() {
     const args = process.argv.slice(2);
     let targetVersion = 'latest';  // 기본값: stable 채널
@@ -2425,6 +2714,7 @@ async function main() {
     let skipConfirm = false;
     let checkOnly = false;
     let forceBootstrap = false;
+    let autoMode = false;
 
     for (const arg of args) {
         if (arg === '--dry-run') {
@@ -2443,8 +2733,13 @@ async function main() {
             checkOnly = true;
         } else if (arg === '--force-bootstrap') {
             forceBootstrap = true;
+        } else if (arg === '--auto') {
+            autoMode = true;
         }
     }
+
+    // Auto 모드 감지 (환경 변수 포함)
+    autoMode = autoMode || isAutoMode(args);
 
     try {
         // --dry-run: 기존 동작 (상세 분석 후 종료)
@@ -2479,18 +2774,20 @@ async function main() {
             process.exit(0);
         }
 
-        // 확인 프롬프트 (--yes 플래그로 스킵 가능)
-        if (!skipConfirm) {
+        // 확인 프롬프트 (--yes 또는 --auto 또는 CI 환경에서는 스킵)
+        if (!skipConfirm && !autoMode) {
             const confirmed = await promptUserConfirmation('업데이트를 진행하시겠습니까?');
             if (!confirmed) {
                 console.log('\n⏹️  업데이트가 취소되었습니다.');
                 process.exit(0);
             }
+        } else if (autoMode) {
+            console.log('   🤖 Auto 모드: 자동으로 진행합니다.');
         }
 
         // 실제 업데이트 진행
         console.log('\n');
-        await corePull(result.target, { dryRun: false, forceBootstrap });
+        await corePull(result.target, { dryRun: false, forceBootstrap, autoMode });
 
         // 스키마 자동복구는 corePull 내부에서 이미 완료
         // 추가 Doctor 실행 불필요 (중복 실행 방지)
@@ -2504,10 +2801,14 @@ async function main() {
 // 사용법:
 // npm run core:pull                   → preflight 체크 후 확인 받고 적용 (기본)
 // npm run core:pull -- -y             → 확인 없이 바로 적용
+// npm run core:pull -- --auto         → CI/에이전트 모드 (자동, 전략 선택)
 // npm run core:pull -- --check        → preflight 체크만 (적용 안 함)
 // npm run core:pull -- --beta         → latest-beta 채널
 // npm run core:pull -- --dry-run      → 상세 변경 사항 미리보기 (기존 동작)
 // npm run core:pull -- v1.0.93        → 특정 버전 직접 지정
 // npm run core:pull -- --force-bootstrap → 마이그레이션 bootstrap 모드 강제 실행
+//
+// 환경 변수:
+// CI=true 또는 CLINIC_OS_AUTO=true    → --auto 플래그와 동일
 
 main();

@@ -1,3 +1,10 @@
+---
+hq_slug: seo-marketing-guide
+hq_title: "SEO 및 마케팅 설정 가이드"
+hq_category: "09. 시스템 설정"
+hq_sort: 4
+hq_active: true
+---
 # SEO 및 마케팅 설정 가이드
 
 이 가이드는 검색 엔진 최적화(SEO)와 외부 마케팅 도구를 연동하여 더 많은 환자에게 병원을 노출하는 방법을 설명합니다.
