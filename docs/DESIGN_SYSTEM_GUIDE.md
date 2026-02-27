@@ -1,3 +1,10 @@
+---
+hq_slug: design-system-guide
+hq_title: "디자인 설정 가이드 (커스터마이징)"
+hq_category: "09. 시스템 설정"
+hq_sort: 5
+hq_active: true
+---
 # 디자인 설정 가이드 (커스터마이징)
 
 이 가이드는 코딩 없이 병원의 아이덴티티에 맞춰 홈페이지의 디자인을 변경하고 관리하는 방법을 설명합니다.

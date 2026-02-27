@@ -84,6 +84,15 @@ npm run dev
 
 ## 문제 해결
 
+### core:pull 실행 시 "깃 저장소가 아닙니다" 오류
+스타터킷 구조에서 루트에 `.git`이 없으면 발생합니다.
+```bash
+git init          # 루트에 .git 생성
+npm run core:pull # 다시 시도
+```
+> v1.24.0부터 `update:starter` 및 `fetch.js`가 자동으로 `git init`을 실행합니다.
+> 이전 버전 클라이언트는 위 명령을 수동으로 실행해야 합니다.
+
 ### clinic.json이 없는 경우
 마법사가 자동으로 수동 입력 또는 브라우저 인증 모드로 전환합니다.
 
@@ -93,10 +102,36 @@ npx wrangler login
 ```
 
 ### DB 초기화 오류
+
+> v1.24.3부터 `db:init`/`db:migrate`는 root의 `.docking/engine/migrate.js`를 직접 실행합니다.
+> wrangler.toml이 없으면 명확한 에러 메시지와 함께 `.agent/last-error.json`에 보고서가 저장됩니다.
+
 ```bash
-npm run db:init
-npm run db:seed
+npm run db:init      # 스키마 마이그레이션 (wrangler.toml 필수)
+npm run db:seed      # 샘플 데이터 삽입
 ```
+
+wrangler.toml이 없다면 먼저 `npm run setup`을 실행하세요.
+마이그레이션 실패 시 seeds는 자동으로 건너뛰며, 복구 후 `npm run db:seed`로 별도 실행할 수 있습니다.
+
+### 에러 자동 복구
+
+`.agent/last-error.json`이 존재하면 이전 에러가 해결되지 않은 상태입니다.
+→ `.agent/workflows/troubleshooting.md`를 참조하여 복구 후 다음 단계로 진행하세요.
+
+---
+
+## 다음 단계: 병원 개별화 온보딩
+
+기술적 설정이 완료되면, 병원 정보와 콘텐츠를 세팅하는 온보딩 워크플로우로 이어집니다.
+
+→ **`/onboarding`** 워크플로우 실행 또는 "온보딩 시작"이라고 말해주세요.
+
+온보딩 에이전트가 다음을 안내합니다:
+1. 관리자 계정 보안 → 병원 정보 → 브랜딩 → **1차 배포**
+2. 의료진 → 진료 프로그램 → 홈페이지 → **2차 배포**
+3. 접수 폼 → 블로그 → 환자 관리 → **운영 시작**
+4. SMS, SEO, 다국어 등 → **선택적 확장**
 
 ---
 
