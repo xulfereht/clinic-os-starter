@@ -93,6 +93,10 @@ git add -A && git commit -m "Backup before package apply"
 npm run db:migrate
 ```
 
+> v1.24.3부터 `db:migrate`는 root 엔진을 직접 실행합니다.
+> wrangler.toml이 없으면 에러와 함께 `.agent/last-error.json`에 보고서가 저장됩니다.
+> 마이그레이션 실패 시 seeds 실행을 자동으로 건너뜁니다.
+
 ### 8단계: 기록 업데이트
 
 `.docking/.applied`에 적용 기록 추가:
