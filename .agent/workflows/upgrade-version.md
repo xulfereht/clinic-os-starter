@@ -90,7 +90,8 @@ npm run upgrade
 새 버전에 DB 변경이 있는지 확인합니다.
 
 ```bash
-ls migrations/
+ls migrations/    # 마스터 구조
+ls core/migrations/  # 스타터킷 구조
 ```
 
 새 마이그레이션이 있으면:
@@ -98,6 +99,13 @@ ls migrations/
 ```bash
 npm run db:migrate
 ```
+
+> v1.24.3부터:
+> - `db:migrate`는 root의 `.docking/engine/migrate.js`를 직접 실행 (core:pull로 항상 최신 유지)
+> - wrangler.toml 존재를 먼저 확인하며, 없으면 `npm run setup` 안내
+> - `findProjectRoot()`가 `core/package.json`도 감지하여 스타터킷 구조 자동 지원
+> - 마이그레이션 실패 시 seeds 실행을 자동으로 건너뜀
+> - 에러 발생 시 `.agent/last-error.json`에 구조화된 보고서 저장
 
 ---
 
@@ -147,6 +155,30 @@ git checkout -b main --force
 | `npm run update:starter` | Starter Kit 업데이트 |
 | `npm run upgrade` | 수동 도킹 패키지 적용 |
 | `npm run setup` | 초기 설정 재실행 |
+| `npm run db:init` | DB 스키마 마이그레이션 (root 엔진) |
+| `npm run db:seed` | 샘플 데이터 삽입 |
+| `npm run doctor` | DB 스키마 검증 + 자동 복구 |
+| `npm run health` | 환경 건강 점수 (0-100) |
+
+---
+
+## 트러블슈팅
+
+> 에러 발생 시 `.agent/last-error.json`이 자동 생성됩니다.
+> 에이전트는 이 파일을 감지하면 `.agent/workflows/troubleshooting.md`를 참조하여 자동 복구하세요.
+
+### core:pull 시 "깃 저장소가 아닙니다" 오류
+스타터킷 구조에서 루트에 `.git`이 없을 때 발생합니다.
+```bash
+git init          # 루트에 .git 생성
+npm run core:pull # 다시 시도
+```
+> v1.24.0부터 `update:starter`와 `fetch.js`가 자동으로 `git init`을 실행합니다.
+> v1.24.3부터 git fetch 에러 메시지가 원인별로 구분됩니다 (not a git repo / No such remote / 네트워크).
+
+### 디바이스 등록 한도 초과
+v1.24.0부터 클라이언트당 최대 5대까지 등록 가능합니다.
+기존 3대 제한에 걸렸다면 HQ에서 자동 상향되었습니다.
 
 ---
 
@@ -155,3 +187,13 @@ git checkout -b main --force
 - 업그레이드 전 **반드시 백업**
 - 프로덕션 배포 전 **로컬 테스트 필수**
 - 충돌 발생 시 **사용자에게 설명 후 결정**
+
+---
+
+## 관련 문서
+
+| 상황 | 다음 문서 |
+|------|-----------|
+| 업데이트 중 오류 발생 | `.agent/workflows/troubleshooting.md` |
+| 보호 규칙 확인 | `.claude/rules/clinic-os-safety.md` |
+| 전체 문서 인덱스 | `.agent/README.md` |
