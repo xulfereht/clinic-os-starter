@@ -35,6 +35,10 @@ database_id = "YOUR-DATABASE-ID"  # ← 여기에 붙여넣기
 
 ### 스키마 적용
 ```bash
+# npm 스크립트 사용 (권장)
+npm run db:init:remote
+
+# 또는 직접 실행
 npx wrangler d1 execute clinic-hq-db --remote --file=schema.sql
 ```
 
@@ -77,27 +81,27 @@ npx wrangler deploy
 
 ## 6. 초기 관리자 설정
 
-> ⚠️ **중요**: 첫 배포 후 즉시 관리자 비밀번호 변경!
+> ⚠️ **중요**: 기본 관리자 계정은 자동 생성되지 않습니다. 수동으로 생성해야 합니다.
 
-기본 계정:
-- Email: `admin@clinic-os.com`
-- Password: `changeme123`
+### 관리자 계정 생성
 
-### 비밀번호 변경 (필수)
-
-D1 콘솔에서 직접 업데이트:
-```sql
--- 새 비밀번호 해시 생성 필요 (bcrypt)
-UPDATE admins SET password_hash = 'NEW_BCRYPT_HASH' WHERE email = 'admin@clinic-os.com';
+D1 콘솔에서 직접 INSERT (schema.sql 하단 주석 참고):
+```bash
+npx wrangler d1 execute clinic-hq-db --remote --command \
+  "INSERT INTO admins (id, email, password_hash, name, role, password_must_change) \
+   VALUES ('admin-001', 'your-email@domain.com', '<bcrypt-hash>', 'Admin', 'super_admin', 1)"
 ```
+
+> bcrypt 해시 생성: `node -e "import('bcryptjs').then(b=>b.hash('your-password',10).then(console.log))"`
 
 ---
 
 ## 7. 클라이언트 코드 업데이트
 
-`scripts/setup-clinic.js`의 DEFAULT_HQ_URL 수정:
+`scripts/setup-clinic.js`의 DEFAULT_HQ_URL을 실제 배포 URL로 수정:
 ```javascript
-const DEFAULT_HQ_URL = 'https://clinic-hq.your-subdomain.workers.dev';
+// 기본값: https://clinic-os-hq.pages.dev
+const DEFAULT_HQ_URL = 'https://your-hq-domain.pages.dev';
 ```
 
 ---

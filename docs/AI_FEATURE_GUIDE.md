@@ -1,3 +1,10 @@
+---
+hq_slug: ai-feature-guide
+hq_title: "AI 기능 활용 가이드"
+hq_category: "10. 고급 기능"
+hq_sort: 1
+hq_active: true
+---
 # AI 기능 활용 가이드
 
 Clinic-OS에서 제공하는 인공지능(AI) 도구를 사용하여 콘텐츠 제작 시간을 단축하고 전문성을 높이는 방법을 설명합니다.
