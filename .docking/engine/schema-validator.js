@@ -107,7 +107,7 @@ function getDbName() {
         const match = content.match(/database_name\s*=\s*"([^"]+)"/);
         if (match) return match[1];
     }
-    return 'local-clinic-db';
+    return 'clinic-os-db';
 }
 
 /**

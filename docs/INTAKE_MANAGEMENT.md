@@ -1,3 +1,10 @@
+---
+hq_slug: intake-management
+hq_title: "접수 현황 관리 가이드"
+hq_category: "05. 환자 & 예약 관리"
+hq_sort: 4
+hq_active: true
+---
 # 접수 현황 관리 가이드
 
 이 가이드는 일별 환자 내원 기록을 확인하고, 통계 데이터를 통해 진료 현황을 분석하는 방법을 설명합니다.

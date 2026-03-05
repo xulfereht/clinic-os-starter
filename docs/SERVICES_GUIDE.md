@@ -1,4 +1,11 @@
-# 🌐 외부 서비스 연동 가이드
+---
+hq_slug: integrations
+hq_title: "외부 서비스 연동 가이드"
+hq_category: "09. 시스템 설정"
+hq_sort: 3
+hq_active: true
+---
+# 외부 서비스 연동 가이드
 
 Clinic-OS의 핵심 기능(서버 배포, 데이터베이스, 알림톡 등)을 활성화하기 위해 필요한 외부 서비스 계정 및 설정 목록입니다.
 
