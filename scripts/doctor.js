@@ -699,8 +699,10 @@ async function runDoctor() {
     // 5. Network Check
     process.stdout.write('🌐 Network (Registry): Checking...');
     const isOnline = await checkNetwork();
-    process.stdout.clearLine(0);
-    process.stdout.cursorTo(0);
+    // When running non-interactively (e.g., via SSH), stdout may not be a TTY and
+    // clearLine/cursorTo can be undefined. Guard for Windows + non-TTY.
+    if (typeof process.stdout.clearLine === 'function') process.stdout.clearLine(0);
+    if (typeof process.stdout.cursorTo === 'function') process.stdout.cursorTo(0);
     if (isOnline) {
         console.log('✅ Network: Connected to npm registry');
     } else {
