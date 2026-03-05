@@ -20,7 +20,7 @@
 ```
 clinic-os/
 │
-├── CLAUDE.md                  # ⭐ HQ 개발 가이드 (지금 읽는 파일)
+├── docs/HQ-GUIDE.md           # ⭐ HQ 개발 가이드 (지금 읽는 파일)
 ├── GEMINI.md                  # 클라이언트용 템플릿 (core 배포 시 동적 생성)
 │
 ├── 📂 src/                    # 앱 소스코드 (Core로 배포됨)
@@ -193,7 +193,7 @@ npm run publish
 
 | 목적 | 파일 |
 |------|------|
-| HQ 개발 가이드 | `CLAUDE.md` (이 파일) |
+| HQ 개발 가이드 | `docs/HQ-GUIDE.md` (이 파일) |
 | 플러그인 규칙 | `docs/PLUGIN_DEVELOPMENT_GUIDE.md` |
 | Core 미러링 | `scripts/mirror-core.js` |
 | Starter 미러링 | `scripts/mirror-starter.js` |
@@ -291,12 +291,7 @@ AI의 답변이 다음을 따르는지 확인:
 
 **문서 배포:**
 ```bash
-# 문서 수정 후 mirror-staging에 복사
-cp docs/API-REFERENCE.md .mirror-staging/docs/
-cp docs/AI-QUICK-REFERENCE.md .mirror-staging/docs/
-cp SCHEMA.md .mirror-staging/
-
-# 릴리스에 포함
+# npm run publish가 문서 복사를 자동 처리합니다
 npm run publish
 ```
 
