@@ -5,7 +5,7 @@ import os from 'os';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import readline from 'readline';
-import { exec, spawn } from 'child_process';
+import { exec, execSync, spawn } from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
@@ -13,10 +13,58 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.join(__dirname, '..');
 
-const IS_AUTO = process.argv.includes('--auto');
+const IS_AUTO = process.argv.includes('--auto') || process.env.CI === 'true' || process.env.CLINIC_OS_AUTO === 'true';
 
 // ... Imports ...
 import { runCheck } from './check-system.js';
+import { runMigrations } from '../.docking/engine/migrate.js';
+
+// ═══════════════════════════════════════════════════════════════
+// SQLITE_BUSY 재시도 설정 및 헬퍼
+// ═══════════════════════════════════════════════════════════════
+
+const RETRY_CONFIG = {
+    maxRetries: 3,
+    baseDelay: 200, // ms
+    retryableErrors: ['SQLITE_BUSY', 'database is locked', 'SQLITE_LOCKED']
+};
+
+/**
+ * Exponential Backoff 재시도 래퍼
+ * SQLITE_BUSY 등 일시적 오류 발생 시 자동 재시도
+ * 지연 시간: 200ms, 400ms, 800ms
+ */
+async function executeWithRetry(fn, config = RETRY_CONFIG) {
+    let lastError;
+
+    for (let attempt = 1; attempt <= config.maxRetries; attempt++) {
+        try {
+            return await fn();
+        } catch (error) {
+            lastError = error;
+            const errorMessage = error.message || error.stderr || String(error);
+
+            const isRetryable = config.retryableErrors.some(
+                pattern => errorMessage.includes(pattern)
+            );
+
+            if (isRetryable && attempt < config.maxRetries) {
+                const delay = Math.pow(2, attempt) * config.baseDelay;
+                console.log(`   ⏳ SQLITE_BUSY - ${delay}ms 후 재시도 (${attempt}/${config.maxRetries})`);
+                await sleep(delay);
+                continue;
+            }
+
+            throw error;
+        }
+    }
+
+    throw lastError;
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 // ... Configuration ...
 const CONFIG_PATH = path.join(PROJECT_ROOT, '.docking/config.yaml');
@@ -461,32 +509,32 @@ clinic_name: "${clinicName}"
     // Bucket name follows DB name pattern
     const bucketName = dbName.replace(/-db$/, '-uploads');
 
-    // Function to write wrangler.toml
+    // DG7: Pages 형식 wrangler.toml 생성 (Workers 형식이 아님)
     const writeWrangler = async (dId) => {
         const content = `# Clinic-OS Configuration for ${clinicName}
 name = "${cleanName}"
-main = "core/dist/_worker.js"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "dist"
 
-[site]
-bucket = "./core/dist"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "${dbName}"
-database_id = "${dId}"
-
+# R2 버킷 (이미지/파일 업로드용)
 [[r2_buckets]]
 binding = "BUCKET"
 bucket_name = "${bucketName}"
 
-[[kv_namespaces]]
-binding = "SESSION"
-id = "local-session-placeholder"
-
+# 환경 변수
 [vars]
 CLINIC_NAME = "${clinicName}"
+ADMIN_PASSWORD = "change-me-in-production"
+ALIGO_TESTMODE = "Y"
+# 커스텀 도메인 연결 후 아래 주석 해제 및 URL 수정
+# CLOUDFLARE_URL = "https://${cleanName}.pages.dev"
+
+# D1 데이터베이스
+[[d1_databases]]
+binding = "DB"
+database_name = "${dbName}"
+database_id = "${dId}"
 `;
         await fs.writeFile(wranglerPath, content);
     };
@@ -702,7 +750,25 @@ exit 0
 
     // 8. Initialize Local Database
     console.log("\n🗃️  Step 8: 로컬 데이터베이스 초기화\n");
-    const migrationPath = path.join(PROJECT_ROOT, 'core/migrations/0000_initial_schema.sql');
+
+    // Windows (WSL 없이)에서는 wrangler/workerd 기반 local D1 런타임이 환경에 따라
+    // access violation(0xc0000005)로 크래시하는 사례가 확인됨.
+    // 목표가 WSL 없는 Windows 지원이라면 "설치 과정이 무탈"해야 하므로, 기본값으로
+    // local D1 마이그레이션/시드는 스킵하고 dev는 DB 없이도 시작 가능하게 둔다.
+    // 필요 시 사용자가 CLINIC_OS_FORCE_LOCAL_D1=true 로 강제 가능.
+    const FORCE_LOCAL_D1 = process.env.CLINIC_OS_FORCE_LOCAL_D1 === 'true';
+    if (process.platform === 'win32' && !FORCE_LOCAL_D1) {
+        console.log('   ⚠️  Windows 환경: local D1 초기화를 기본값으로 건너뜁니다.');
+        console.log('   이유: wrangler/workerd local 런타임이 Windows에서 크래시할 수 있음 (0xc0000005).');
+        console.log('   ✅ 계속 진행합니다. (개발 서버는 DB 없이도 실행 가능)');
+        console.log('   💡 local D1을 꼭 쓰려면 환경변수 CLINIC_OS_FORCE_LOCAL_D1=true 로 다시 실행하세요.');
+    } else {
+
+    // 마이그레이션 파일 탐색: core/migrations/ 또는 migrations/ (구조에 따라)
+    let migrationPath = path.join(PROJECT_ROOT, 'core/migrations/0000_initial_schema.sql');
+    if (!fs.existsSync(migrationPath)) {
+        migrationPath = path.join(PROJECT_ROOT, 'migrations/0000_initial_schema.sql');
+    }
     const localD1StatePath = path.join(PROJECT_ROOT, '.wrangler/state/v3/d1');
 
     if (fs.existsSync(migrationPath)) {
@@ -736,36 +802,31 @@ exit 0
             migrationsDir = path.join(PROJECT_ROOT, 'migrations');
         }
 
-        // 모든 마이그레이션 파일을 순서대로 실제 실행
-        // (0000이 기본 스키마를 생성하고, 이후 마이그레이션이 ALTER TABLE/INSERT 등을 수행)
+        // 통합 마이그레이션 엔진 사용 (PRAGMA 기반 컬럼 안전 체크 포함)
+        // - ALTER TABLE ADD COLUMN: 컬럼 존재 여부 확인 후 실행/스킵
+        // - CREATE TABLE IF NOT EXISTS: 그대로 실행 (멱등)
+        // - 기존 데이터 보존 보장
+        let migrationFailed = false;
         if (fs.existsSync(migrationsDir)) {
-            const migrationFiles = fs.readdirSync(migrationsDir)
-                .filter(f => f.endsWith('.sql') && !f.startsWith('_'))
-                .sort();
-
-            // d1_migrations 테이블 생성
-            await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, applied_at TEXT DEFAULT (datetime('now')))" --yes`);
-
-            console.log(`   🚀 ${migrationFiles.length}개 마이그레이션 실행 중...`);
-            let appliedCount = 0;
-            for (const migFile of migrationFiles) {
-                const filePath = path.join(migrationsDir, migFile);
-                const relPath = path.relative(PROJECT_ROOT, filePath);
-                const ok = await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file="${relPath}" --yes`);
-                if (ok) {
-                    await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_migrations (name) VALUES ('${migFile}')" --yes`);
-                    appliedCount++;
-                } else {
-                    console.log(`   ⚠️  마이그레이션 실패 (건너뜀): ${migFile}`);
+            console.log(`   🚀 통합 마이그레이션 엔진으로 실행 중... (PRAGMA 안전 모드)`);
+            const migResult = await runMigrations({ local: true, verbose: true, verify: false });
+            if (migResult.success) {
+                console.log(`   ✅ ${migResult.applied}개 마이그레이션 적용 완료`);
+            } else {
+                migrationFailed = true;
+                console.log(`   ⚠️  마이그레이션 완료: ${migResult.applied}개 성공, ${migResult.failed}개 실패`);
+                if (migResult.errors?.length > 0) {
+                    for (const err of migResult.errors) {
+                        console.log(`      - ${err.file}: ${err.error}`);
+                    }
                 }
+                console.log('   ⚠️  마이그레이션 실패로 Seeds를 건너뜁니다.');
+                console.log('   💡 npm run doctor로 진단하거나 npm run db:seed로 나중에 실행하세요.');
             }
-            console.log(`   ✅ ${appliedCount}/${migrationFiles.length}개 마이그레이션 실행 완료`);
         }
 
-        console.log("   🚀 샘플 데이터 삽입 중...");
-        const seedOk = await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file=core/seeds/sample_clinic.sql --yes`);
-
-        // Additional Local Seeds (Restoration)
+        // Additional Local Seeds (Restoration) — 마이그레이션 성공 시에만 실행
+        if (!migrationFailed) {
         const additionalSeeds = [
             'seeds/terms_definitions.sql',
             'seeds/terms_versions.sql',
@@ -784,7 +845,17 @@ exit 0
             'seeds/knowledge_seed.sql'
         ];
 
-        for (const seedFile of additionalSeeds) {
+        console.log(`   🚀 샘플 데이터 삽입 중... (${additionalSeeds.length + 1}개 파일, ~${(additionalSeeds.length + 1) * 2}초 예상)`);
+        // 시드 경로: core/seeds/ 또는 seeds/ (구조에 따라 다름)
+        let sampleClinicPath = 'core/seeds/sample_clinic.sql';
+        if (!fs.existsSync(path.join(PROJECT_ROOT, sampleClinicPath))) {
+            sampleClinicPath = 'seeds/sample_clinic.sql';
+        }
+        const seedOk = await executeWithRetry(() => runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file=${sampleClinicPath} --yes`));
+
+        const seedStartTime = Date.now();
+        for (let i = 0; i < additionalSeeds.length; i++) {
+            const seedFile = additionalSeeds[i];
             // 1. Try finding in PROJECT_ROOT (local override)
             let finalPath = path.join(PROJECT_ROOT, seedFile);
             let displayPath = seedFile;
@@ -796,17 +867,17 @@ exit 0
             }
 
             if (fs.existsSync(finalPath)) {
-                console.log(`   🌱 추가 데이터 시딩: ${displayPath}...`);
-                await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file=${displayPath} --yes`);
-            } else {
-                // Optional: Log warning if critical seeds are missing, but for now silent skip is safer for optional seeds
-                // console.log(`   ⚠️  Seed skipped (not found): ${seedFile}`);
+                const elapsed = (Date.now() - seedStartTime) / 1000;
+                const rate = i > 0 ? elapsed / i : 2;
+                const remaining = Math.ceil(rate * (additionalSeeds.length - i));
+                console.log(`   🌱 [${i + 1}/${additionalSeeds.length}] ${path.basename(seedFile)} (~${remaining}s 남음)`);
+                await executeWithRetry(() => runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file=${displayPath} --yes`));
             }
         }
 
         // d1_seeds 테이블 생성 및 실행된 seeds 기록 (core:pull 시 재실행 방지)
         console.log("   📝 Seeds 기록 초기화 중...");
-        await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "CREATE TABLE IF NOT EXISTS d1_seeds (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, applied_at TEXT DEFAULT (datetime('now')))" --yes`);
+        await executeWithRetry(() => runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "CREATE TABLE IF NOT EXISTS d1_seeds (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, applied_at TEXT DEFAULT (datetime('now')))" --yes`));
 
         // seeds 폴더의 모든 파일을 기록
         let seedsDir = path.join(PROJECT_ROOT, 'core/seeds');
@@ -820,7 +891,7 @@ exit 0
                 .sort();
 
             for (const seedFile of seedFiles) {
-                await runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_seeds (name) VALUES ('${seedFile}')" --yes`);
+                await executeWithRetry(() => runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_seeds (name) VALUES ('${seedFile}')" --yes`));
             }
             console.log(`   ✅ ${seedFiles.length}개 seeds 기록 완료 (초기 설치)`);
         }
@@ -830,9 +901,12 @@ exit 0
         } else {
             console.log("   ❌ 데이터베이스 시딩 실패. 위 오류를 확인해 주세요.");
         }
+        } // end if (!migrationFailed)
     } else {
         console.log("   ⚠️  마이그레이션 파일을 찾을 수 없습니다.");
     }
+
+    } // end Step 8 (local D1 init block)
 
     // 9. Cloudflare Setup (Optional / Advanced)
     console.log("\n☁️  Step 9: Cloudflare 프로덕션 설정 (선택사항)\n");
@@ -872,30 +946,114 @@ exit 0
         console.log("   ⏭️  프로덕션 설정을 건너뜁니다.");
     }
 
-    // Done
-    console.log("\n═══════════════════════════════════════════════════════════");
-    console.log("   🎉  설정 완료!  🎉");
-    // ... rest of the logs
+    // 10. Generate Claude Code protection settings
+    console.log("\n🛡️  Step 10: AI 에이전트 보호 규칙 생성\n");
 
+    const claudeDir = path.join(PROJECT_ROOT, '.claude');
+    const claudeSettingsPath = path.join(claudeDir, 'settings.json');
+    await fs.ensureDir(claudeDir);
 
-    // 11. Done!
-    console.log("\n═══════════════════════════════════════════════════════════");
-    console.log("   🎉  설정 완료!  🎉");
-    console.log("═══════════════════════════════════════════════════════════");
+    const claudeSettings = {
+        permissions: {
+            deny: [
+                "Edit(src/pages/**)",
+                "Edit(src/components/**)",
+                "Edit(src/layouts/**)",
+                "Edit(src/styles/**)",
+                "Edit(src/lib/**)",
+                "Edit(src/plugins/custom-homepage/**)",
+                "Edit(src/plugins/survey-tools/**)",
+                "Edit(src/survey-tools/stress-check/**)",
+                "Edit(migrations/**)",
+                "Edit(seeds/**)",
+                "Edit(docs/**)",
+                "Edit(scripts/**)",
+                "Edit(.docking/engine/**)",
+                "Write(wrangler.toml)",
+                "Write(clinic.json)",
+                "Write(.docking/config.yaml)",
+                "Write(src/config.ts)",
+                "Write(src/styles/global.css)",
+                "Write(package.json)",
+                "Write(astro.config.mjs)",
+                "Write(tsconfig.json)"
+            ],
+            allow: [
+                "Edit(src/lib/local/**)",
+                "Edit(src/plugins/local/**)",
+                "Edit(src/pages/_local/**)",
+                "Edit(src/survey-tools/local/**)",
+                "Edit(public/local/**)"
+            ]
+        }
+    };
 
-    // 12. Auto-run core:pull to fetch initial core files
-    console.log("\n📦 코어 파일을 가져오는 중...");
+    await fs.writeFile(claudeSettingsPath, JSON.stringify(claudeSettings, null, 2) + '\n');
+    console.log("   ✅ .claude/settings.json 생성 완료");
+    console.log("   → 코어 파일 수정 차단, local/ 경로만 허용");
+
+    // 11. Auto-run core:pull to fetch initial core files
+    // core:pull이 먼저 실행되어야 onboarding-registry.json이 최신 상태로 존재함
+    console.log("\n📦 Step 11: 코어 파일 가져오기\n");
     try {
-        const channel = config.hq?.channel || 'stable';
-        const args = channel === 'beta' ? '--beta' : (channel === 'stable' ? '--stable' : '');
-        const fetchCmd = `node .docking/engine/fetch.js ${args}`;
+        const fetchChannel = channel || 'stable';
+        const fetchArgs = fetchChannel === 'beta' ? '--beta' : (fetchChannel === 'stable' ? '--stable' : '');
+        const fetchCmd = `node .docking/engine/fetch.js ${fetchArgs} --yes`;
 
         console.log(`   실행: ${fetchCmd}`);
-        await execAsync(fetchCmd);
+        await execAsync(fetchCmd, { cwd: PROJECT_ROOT, timeout: 120000 });
         console.log("   ✅ 코어 파일 가져오기 완료");
     } catch (e) {
         console.log("   ⚠️  코어 파일 가져오기 실패 (나중에 npm run core:pull로 다시 시도하세요)");
     }
+
+    // 12. Initialize onboarding state (core:pull 이후 실행 → registry 확보됨)
+    console.log("\n📋 Step 12: 온보딩 상태 초기화\n");
+    const agentDir = path.join(PROJECT_ROOT, '.agent');
+    const onboardingStatePath = path.join(agentDir, 'onboarding-state.json');
+
+    if (!fs.existsSync(onboardingStatePath)) {
+        const registryPath = path.join(agentDir, 'onboarding-registry.json');
+        let featureStates = {};
+
+        if (fs.existsSync(registryPath)) {
+            try {
+                const registry = fs.readJsonSync(registryPath);
+                for (const feature of registry.features) {
+                    featureStates[feature.id] = {
+                        status: "pending",
+                        updated_at: null,
+                        notes: null
+                    };
+                }
+                console.log(`   ✅ 레지스트리에서 ${Object.keys(featureStates).length}개 기능 로드`);
+            } catch (e) {
+                console.log("   ⚠️  레지스트리 읽기 실패:", e.message);
+            }
+        } else {
+            console.log("   ⚠️  onboarding-registry.json 미발견 (core:pull 후 다시 시도)");
+        }
+
+        await fs.ensureDir(agentDir);
+        const state = {
+            initialized_at: new Date().toISOString(),
+            last_updated: new Date().toISOString(),
+            current_tier: 1,
+            deployment_count: 0,
+            clinic_name: clinicName,
+            features: featureStates
+        };
+
+        await fs.writeFile(onboardingStatePath, JSON.stringify(state, null, 2) + '\n');
+        console.log("   ✅ .agent/onboarding-state.json 생성 완료");
+    } else {
+        console.log("   ⏭️  기존 온보딩 상태 유지");
+    }
+
+    // Done
+    console.log("\n═══════════════════════════════════════════════════════════");
+    console.log("   🎉  설정 완료!  🎉");
+    console.log("═══════════════════════════════════════════════════════════");
 
     console.log(`
    디바이스가 HQ에 등록되었습니다.
@@ -905,8 +1063,8 @@ exit 0
    1. 로컬 개발 서버 실행:
       npm run dev
 
-   2. 업데이트 확인:
-      npm run core:pull
+   2. 온보딩 시작:
+      AI 에이전트에게 "온보딩 시작" 이라고 말해주세요.
 
    3. 프로덕션 배포:
       npm run deploy
