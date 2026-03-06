@@ -43,27 +43,32 @@ const log = {
   agent: (msg) => console.log(`${C.cyan}🤖${C.reset} ${msg}`),
 };
 
-// setup:step 실행
+// setup:step 실행 (Issue #4 Fix: 실패 시 재시작하지 않고 해당 단계부터 재시도)
 async function runSetupSteps() {
   log.step('설치 단계 자동 실행');
   log.info('총 16단계를 순차적으로 실행합니다...\n');
+  log.info('ℹ️  이미 완료된 단계는 자동으로 skip됩니다.\n');
 
-  // setup-progress.json 초기화
-  const setupProcess = spawn('npm', ['run', 'setup:step', '--', '--reset'], {
-    cwd: PROJECT_ROOT,
-    stdio: 'inherit',
-  });
-
-  await new Promise((resolve, reject) => {
-    setupProcess.on('close', (code) => {
-      if (code === 0) resolve();
-      else reject(new Error('설치 초기화 실패'));
-    });
-  });
-
-  // 각 단계 순차 실행
+  // 각 단계 순차 실행 (--reset 없이, 이미 완료된 단계는 skip)
   let step = 1;
+  let failedStep = null;
+  
   while (step <= 16) {
+    log.agent(`단계 ${step}/16 확인 중...`);
+    
+    // setup-progress.json 확인하여 이미 완료된 단계인지 체크
+    if (fs.existsSync(PROGRESS_PATH)) {
+      const progress = fs.readJsonSync(PROGRESS_PATH);
+      const currentStepInfo = progress.steps?.[step - 1];
+      
+      if (currentStepInfo?.status === 'done') {
+        log.success(`단계 ${step} 이미 완료 ✓`);
+        step++;
+        continue;
+      }
+    }
+    
+    // 미완료 단계 실행
     log.agent(`단계 ${step}/16 실행 중...`);
     
     const result = await new Promise((resolve) => {
@@ -76,8 +81,12 @@ async function runSetupSteps() {
     });
 
     if (result !== 0) {
-      log.error(`단계 ${step} 실패`);
-      throw new Error(`설치 단계 ${step} 실패`);
+      failedStep = step;
+      log.error(`\n❌ 단계 ${step} 실패`);
+      log.info(`\n💡 재시도 방법:`);
+      log.info(`   npm run setup:step -- --step=<단계ID>`);
+      log.info(`   또는: npm run setup:step -- --next`);
+      throw new Error(`설치 단계 ${step} 실패. 위 명령어로 재시도하세요.`);
     }
 
     step++;

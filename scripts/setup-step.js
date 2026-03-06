@@ -160,17 +160,18 @@ async function runInitConfig(progress) {
   // wrangler.toml 템플릿 생성 (없을 경우)
   const wranglerPath = path.join(PROJECT_ROOT, 'wrangler.toml');
   if (!fs.existsSync(wranglerPath)) {
-    const cleanName = progress.context.clinicName
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, '-')
-      .replace(/-+/g, '-')
-      .substring(0, 20);
+    // Issue #2 Fix: client_id를 기반으로 안전한 slug 생성 (한국어 등 non-ASCII 문제 방지)
+    const signed = fs.existsSync(signedPath) ? fs.readJsonSync(signedPath) : {};
+    const clientId = signed.client_id || '';
+    const slug = clientId.substring(0, 12) || 'clinic';
+    const cleanName = `cos-${slug}`;
     
     const dbName = `${cleanName}-db`;
     const bucketName = `${cleanName}-uploads`;
     
     const wranglerContent = `# Clinic-OS Configuration for ${progress.context.clinicName}
 name = "${cleanName}"
+# Note: 한국어 기관명은 client_id 기반 slug로 자동 변환됩니다
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "dist"
@@ -366,6 +367,13 @@ async function runCorePull(progress) {
   
   const corePath = path.join(PROJECT_ROOT, 'core');
   fs.ensureDirSync(corePath);
+  
+  // Issue #1 Fix: core/.gitkeep 제거 (git clone이 빈 디렉토리 필요)
+  const gitkeepPath = path.join(corePath, '.gitkeep');
+  if (fs.existsSync(gitkeepPath)) {
+    fs.removeSync(gitkeepPath);
+    console.log('   🧹 core/.gitkeep 제거 (git clone 준비)');
+  }
   
   // HQ에서 Git URL 획득
   console.log('   🔑 HQ에서 Git URL 획득...');
@@ -756,7 +764,7 @@ async function main() {
     console.log('\n   또는 특정 단계만 재시도:');
     console.log(`   npm run setup:step -- --step=${step.id}\n`);
     console.log('   에러 복구 정보:');
-    console.log('   npm run error:status\n');
+    console.log('   npm run setup:status\n');
     
     process.exit(1);
   }
