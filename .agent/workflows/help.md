@@ -138,10 +138,11 @@ npm run preview
 ## 문제 해결 단계
 
 1. **오류 메시지 확인**: 정확한 오류 내용 파악
-2. **로그 확인**: 터미널 출력 확인
-3. **시스템 체크**: `npm run doctor` 실행
-4. **GEMINI.md 참조**: 프로젝트 가이드 확인
+2. **환경 진단**: `npm run health` 실행 (건강 점수 0-100)
+3. **시스템 체크**: `npm run doctor` 실행 (DB 스키마 검증)
+4. **트러블슈팅 가이드**: `.agent/workflows/troubleshooting.md` 참조
 5. **워크플로우 실행**: 해당하는 `/워크플로우` 실행
+6. **2회 실패 시**: `./scripts/cos-ask "에러 메시지"` (서포트 에이전트)
 
 ---
 
@@ -167,3 +168,14 @@ npm install
 npm run setup
 npm run fetch
 ```
+
+---
+
+## 관련 문서
+
+| 상황 | 다음 문서 |
+|------|-----------|
+| 상세 트러블슈팅 (11개 시나리오) | `.agent/workflows/troubleshooting.md` |
+| 코어 업데이트 절차 | `.agent/workflows/upgrade-version.md` |
+| 파일 수정 규칙 | `.claude/rules/clinic-os-safety.md` |
+| 전체 문서 인덱스 | `.agent/README.md` |
