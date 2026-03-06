@@ -8,6 +8,7 @@
     "setup:step": "node scripts/setup-step.js",
     "setup:status": "node scripts/setup-step.js --status",
     "setup:reset": "node scripts/setup-step.js --reset",
+    "setup:agent": "node scripts/setup-agent.js",
     "update:starter": "node scripts/update-starter.js",
     "core:pull": "node .docking/engine/fetch.js",
     "core:pull:beta": "node .docking/engine/fetch.js --beta",

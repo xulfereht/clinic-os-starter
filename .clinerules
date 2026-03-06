@@ -1,35 +1,75 @@
-# Clinic-OS
+# Clinic-OS Agent Installer
 
-> 이 프로젝트를 열면 즉시 아래 프로토콜을 실행하세요.
+> ⚠️ **이 파일이 보이면 이것은 스타터킷(초기 상태)입니다.**
+> 
+> 사용자와 대화하지 말고, 즉시 자동 설치를 진행하세요.
 
-## 자동 감지 프로토콜
+## 🚀 자동 설치 명령어
 
-프로젝트를 열면 다음을 확인하여 현재 단계를 판별하세요:
+```bash
+npm run setup:agent
+```
 
-| 우선순위 | 체크 | 없으면/있으면 | 행동 |
-|---------|------|-------------|------|
-| **최우선** | `.agent/last-error.json` | **있으면** | 에러 복구 (아래 참조) |
-| 1 | `node_modules/` | 없으면 | `npm install` 실행 |
-| 2 | `.docking/config.yaml` | 없으면 | `npm run setup` 안내 |
-| 3 | `.agent/onboarding-state.json` | 없으면 | 온보딩 시작 |
-| 4 | 위 파일 있고 pending 항목 | 있으면 | 이어서 진행 |
+이 명령어 하나로:
+1. ✅ HQ 인증 (브라우저 자동 열림)
+2. ✅ 스타터킷 다운로드  
+3. ✅ 의존성 설치
+4. ✅ 16단계 설치 자동 진행
 
-### 에러 자동 복구 (최우선)
+## ⚡ 즉시 판별 플로우
 
-`.agent/last-error.json`이 있으면 **다른 작업보다 먼저** 처리:
-1. 파일을 읽고 에러 내용을 사용자에게 보고
-2. `.agent/workflows/troubleshooting.md` 참조하여 복구 시도
-3. `recovery.commands`를 순서대로 실행
-4. 성공 시 `.agent/last-error.json` 삭제
-5. 실패 시 사용자에게 수동 조치 안내
+```
+프로젝트 열기
+    ↓
+[체크] .agent/setup-progress.json 존재?
+    ├── ✅ 있음 → 기존 설치 → npm run setup:step -- --next
+    └── ❌ 없음 → 신규 설치
+        ↓
+    [체크] AGENT_INSTALLER.md 존재? (이 파일)
+        ├── ✅ 있음 → 스타터킷 초기 → npm run setup:agent
+        └── ❌ 없음 → 레거시 모드 → npm run setup
+```
 
-**상세 절차**: `.agent/workflows/first-contact.md`
+## 📋 상태별 행동
 
-## 파일 수정 규칙
+### Phase A: 신규 설치 (이 파일이 있음)
+```bash
+# 완전 자동 모드 - 브라우저 인증 포함
+npm run setup:agent
+
+# 또는 미리 토큰이 있는 경우  
+npm run setup:agent -- --token=YOUR_TOKEN
+```
+
+### Phase S: 설치 진행중 (setup-progress.json 있음)
+```bash
+# 다음 단계 실행
+npm run setup:step -- --next
+
+# 상태 확인
+npm run setup:step -- --status
+```
+
+### Phase O: 설치 완료 후
+```bash
+# 온볼딩 시작
+npm run setup:agent -- --onboarding
+```
+
+## 🆘 문제 해결
+
+| 상황 | 해결책 |
+|------|--------|
+| 인증 실패 | `npm run setup:agent -- --reauth` |
+| 중간에 멈춤 | 그대로 `npm run setup:agent` 재실행 |
+| 수동 모드 | `npm run setup` (대화형) |
+
+## 📝 상세 가이드
+
+- `.agent/workflows/first-contact-v2.md` - 전체 프로토콜
+- `.agent/AGENT_INSTALLER.md` - 인스톨러 상세 가이드
+
+## 규칙
 
 - 코어 파일 수정 금지 (`.claude/rules/clinic-os-safety.md` 참조)
-- 커스텀은 `_local/` / `local/` 디렉토리 사용
-
-## 한국어 응답
-
-모든 사용자 응답은 한국어로 작성하세요.
+- 모든 응답은 한국어로 작성
