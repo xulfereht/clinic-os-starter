@@ -352,6 +352,31 @@ async function main() {
     return;
   }
 
+  try {
+    // 1. 인증 단계
+    ctx.setStage('auth');
+    let accessToken = null;
+
+    if (token) {
+      log.info('제공된 토큰을 사용합니다');
+      accessToken = token;
+      ctx.setAuth('cli-token', token);
+    } else if (!skipAuth) {
+      accessToken = await deviceAuthCLI();
+      ctx.setAuth('device-code', accessToken);
+    } else {
+      log.warning('인증을 건너뜁니다 (로컬 모드)');
+      ctx.setAuth('none');
+    }
+
+    // 2. 다운로드 단계
+    if (accessToken && !fs.existsSync(path.join(PROJECT_ROOT, 'core'))) {
+      ctx.setStage('download');
+      const zipPath = await downloadStarterKit(accessToken, channel);
+      await extractStarterKit(zipPath);
+    } else {
+      log.info('스타터킷이 이미 존재합니다. 다운로드를 건너뜁니다.');
+    }
 
     // 3. 의존성 설치
     if (!fs.existsSync(path.join(PROJECT_ROOT, 'node_modules'))) {
