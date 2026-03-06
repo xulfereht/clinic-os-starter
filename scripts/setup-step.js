@@ -169,6 +169,9 @@ async function runInitConfig(progress) {
     const dbName = `${cleanName}-db`;
     const bucketName = `${cleanName}-uploads`;
     
+    // CRITICAL Fix: 랜덤 임시 비밀번호 생성 (평문 "change-me-in-production" 제거)
+    const tempPassword = crypto.randomBytes(16).toString('hex').substring(0, 16);
+    
     const wranglerContent = `# Clinic-OS Configuration for ${progress.context.clinicName}
 name = "${cleanName}"
 # Note: 한국어 기관명은 client_id 기반 slug로 자동 변환됩니다
@@ -183,7 +186,7 @@ bucket_name = "${bucketName}"
 
 [vars]
 CLINIC_NAME = "${progress.context.clinicName}"
-ADMIN_PASSWORD = "change-me-in-production"
+ADMIN_PASSWORD = "${tempPassword}"
 ALIGO_TESTMODE = "Y"
 
 # D1 데이터베이스
@@ -194,6 +197,8 @@ database_id = "local-db-placeholder"
 `;
     fs.writeFileSync(wranglerPath, wranglerContent);
     console.log(`   ✅ wrangler.toml 생성: ${dbName}`);
+    console.log(`   🔐 임시 관리자 비밀번호 생성됨: ${tempPassword}`);
+    console.log(`   ⚠️  프로덕션 배포 전 반드시 변경하세요: wrangler secret put ADMIN_PASSWORD`);
     progress.context.dbName = dbName;
   } else {
     console.log('   ⏭️  wrangler.toml 이미 존재');

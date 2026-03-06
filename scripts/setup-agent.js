@@ -93,6 +93,11 @@ async function runSetupSteps() {
   }
 
   log.success('모든 설치 단계 완료!');
+  
+  // MEDIUM Fix: 설치 후 보안 감사 안내
+  log.info('\n📋 설치 후 권장 조치:');
+  console.log(`   ${C.cyan}npm audit${C.reset} - 의존성 보안 취약점 확인`);
+  console.log(`   ${C.cyan}wrangler secret put ADMIN_PASSWORD${C.reset} - 프로덕션 비밀번호 설정`);
 }
 
 // 메인 실행
