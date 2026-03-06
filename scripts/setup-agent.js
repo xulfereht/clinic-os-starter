@@ -309,31 +309,49 @@ async function main() {
   const ctx = new AgentContext();
   ctx.log('Agent installer started');
 
-  try {
-    // 1. 인증 단계
-    ctx.setStage('auth');
-    let accessToken = null;
 
-    if (token) {
-      log.info('제공된 토큰을 사용합니다');
-      accessToken = token;
-      ctx.setAuth('cli-token', token);
-    } else if (!skipAuth) {
-      accessToken = await deviceAuthCLI();
-      ctx.setAuth('device-code', accessToken);
-    } else {
-      log.warning('인증을 건너뜁니다 (로컬 모드)');
-      ctx.setAuth('none');
-    }
+  // 🔍 스타터킷 초기 상태 감지 (이미 clinic-os 안에 있는지 확인)
+  const isStarterKitFresh = fs.existsSync(path.join(PROJECT_ROOT, '.agent', 'AGENT_INSTALLER.md'));
+  const hasCore = fs.existsSync(path.join(PROJECT_ROOT, 'core'));
+  const hasNodeModules = fs.existsSync(path.join(PROJECT_ROOT, 'node_modules'));
 
-    // 2. 다운로드 단계
-    if (accessToken && !fs.existsSync(path.join(PROJECT_ROOT, 'core'))) {
-      ctx.setStage('download');
-      const zipPath = await downloadStarterKit(accessToken, channel);
-      await extractStarterKit(zipPath);
+  // 이미 clinic-os 안에 있고 스타터킷이 설치된 상태면 인증/다운로드 스킵
+  if (isStarterKitFresh && hasNodeModules) {
+    log.success('스타터킷 초기 상태가 확인되었습니다.');
+    log.info('인증 및 다운로드를 스킵하고 설치를 바로 진행합니다.');
+    ctx.setAuth('none');
+    
+    // 바로 설치 단계로 진행
+    if (!fs.existsSync(PROGRESS_PATH)) {
+      ctx.setStage('setup');
+      await runSetupSteps();
     } else {
-      log.info('스타터킷이 이미 존재합니다. 다운로드를 건너뜁니다.');
+      const progress = fs.readJsonSync(PROGRESS_PATH);
+      const pending = progress.steps?.filter(s => s.status === 'pending').length || 0;
+      
+      if (pending > 0) {
+        log.info(`남은 설치 단계: ${pending}개`);
+        await runSetupSteps();
+      } else {
+        log.success('설치가 이미 완료되었습니다.');
+      }
     }
+    
+    // 완료 처리
+    ctx.setStage('complete');
+    ctx.data.setup.status = 'complete';
+    ctx.save();
+
+    console.log(`\n${C.green}${C.bold}╔════════════════════════════════════════════════╗${C.reset}`);
+    console.log(`${C.green}${C.bold}║${C.reset}     ${C.bold}🎉 설치가 완료되었습니다!${C.reset}               ${C.green}${C.bold}║${C.reset}`);
+    console.log(`${C.green}${C.bold}╚════════════════════════════════════════════════╝${C.reset}\n`);
+    
+    log.info('다음 명령어로 개발 서버를 시작하세요:');
+    console.log(`\n  ${C.cyan}npm run dev${C.reset}\n`);
+    
+    return;
+  }
+
 
     // 3. 의존성 설치
     if (!fs.existsSync(path.join(PROJECT_ROOT, 'node_modules'))) {
