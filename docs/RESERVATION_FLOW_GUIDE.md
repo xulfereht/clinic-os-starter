@@ -1,3 +1,10 @@
+---
+hq_slug: reservation-flow-guide
+hq_title: "예약 및 스케줄 관리 가이드"
+hq_category: "05. 환자 & 예약 관리"
+hq_sort: 2
+hq_active: true
+---
 # 예약 및 스케줄 관리 가이드
 
 이 가이드는 홈페이지를 통한 온라인 예약 접수부터 확정, 방문 완료까지의 전체적인 예약 관리 흐름과 스케줄 조정 방법을 설명합니다.

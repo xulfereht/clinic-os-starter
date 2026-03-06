@@ -1,3 +1,10 @@
+---
+hq_slug: staff-management
+hq_title: "직원 및 권한 관리 가이드"
+hq_category: "09. 시스템 설정"
+hq_sort: 2
+hq_active: true
+---
 # 직원 및 권한 관리 가이드
 
 이 가이드는 병원 직원의 정보를 등록하고, 관리자 페이지에 접근할 수 있는 계정 및 권한을 설정하는 방법을 설명합니다.

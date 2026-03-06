@@ -27,11 +27,31 @@ npm install
 
 ---
 
-## 2단계: 자동 설정 마법사 실행
+## 2단계: 자동 설정 마법사 실행 (Agent-First)
 
-다음 명령어를 실행하여 지능형 셋업 마법사를 시작합니다.
+Agent-First Architecture의 **단계별 설치 시스템**을 사용합니다.
 
-// turbo
+### 방법 A: 단계별 설치 (권장 - 메모리 안전)
+
+메모리 제한 환경에서도 안전하게 실행되는 16단계 설치:
+
+```bash
+# 설치 상태 확인
+npm run setup:step -- --status
+
+# 한 단계씩 진행 (SIGKILL 발생핏도 해당 단계부터 재시작)
+npm run setup:step -- --next
+# → 완료될 때까지 위 명령어 반복
+```
+
+**장점:**
+- 한 번에 하나의 단계만 실행 (저메모리)
+- 각 단계는 멱등성 보장 (이미 완료된 단계는 skip)
+- SIGKILL 발생 시 해당 단계부터 자동 재시작
+- 진행 상태가 `.agent/setup-progress.json`에 저장
+
+### 방법 B: 레거시 일괄 설치
+
 ```bash
 npm run setup
 ```
@@ -84,6 +104,15 @@ npm run dev
 
 ## 문제 해결
 
+### core:pull 실행 시 "깃 저장소가 아닙니다" 오류
+스타터킷 구조에서 루트에 `.git`이 없으면 발생합니다.
+```bash
+git init          # 루트에 .git 생성
+npm run core:pull # 다시 시도
+```
+> v1.24.0부터 `update:starter` 및 `fetch.js`가 자동으로 `git init`을 실행합니다.
+> 이전 버전 클라이언트는 위 명령을 수동으로 실행해야 합니다.
+
 ### clinic.json이 없는 경우
 마법사가 자동으로 수동 입력 또는 브라우저 인증 모드로 전환합니다.
 
@@ -93,18 +122,71 @@ npx wrangler login
 ```
 
 ### DB 초기화 오류
+
+> v1.24.3부터 `db:init`/`db:migrate`는 root의 `.docking/engine/migrate.js`를 직접 실행합니다.
+> wrangler.toml이 없으면 명확한 에러 메시지와 함께 `.agent/last-error.json`에 보고서가 저장됩니다.
+
 ```bash
-npm run db:init
-npm run db:seed
+npm run db:init      # 스키마 마이그레이션 (wrangler.toml 필수)
+npm run db:seed      # 샘플 데이터 삽입
 ```
+
+wrangler.toml이 없다면 먼저 `npm run setup`을 실행하세요.
+마이그레이션 실패 시 seeds는 자동으로 건너뛰며, 복구 후 `npm run db:seed`로 별도 실행할 수 있습니다.
+
+### 에러 자동 복구
+
+`.agent/last-error.json`이 존재하면 이전 에러가 해결되지 않은 상태입니다.
+
+```bash
+# 에러 상태 확인
+npm run error:status
+
+# 자동 복구 시도 (autoRecoverable 단계만)
+npm run error:recover
+
+# 강제 복구 (수동 단계도 시도)
+npm run error:recover -- --force
+
+# 수동으로 해결한 경우 표시
+npm run error:resolve
+```
+
+→ `.agent/workflows/troubleshooting.md`를 참조하여 복구 후 다음 단계로 진행하세요.
+
+---
+
+## 다음 단계: 병원 개별화 온보딩
+
+기술적 설정이 완료되면, 병원 정보와 콘텐츠를 세팅하는 온보딩 워크플로우로 이어집니다.
+
+→ **`/onboarding`** 워크플로우 실행 또는 "온보딩 시작"이라고 말해주세요.
+
+온보딩 에이전트가 다음을 안내합니다:
+1. 관리자 계정 보안 → 병원 정보 → 브랜딩 → **1차 배포**
+2. 의료진 → 진료 프로그램 → 홈페이지 → **2차 배포**
+3. 접수 폼 → 블로그 → 환자 관리 → **운영 시작**
+4. SMS, SEO, 다국어 등 → **선택적 확장**
 
 ---
 
 ## 명령어 요약
 
+### Agent-First 명령어 (신규)
+
 | 명령어 | 용도 |
 |--------|------|
-| `npm run setup` | 초기 설정 마법사 |
+| `npm run status` | **통합 상태 확인** (설치+온볼딩+건강도+Lock) |
+| `npm run setup:step -- --next` | 다음 설치 단계 실행 |
+| `npm run setup:step -- --status` | 설치 진행도 확인 |
+| `npm run error:status` | 에러 복구 상태 확인 |
+| `npm run error:recover` | 자동 복구 시도 |
+
+### 기존 명령어
+
+| 명령어 | 용도 |
+|--------|------|
+| `npm run setup` | 초기 설정 마법사 (레거시) |
 | `npm run fetch` | 앱 패키지 가져오기 |
 | `npm run dev` | 로컬 개발 서버 |
 | `npm run deploy` | 프로덕션 배포 |
