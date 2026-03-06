@@ -28,7 +28,11 @@ const FALLBACK_INFRA_FILES = [
     'scripts/check-system.js',
     'scripts/dev-preflight.js',
     'scripts/deploy-guard.js',
-    'scripts/update-starter.js'
+    'scripts/update-starter.js',
+
+    // 건강 진단
+    'scripts/health-audit.js',
+    'scripts/doctor.js'
 ];
 
 async function fetchManifest(hqUrl, deviceToken) {
@@ -177,6 +181,20 @@ async function updateStarterFiles() {
             }
         }
         console.log(`   ✅ ${coreCopyCount}개 파일 core/에 동기화 완료`);
+    }
+
+    // 4.1 루트 .git 확인 (core:pull에 필요)
+    const rootGitDir = path.join(PROJECT_ROOT, '.git');
+    if (!fs.existsSync(rootGitDir)) {
+        console.log('\n🔧 루트 .git 초기화 중 (core:pull에 필요)...');
+        try {
+            const { execFileSync } = await import('child_process');
+            execFileSync('git', ['init'], { cwd: PROJECT_ROOT, stdio: 'pipe' });
+            console.log('   ✅ git init 완료');
+        } catch (e) {
+            console.log(`   ⚠️  git init 실패: ${e.message}`);
+            console.log('   💡 수동으로 실행하세요: cd ' + PROJECT_ROOT + ' && git init');
+        }
     }
 
     // 5. 결과 출력
