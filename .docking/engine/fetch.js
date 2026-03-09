@@ -218,6 +218,22 @@ async function refreshAgentRuntimeContext() {
     }
 }
 
+async function syncCoreInfrastructureForStarterKit() {
+    if (!IS_STARTER_KIT) return null;
+
+    const updateStarterPath = path.join(PROJECT_ROOT, 'scripts', 'update-starter.js');
+    if (!fs.existsSync(updateStarterPath)) return null;
+
+    try {
+        const updater = await import(pathToFileURL(updateStarterPath).href);
+        if (typeof updater.syncCoreInfrastructure !== 'function') return null;
+        return updater.syncCoreInfrastructure(PROJECT_ROOT);
+    } catch (e) {
+        console.log(`   ⚠️  core 인프라 동기화 건너뜀: ${e.message}`);
+        return null;
+    }
+}
+
 // DB Doctor import (동적 import로 순환 의존성 방지)
 async function runDbDoctorCheck() {
     try {
@@ -2619,6 +2635,13 @@ async function corePull(targetVersion = 'latest', options = {}) {
             }
         } catch (e) {
             console.log(`   ⚠️  CORE_PATHS catch-up 건너뜀: ${e.message}`);
+        }
+    }
+
+    if (!dryRun && IS_STARTER_KIT) {
+        const coreInfraSync = await syncCoreInfrastructureForStarterKit();
+        if (coreInfraSync?.copied > 0) {
+            console.log(`   ✅ core 인프라 동기화: ${coreInfraSync.copied}개 경로`);
         }
     }
 

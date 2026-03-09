@@ -28,6 +28,27 @@ const GENERATED_COMPATIBILITY_DATES = new Set([
 const TARGET_COMPATIBILITY_DATE = '2026-03-01';
 const STARTER_BUNDLE_THRESHOLD = 8;
 const STARTER_UPDATE_BUNDLE_FORMAT = 'clinic-os-starter-update-bundle.v1';
+const CORE_INFRA_SYNC_PATHS = [
+    '.docking/engine/migrate.js',
+    '.docking/engine/fetch.js',
+    '.docking/engine/schema-validator.js',
+    '.docking/engine/engine-updater.js',
+    'scripts/check-in.js',
+    'scripts/check-system.js',
+    'scripts/db-sync.js',
+    'scripts/dev-preflight.js',
+    'scripts/dev-start.js',
+    'scripts/postbuild-local-override.js',
+    'scripts/setup-clinic.js',
+    'scripts/db-backup.js',
+    'scripts/db-backup-watch.js',
+    'scripts/generate-schema-doc.js',
+    'scripts/check-core-imports.js',
+    'scripts/shared-file-lists.js',
+    'scripts/cos-ask',
+    'scripts/build-with-support.sh',
+    'scripts/lib',
+];
 
 function hashBufferSha256(buffer) {
     return crypto.createHash('sha256').update(buffer).digest('hex');
@@ -76,6 +97,36 @@ function applyStarterUpdateBundle({ projectRoot, bundleBuffer, onlyFiles = null 
     }
 
     return { appliedCount };
+}
+
+export function syncCoreInfrastructure(projectRoot = PROJECT_ROOT) {
+    const coreDir = path.join(projectRoot, 'core');
+    if (!fs.existsSync(coreDir)) {
+        return { copied: 0, skipped: 0, missingCore: true };
+    }
+
+    let copied = 0;
+    let skipped = 0;
+
+    for (const relativePath of CORE_INFRA_SYNC_PATHS) {
+        const srcPath = path.join(projectRoot, relativePath);
+        const destPath = path.join(coreDir, relativePath);
+
+        if (!fs.existsSync(srcPath)) {
+            skipped++;
+            continue;
+        }
+
+        try {
+            fs.ensureDirSync(path.dirname(destPath));
+            fs.copySync(srcPath, destPath, { overwrite: true });
+            copied++;
+        } catch (_) {
+            skipped++;
+        }
+    }
+
+    return { copied, skipped, missingCore: false };
 }
 
 // Fallback starter 파일 목록 (manifest.json 로드 실패 시)
@@ -340,31 +391,10 @@ async function updateStarterFiles() {
     }
 
     // 4. core/ 폴더가 있으면 핵심 엔진 파일 동기화 (스타터킷 구조 지원)
-    const coreDir = path.join(PROJECT_ROOT, 'core');
-    if (fs.existsSync(coreDir)) {
+    const coreInfraSync = syncCoreInfrastructure(PROJECT_ROOT);
+    if (!coreInfraSync.missingCore) {
         console.log('\n🔄 core/ 폴더에 인프라 파일 동기화 중...');
-        const coreInfraFiles = [
-            '.docking/engine/migrate.js',
-            '.docking/engine/fetch.js',
-            '.docking/engine/schema-validator.js',
-            '.docking/engine/engine-updater.js',
-            'scripts/dev-start.js'
-        ];
-        let coreCopyCount = 0;
-        for (const file of coreInfraFiles) {
-            const srcPath = path.join(PROJECT_ROOT, file);
-            const destPath = path.join(coreDir, file);
-            if (fs.existsSync(srcPath)) {
-                try {
-                    fs.ensureDirSync(path.dirname(destPath));
-                    fs.copyFileSync(srcPath, destPath);
-                    coreCopyCount++;
-                } catch (e) {
-                    // 복사 실패해도 계속 진행
-                }
-            }
-        }
-        console.log(`   ✅ ${coreCopyCount}개 파일 core/에 동기화 완료`);
+        console.log(`   ✅ ${coreInfraSync.copied}개 경로 core/에 동기화 완료`);
     }
 
     // 4.1 루트 .git 확인 (core:pull에 필요)
@@ -401,7 +431,9 @@ async function updateStarterFiles() {
     console.log('════════════════════════════════════════════');
 }
 
-updateStarterFiles().catch(err => {
-    console.error('\n❌ Error:', err.message);
-    process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+    updateStarterFiles().catch(err => {
+        console.error('\n❌ Error:', err.message);
+        process.exit(1);
+    });
+}
