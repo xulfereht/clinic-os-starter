@@ -446,7 +446,7 @@ wrangler d1 export clinic-db --local --output .backups/d1-snapshot-latest.sql
 [새 컴퓨터]
 
 1. 기본 환경 설치 (Node.js, Git)
-   → Windows: WSL 먼저 설치 (windows-guide 참조)
+   → Windows 호스트: WSL Ubuntu 먼저 설치 (windows-guide 참조)
    → macOS: 바로 진행 가능
 
 2. GitHub에서 코드 가져오기

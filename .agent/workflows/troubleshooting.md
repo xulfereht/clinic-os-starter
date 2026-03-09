@@ -82,7 +82,7 @@ description: Clinic-OS 트러블슈팅 및 복구 가이드 (에이전트용)
 | `npm run db:backup --list` | DB 백업 목록 | 아니오 |
 | `npm run db:restore` | 최신 DB 백업에서 복원 | 예 |
 | `npm run setup` | 전체 12단계 재초기화 (레거시, 대화형) | 부분적 |
-| `npm run setup:fast` | 고성능 환경용 빠른 일괄 setup | 부분적 |
+| `npm run setup:fast` | 고성능 macOS/WSL Ubuntu 환경용 빠른 일괄 setup | 부분적 |
 | `npm run setup:step -- --next` | 다음 단계 설치 (Agent-First) | 부분적 |
 
 ---
@@ -206,15 +206,15 @@ npm run core:pull --force
 
 **wrangler.toml이 없는 경우** (두 가지 원인):
 - **A) setup 미완료**: 처음 설치했는데 setup을 끝내지 않음 → 기본은 `npm run setup:step -- --next`
-- **B) 삭제됨**: 기존 클라이언트가 실수로 삭제 → `npm run setup:step -- --next` 또는 고성능 환경이면 `npm run setup:fast`
+- **B) 삭제됨**: 기존 클라이언트가 실수로 삭제 → `npm run setup:step -- --next` 또는 고성능 macOS/WSL Ubuntu 환경이면 `npm run setup:fast -- --auto`
 ```bash
 # 삭제 여부 확인
 git log --diff-filter=D -- wrangler.toml
 
 # 생성 또는 복구
 npm run setup:step -- --next
-# 또는 고성능 환경:
-npm run setup:fast
+# 또는 고성능 macOS/WSL Ubuntu 환경:
+npm run setup:fast -- --auto
 ```
 
 **wrangler.toml은 있지만 DB가 없는 경우**:
@@ -225,6 +225,10 @@ npm run db:seed      # 샘플 데이터 (마이그레이션 성공 시에만)
 
 > 기존 DB가 있으면 마이그레이션은 증분만 적용됩니다.
 > 기존 데이터는 절대 삭제되지 않습니다 (모든 DDL이 IF NOT EXISTS).
+
+**`database_id = "local-db-placeholder"` 인 경우**:
+- 로컬 개발용 기본값입니다. Cloudflare D1이 아직 연결되지 않았다는 뜻이지, 설치 실패 자체를 의미하지는 않습니다.
+- 다만 로컬 D1 마이그레이션이 끝나지 않았다면 `npm run health:fix` 또는 `npm run db:migrate`로 복구해야 합니다.
 
 ---
 

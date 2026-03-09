@@ -12,7 +12,7 @@
 
 ## 시작 전 준비
 
-### macOS / Linux
+### macOS / WSL Ubuntu
 
 1. Node.js 20 이상 설치
 2. Git 설치
@@ -21,7 +21,7 @@
 
 ### Windows
 
-Windows는 반드시 WSL 안에서 작업하세요.
+네이티브 Windows 설치는 지원하지 않습니다. Windows에서는 반드시 **WSL Ubuntu** 안에서 작업하세요.
 
 - 먼저 [Windows 가이드](./WINDOWS_GUIDE.md)를 따르세요.
 - 프로젝트는 `C:\...`가 아니라 `~/clinic-os` 같은 WSL 경로에 두는 것이 안전합니다.
