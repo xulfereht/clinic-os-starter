@@ -576,6 +576,21 @@ async function runOnboardingInit(progress) {
     last_updated: new Date().toISOString(),
     current_tier: 1,
     deployment_count: 0,
+    briefing_completed_at: null,
+    chosen_track: {
+      mode: 'recommended',
+      tier: 1,
+      feature_id: null,
+      updated_at: null,
+      notes: null
+    },
+    current_focus: {
+      feature_id: null,
+      checkpoint: null,
+      updated_at: null
+    },
+    session_notes: [],
+    deferred_items: [],
     clinic_name: progress.context.clinicName,
     features: featureStates
   };
