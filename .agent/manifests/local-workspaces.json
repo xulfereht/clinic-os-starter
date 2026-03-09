@@ -1,0 +1,202 @@
+{
+  "version": 1,
+  "updated_at": "2026-03-07T00:00:00Z",
+  "purpose": "에이전트가 로컬 클라이언트 작업을 수행할 때 safe workspace를 정확히 고르도록 돕는다.",
+  "default_read_order": [
+    "AGENTS.md",
+    ".agent/workflows/first-contact.md",
+    ".agent/runtime-context.json",
+    ".agent/manifests/change-strategy.json",
+    ".agent/manifests/local-workspaces.json",
+    ".agent/workflows/local-customization-agentic.md"
+  ],
+  "workspaces": [
+    {
+      "id": "page_overrides",
+      "path": "src/pages/_local/**",
+      "use_when": [
+        "기존 코어 퍼블릭 페이지를 병원별로만 다르게 보여줘야 한다.",
+        "기존 라우트의 레이아웃, 문구, 섹션 순서를 바꿔야 한다.",
+        "다음 core:pull 때도 이 커스터마이징이 유지되어야 한다."
+      ],
+      "create_pattern": [
+        "원본과 동일한 상대 경로로 _local 복사본을 만든다.",
+        "import 경로는 원본 페이지 위치를 기준으로 유지한다.",
+        "공용 로더가 있으면 직접 DB 조회보다 그 로더를 우선 사용한다."
+      ],
+      "verify": [
+        "npm run build",
+        "기본 경로와 locale 경로가 있으면 둘 다 렌더링 확인",
+        "관리자에서 바뀌는 값이면 퍼블릭 반영과 SEO/AEO 소비자까지 확인"
+      ],
+      "avoid": [
+        "src/pages/admin/** 를 _local 로 복제해 수정",
+        "공용 버그를 _local 우회로만 숨김",
+        "원본 파일보다 더 많은 소스 오브 트루스를 새로 만듦"
+      ],
+      "read_before": [
+        "docs/CUSTOMIZATION_GUIDE.md",
+        ".agent/workflows/local-customization-agentic.md",
+        ".agent/workflows/troubleshooting.md"
+      ]
+    },
+    {
+      "id": "local_lib",
+      "path": "src/lib/local/**",
+      "use_when": [
+        "_local 페이지, 로컬 플러그인, 로컬 검사도구가 공통으로 쓸 클리닉 전용 유틸이 필요하다.",
+        "외부 서비스 어댑터나 병원 전용 계산 로직을 코어와 분리해야 한다."
+      ],
+      "create_pattern": [
+        "클리닉 전용 helper, formatter, adapter, bridge만 둔다.",
+        "core loader를 대체하기보다 local layer에서 조합한다."
+      ],
+      "verify": [
+        "호출하는 _local/plugin/survey tool에서 import 해 동작 확인",
+        "공용 코어 파일을 직접 수정하지 않고 요구사항을 충족하는지 확인"
+      ],
+      "avoid": [
+        "공용 버그 수정을 local helper만으로 덮음",
+        "clinic.json, wrangler.toml 같은 보호 파일을 대신 저장소로 사용"
+      ],
+      "read_before": [
+        ".agent/workflows/local-customization-agentic.md"
+      ]
+    },
+    {
+      "id": "skin_packs",
+      "path": "src/skins/local/**",
+      "use_when": [
+        "퍼블릭 페이지 전체의 톤앤매너를 스킨 단위로 묶어서 바꾸고 싶다.",
+        "Hero/MainHero 같은 난이도 높은 섹션을 토큰 조정만으로 해결하기 어렵다.",
+        "병원 전용 스킨을 재사용하거나 다른 설치본과 공유할 계획이 있다."
+      ],
+      "create_pattern": [
+        "manifest.json으로 defaults, tokens, cssVars, sectionStyles를 먼저 정의한다.",
+        "큰 변경은 sections/Hero.astro 또는 sections/MainHero.astro override로 분리한다.",
+        "로컬 스킨은 src/skins/local/{skin-id}/ 아래에만 만든다."
+      ],
+      "verify": [
+        "npm run build",
+        "/demo/design-system?skin={skinId} 확인",
+        "/admin/design 에서 선택 가능 여부 확인",
+        "실제 퍼블릭 주요 페이지 2-3개에서 레이아웃 깨짐이 없는지 확인"
+      ],
+      "avoid": [
+        "src/components/sections/** 를 직접 고쳐 스킨 변경을 해결",
+        "Hero 변경을 homepage override 하나에만 숨김",
+        "skin.css 없이 인라인 style과 하드코딩 색만 늘림"
+      ],
+      "read_before": [
+        ".agent/workflows/skins-agentic.md",
+        "docs/SKIN_SYSTEM_GUIDE.md"
+      ]
+    },
+    {
+      "id": "local_plugins",
+      "path": "src/plugins/local/**",
+      "use_when": [
+        "새 기능, 새 경로, 새 API, 새 관리자 탭을 독립 확장으로 추가할 수 있다.",
+        "병원별 기능이지만 코어 페이지 오버라이드보다 격리된 생명주기가 필요하다."
+      ],
+      "workflow": ".agent/workflows/plugin-agentic.md",
+      "verify": [
+        "npm run build",
+        "/ext/{pluginId} 와 /admin/hub/{pluginId} 확인",
+        "설치/비활성화/리빌드 흐름 확인"
+      ]
+    },
+    {
+      "id": "survey_tools",
+      "path": "src/survey-tools/local/**",
+      "use_when": [
+        "/ext/survey-tools/{toolId} 형태의 검사도구를 병원별로 추가한다.",
+        "질문/점수 기반 검사 또는 survey/result/report 3단계 화면이 필요하다."
+      ],
+      "create_pattern": [
+        "tool id 폴더 아래 manifest.json 을 기본으로 만든다.",
+        "간단한 검사는 manifest.questions + scoring 으로, 복잡한 검사는 survey/result/report.astro 로 구현한다.",
+        "local > store > core 우선순위를 염두에 두고 동일 id 충돌을 피한다."
+      ],
+      "verify": [
+        "npm run build",
+        "/ext/survey-tools/{toolId}",
+        "/ext/survey-tools/{toolId}/result/{resultId}",
+        "관리자 /admin/surveys/tools 와 환자 연결 흐름 확인"
+      ],
+      "avoid": [
+        "src/plugins/survey-tools/** 를 직접 수정",
+        "루트 migrations/ 에 검사도구 전용 스키마를 추가",
+        "코드에서 직접 참조하는 정적 이미지를 R2 업로드만으로 해결"
+      ],
+      "read_before": [
+        "src/lib/survey-tools-loader.ts",
+        ".agent/workflows/survey-tools-agentic.md",
+        "docs/SURVEY_TOOLS_GUIDE.md",
+        "src/plugins/survey-tools/README.md"
+      ]
+    },
+    {
+      "id": "public_local_assets",
+      "path": "public/local/**",
+      "use_when": [
+        "로고, favicon, OG 이미지, 코드에서 직접 참조하는 배너/아이콘이 필요하다.",
+        "업데이트 후에도 Git으로 같이 추적되어야 하는 정적 파일이다."
+      ],
+      "create_pattern": [
+        "코드가 참조할 경로 그대로 public/local 에 둔다.",
+        "빌드 후 dist/local 이 dist 루트로 복사된다는 점을 가정한다."
+      ],
+      "verify": [
+        "npm run build",
+        "dist/local 제거 후 dist/{asset} 로 복사되었는지 확인",
+        "로컬 정적 자산과 관리자 업로드(R2)를 혼동하지 않았는지 확인"
+      ],
+      "avoid": [
+        "관리자 업로드 자산을 public/local 에 저장하려고 함",
+        "Cloudflare R2 버킷 객체를 코드 레포의 정적 파일처럼 취급"
+      ],
+      "read_before": [
+        "docs/R2_STORAGE_GUIDE.md",
+        ".agent/workflows/local-customization-agentic.md"
+      ]
+    },
+    {
+      "id": "internal_docs",
+      "path": "docs/internal/**",
+      "use_when": [
+        "클리닉별 운영 메모, 감사 결과, 마이그레이션 기록, 에이전트용 런북을 남겨야 한다.",
+        "사용자에게 직접 노출되지 않는 내부 문서가 필요하다."
+      ],
+      "create_pattern": [
+        "날짜와 목적이 드러나는 파일명으로 남긴다.",
+        "환경 메모, 복구 기록, 확인 결과는 docs/internal/audits 또는 runbooks 성격으로 정리한다."
+      ],
+      "verify": [
+        "민감한 비밀값을 그대로 넣지 않았는지 확인",
+        "배포/퍼블릭 페이지에 노출되는 콘텐츠로 착각하지 않았는지 확인"
+      ],
+      "avoid": [
+        "프로덕션 사용자에게 보여야 할 콘텐츠를 docs/internal 에만 기록",
+        "토큰, 비밀번호, 라이선스 키 원문 저장"
+      ],
+      "read_before": [
+        ".agent/workflows/local-customization-agentic.md"
+      ]
+    }
+  ],
+  "wrong_fix_signals": [
+    "기존 퍼블릭 페이지 수정을 위해 src/pages/ 원본을 직접 고치려 한다.",
+    "공개 사이트의 분위기 전체를 바꾸려는데 src/components/sections/** 를 직접 수정하려 한다.",
+    "검사도구를 만들면서 src/plugins/survey-tools/** 를 직접 수정하려 한다.",
+    "로고 교체 요청을 R2 업로드로만 해결하려 한다.",
+    "병원 전용 메모를 README 나 사용자 가이드에 섞어 넣는다."
+  ],
+  "critical_invariants": [
+    "로컬 클라이언트 작업은 core:pull에 안전한 local/_local 경로에 있어야 한다.",
+    "스킨 단위 커스터마이징은 src/skins/local 에서 관리하고, 페이지 단위 수정과 섞지 않는다.",
+    "static asset 과 admin-uploaded asset 의 저장소를 혼동하지 않는다.",
+    "survey-tools/local 은 local > store > core 우선순위를 가진다.",
+    "docs/internal 은 에이전트와 운영자용 기록이지 사용자-facing 콘텐츠가 아니다."
+  ]
+}

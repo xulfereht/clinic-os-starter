@@ -41,7 +41,8 @@ description: Clinic-OS 트러블슈팅 및 복구 가이드 (에이전트용)
 1. **`npm run health`** — 환경 건강 점수 (0-100) 확인
 2. **`npm run core:status`** — 현재 코어 버전, 백업 상태 확인
 3. **`npm run doctor`** — DB 스키마 검증
-4. 위 결과로 원인 파악 → 아래 시나리오별 대응
+4. **`npm run agent:doctor -- --json`** — 버전/에러/자동 조치 우선순위 확인
+5. 위 결과로 원인 파악 → 아래 시나리오별 대응
 
 ---
 
@@ -51,6 +52,12 @@ description: Clinic-OS 트러블슈팅 및 복구 가이드 (에이전트용)
 
 | 명령어 | 용도 | 파괴적? |
 |--------|------|---------|
+| `npm run agent:doctor -- --json` | 설치/버전/에러/권장 조치 진단 | 아니오 |
+| `npm run agent:lifecycle -- --json` | 신규 설치/업데이트/재설치 시나리오 판별 | 아니오 |
+| `npm run agent:snapshot -- --reason=...` | 보호 스냅샷 생성 | 아니오 |
+| `npm run agent:restore -- --dry-run --json` | 자동 백업/형제 폴더 기준 복원 계획 확인 | 아니오 |
+| `npm run agent:sync -- --dry-run` | 자동 조치 후보 미리보기 | 아니오 |
+| `npm run agent:sync` | 안전한 자동 조치 실행 | 부분적 |
 | `npm run status` | **통합 상태 확인** (설치+온볼딩+건강도+Lock) | 아니오 |
 | `npm run error:status` | 에러 복구 상태 확인 | 아니오 |
 | `npm run error:recover` | 자동 복구 시도 (autoRecoverable 단계만) | 부분적 |
@@ -74,7 +81,8 @@ description: Clinic-OS 트러블슈팅 및 복구 가이드 (에이전트용)
 | `npm run db:migrate` | 마이그레이션 재실행 (멱등) | 아니오 |
 | `npm run db:backup --list` | DB 백업 목록 | 아니오 |
 | `npm run db:restore` | 최신 DB 백업에서 복원 | 예 |
-| `npm run setup` | 전체 12단계 재초기화 (레거시) | 부분적 |
+| `npm run setup` | 전체 12단계 재초기화 (레거시, 대화형) | 부분적 |
+| `npm run setup:fast` | 고성능 환경용 빠른 일괄 setup | 부분적 |
 | `npm run setup:step -- --next` | 다음 단계 설치 (Agent-First) | 부분적 |
 
 ---
@@ -87,7 +95,7 @@ description: Clinic-OS 트러블슈팅 및 복구 가이드 (에이전트용)
 
 ```bash
 git init
-npm run core:pull
+npm run core:pull -- --auto
 ```
 
 > v1.24.0부터 `fetch.js`와 `update:starter`가 자동으로 `git init` 실행
@@ -197,14 +205,16 @@ npm run core:pull --force
 > 4. placeholder ID → 안내 메시지 (npm run setup 필요)
 
 **wrangler.toml이 없는 경우** (두 가지 원인):
-- **A) setup 미완료**: 처음 설치했는데 setup을 끝내지 않음 → `npm run setup` 진행
-- **B) 삭제됨**: 기존 클라이언트가 실수로 삭제 → `npm run setup` 재실행 (기존 설정 있으면 유지 여부 물음)
+- **A) setup 미완료**: 처음 설치했는데 setup을 끝내지 않음 → 기본은 `npm run setup:step -- --next`
+- **B) 삭제됨**: 기존 클라이언트가 실수로 삭제 → `npm run setup:step -- --next` 또는 고성능 환경이면 `npm run setup:fast`
 ```bash
 # 삭제 여부 확인
 git log --diff-filter=D -- wrangler.toml
 
 # 생성 또는 복구
-npm run setup        # wrangler.toml 자동 생성 포함
+npm run setup:step -- --next
+# 또는 고성능 환경:
+npm run setup:fast
 ```
 
 **wrangler.toml은 있지만 DB가 없는 경우**:
@@ -341,6 +351,16 @@ npm run setup
 ### 11. 스타터킷 완전 재설치 (최후의 수단)
 
 모든 복구가 실패한 경우, 클라이언트 데이터를 보존하면서 재설치합니다.
+
+시작 전에 먼저:
+
+```bash
+npm run agent:lifecycle -- --json
+npm run agent:snapshot -- --reason=legacy-migration
+npm run agent:restore -- --dry-run --json
+```
+
+가능하면 아래 수동 복사보다 `agent:restore` 계획을 먼저 확인하고, 데이터가 필요하면 `--restore-db-latest`를 명시적으로 선택합니다.
 
 ```bash
 # 1. 클라이언트 데이터 백업

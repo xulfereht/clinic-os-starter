@@ -1,0 +1,226 @@
+{
+  "version": 1,
+  "generated_by": "core",
+  "intent": "로컬 에이전트가 대화형 명령으로 멈추지 않도록 안전한 실행 경로를 우선 선택한다.",
+  "agent_execution_policy": {
+    "run_safe_commands_directly_when_needed": true,
+    "propose_risky_commands_with_reason": true,
+    "never_ask_human_to_type_commands_if_agent_can_run_them": true,
+    "if_user_requests_wrong_command_explain_and_offer_safer_alternative": true
+  },
+  "safe_non_interactive": [
+    {
+      "command": "npm run agent:doctor -- --json",
+      "purpose": "현재 설치 상태, 스타터/코어 버전, 최근 에러, 권장 조치를 구조화된 JSON으로 진단"
+    },
+    {
+      "command": "npm run agent:lifecycle -- --json",
+      "purpose": "현재 설치본이 신규 설치/인플레이스 업데이트/신규 재설치 마이그레이션 중 어떤 시나리오인지 판별"
+    },
+    {
+      "command": "npm run agent:snapshot -- --reason=manual",
+      "purpose": "로컬 커스터마이징, 보호 설정, DB 상태를 보호 스냅샷으로 남김"
+    },
+    {
+      "command": "npm run agent:restore -- --dry-run --json",
+      "purpose": "자동 백업/형제 폴더/보호 스냅샷/로컬 DB 백업을 탐색해 현재 설치본에 적용할 복원 계획을 JSON으로 미리 확인"
+    },
+    {
+      "command": "npm run agent:sync -- --dry-run",
+      "purpose": "자동 실행 가능한 조치를 실제 변경 없이 미리 점검"
+    },
+    {
+      "command": "npm run agent:context",
+      "purpose": "현재 워크스페이스 구조, app root, local override 상태를 재생성"
+    },
+    {
+      "command": "npm run health",
+      "purpose": "환경 건강 점수와 주요 문제를 확인"
+    },
+    {
+      "command": "npm run health:fix",
+      "purpose": "자동 수정 가능한 환경 문제를 정리"
+    },
+    {
+      "command": "npm run error:status",
+      "purpose": "최근 자동 복구 대상 에러 존재 여부 확인"
+    },
+    {
+      "command": "npm run error:recover",
+      "purpose": "자동 복구 가능한 최근 에러를 비대화형으로 복구"
+    },
+    {
+      "command": "npm run core:pull -- --auto",
+      "purpose": "확인 프롬프트 없이 현재 채널 기준 코어 업데이트"
+    },
+    {
+      "command": "npm run core:pull -- --auto --stable",
+      "purpose": "확인 프롬프트 없이 stable 채널로 코어 업데이트"
+    },
+    {
+      "command": "npm run core:pull -- --auto --beta",
+      "purpose": "확인 프롬프트 없이 beta 채널로 코어 업데이트"
+    },
+    {
+      "command": "npm run setup:step -- --status",
+      "purpose": "현재 설치 단계 확인"
+    },
+    {
+      "command": "npm run setup:step -- --next",
+      "purpose": "다음 설치 단계 1개만 진행"
+    },
+    {
+      "command": "npm run setup:fast",
+      "purpose": "고성능 환경에서 모놀리식 setup의 루트/core 의존성 설치를 병렬 처리해 더 빠르게 초기 설정을 진행"
+    },
+    {
+      "command": "npm run deploy -- --non-interactive",
+      "purpose": "배포 가드 프리플라이트만 비대화형으로 실행하고 실제 배포는 하지 않음"
+    },
+    {
+      "command": "npm run plugin:create -- --id=my-plugin --type=new-route --json --dry-run",
+      "purpose": "로컬 플러그인 스캐폴드 계획을 기계적으로 확인하고 실제 생성 전 구조를 검토"
+    },
+    {
+      "command": "npm run skin:create -- --id=my-skin --extends=clinicLight --dry-run --json",
+      "purpose": "로컬 skin pack 생성 전 대상 파일과 Hero/MainHero override 포함 여부를 계획으로 확인"
+    },
+    {
+      "command": "npm run skin:check -- --json",
+      "purpose": "설치된 core/store/local skin pack 의 manifest, stylesheet, override 파일, inheritance 문제를 자동 검증"
+    },
+    {
+      "command": "npm run skin:bundle -- --id=my-skin --source=local --dry-run --json",
+      "purpose": "공유할 로컬 skin pack 의 번들 구성과 package metadata 를 실제 생성 전에 검토"
+    },
+    {
+      "command": "npm run skin:install -- --file=dist-skins/my-skin-skin-v1.0.0.zip --dry-run --json",
+      "purpose": "스토어 skin pack 설치 전 충돌 여부, 대상 경로, 포함 파일을 JSON 으로 미리 확인"
+    },
+    {
+      "command": "npm run skin:install -- --id=linenBreeze --dry-run --json",
+      "purpose": "HQ curated 스킨을 다운로드하기 전에 라이선스, 패키지 메타데이터, 설치 충돌 여부를 JSON 으로 미리 확인"
+    },
+    {
+      "command": "npm run skin:remove -- --id=linenBreeze --dry-run --json",
+      "purpose": "설치된 store 스킨 제거 전 대상 경로와 차단 사유를 미리 확인"
+    },
+    {
+      "command": "npm run skin:submit -- --id=my-skin --source=local --dry-run --json",
+      "purpose": "로컬 skin pack 을 HQ community store 에 제출하기 전에 번들 크기, manifest, 라이선스 키 존재 여부를 미리 확인"
+    },
+    {
+      "command": "npm run skin:test:hq-local",
+      "purpose": "마스터 레포 로컬 HQ에서 테스트 라이선스 발급 -> community 스킨 제출 -> 승인 -> 설치까지 한 번에 스모크 검증"
+    },
+    {
+      "command": "npm run survey-tool:create -- --id=burnout-check --mode=manifest --dry-run --json",
+      "purpose": "로컬 검사도구 스캐폴드 계획을 먼저 확인하고, manifest 기반으로 충분한지 또는 custom/hybrid 가 필요한지 판단"
+    },
+    {
+      "command": "npm run survey-tool:check -- --id=burnout-check --json",
+      "purpose": "local 검사도구 manifest, 해석 구간, custom renderer 파일 연결을 자동 검증"
+    },
+    {
+      "command": "npm run survey-tool:install -- --id=stress-check --dry-run --json",
+      "purpose": "스토어 검사도구 설치 전 대상 경로, 패키지 구성, migration/seed 포함 여부를 JSON으로 미리 확인"
+    },
+    {
+      "command": "npm run test:e2e:seed",
+      "purpose": "관리자 E2E 전용 테스트 관리자 계정과 샘플 검사 결과를 로컬 D1에 안전하게 추가"
+    },
+    {
+      "command": "npm run test:e2e -- --project=public",
+      "purpose": "관리자 로그인과 보호 라우트의 기본 브라우저 E2E 스모크를 비대화형으로 실행"
+    }
+  ],
+  "manual_or_risky": [
+    {
+      "command": "npm run setup",
+      "risk": "레거시 모놀리식 setup으로 환경에 따라 대화형 흐름 또는 장시간 실행으로 중단될 수 있음",
+      "preferred_alternative": "기본은 npm run setup:step -- --next, 비Windows + 메모리 8GB 이상 고성능 환경은 npm run setup:fast"
+    },
+    {
+      "command": "npm run setup:fast",
+      "risk": "모놀리식 setup이며 브라우저 인증/Cloudflare 입력이 필요할 수 있으나, 고성능 환경에서는 루트/core 의존성 설치를 병렬 처리해 더 빠름",
+      "preferred_alternative": "저메모리 또는 Windows 환경은 npm run setup:step -- --next",
+      "recommended_when": [
+        "macOS/Linux",
+        "메모리 8GB 이상",
+        "사용자가 일괄 설치를 원함",
+        "에이전트가 브라우저 인증/입력 단계에 대해 안내할 수 있음"
+      ]
+    },
+    {
+      "command": "npm run core:pull",
+      "risk": "확인 프롬프트가 나타날 수 있음",
+      "preferred_alternative": "npm run core:pull -- --auto"
+    },
+    {
+      "command": "npm run setup:agent",
+      "risk": "브라우저 인증 또는 사용자 토큰 입력이 필요할 수 있음",
+      "preferred_alternative": "기본은 npm run setup:agent -- --token=... 또는 npm run setup:agent -- --skip-auth, 고성능 fresh install이면 npm run setup:agent -- --prefer-fast"
+    },
+    {
+      "command": "npm run deploy",
+      "risk": "실제 배포/외부 자원 변경이 발생할 수 있음",
+      "preferred_alternative": "npm run agent:snapshot -- --reason=predeploy 후 npm run deploy -- --non-interactive"
+    },
+    {
+      "command": "npm run db:restore",
+      "risk": "로컬 데이터 복원으로 현재 상태를 되돌릴 수 있음",
+      "preferred_alternative": "npm run db:backup --list 후 사용자 승인"
+    },
+    {
+      "command": "npm run agent:restore",
+      "risk": "보호 설정과 local/custom 파일을 현재 설치본에 덮어쓸 수 있음",
+      "preferred_alternative": "npm run agent:restore -- --dry-run --json"
+    },
+    {
+      "command": "npm run agent:restore -- --restore-db-latest",
+      "risk": "최신 로컬 DB 백업을 현재 설치본에 복원하여 데이터 상태를 바꿀 수 있음",
+      "preferred_alternative": "npm run agent:restore -- --dry-run --json 후 필요 시 이유를 설명하고 실행"
+    },
+    {
+      "command": "npm run survey-tool:install -- --id=<tool-id>",
+      "risk": "스토어 검사도구 파일을 현재 워크스페이스에 추가하고 package 내부 migration/seed 를 로컬 D1에 적용할 수 있음",
+      "preferred_alternative": "npm run survey-tool:install -- --id=<tool-id> --dry-run --json"
+    },
+    {
+      "command": "npm run skin:install -- --file=<zip-path>",
+      "risk": "스토어 skin pack 파일을 현재 워크스페이스에 추가하고 기존 동일 skin ID 설치본을 백업/교체할 수 있음",
+      "preferred_alternative": "npm run skin:install -- --file=<zip-path> --dry-run --json"
+    },
+    {
+      "command": "npm run skin:install -- --id=<skin-id>",
+      "risk": "HQ curated 스킨을 다운로드해 현재 워크스페이스의 src/skins/store 에 설치하고 기존 동일 ID store 설치본을 교체할 수 있음",
+      "preferred_alternative": "npm run skin:install -- --id=<skin-id> --dry-run --json"
+    },
+    {
+      "command": "npm run skin:remove -- --id=<skin-id>",
+      "risk": "설치된 store 스킨을 현재 워크스페이스에서 제거하여 /admin/design 선택 목록을 바꿀 수 있음",
+      "preferred_alternative": "npm run skin:remove -- --id=<skin-id> --dry-run --json"
+    }
+    ,
+    {
+      "command": "npm run skin:submit -- --id=<skin-id> --source=local",
+      "risk": "로컬 스킨 번들을 HQ community store 로 업로드하고 중앙 검수 큐에 등록함",
+      "preferred_alternative": "npm run skin:submit -- --id=<skin-id> --source=local --dry-run --json"
+    },
+    {
+      "command": "npm run skin:test:hq-remote",
+      "risk": "운영 HQ에 테스트 라이선스/테스트 스킨 제출, 승인, 설치/제거 보고를 남기며 외부 상태를 바꿈",
+      "preferred_alternative": "원격 검증 필요성을 설명한 뒤 실행"
+    }
+  ],
+  "policy": {
+    "prefer_flags": [
+      "--json",
+      "--dry-run",
+      "--auto"
+    ],
+    "never_assume_setup_complete": true,
+    "always_check_versions_before_update": true,
+    "always_write_runtime_context_before_code_edits": true
+  }
+}

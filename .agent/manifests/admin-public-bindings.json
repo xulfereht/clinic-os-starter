@@ -1,0 +1,251 @@
+{
+  "version": 1,
+  "updated_at": "2026-03-07T00:00:00Z",
+  "purpose": "관리자 변경이 어떤 저장소를 거쳐 퍼블릭/SEO/AEO 소비자로 흘러가는지 에이전트가 빠르게 파악하도록 돕는다.",
+  "bindings": [
+    {
+      "id": "clinic_identity_and_contact",
+      "admin_surfaces": [
+        "src/pages/admin/settings/index.astro",
+        "src/pages/api/admin/clinic-info.ts",
+        "src/pages/api/admin/settings.ts"
+      ],
+      "storage": [
+        {
+          "table": "clinics",
+          "columns": [
+            "name",
+            "description",
+            "logo_url",
+            "favicon_url",
+            "full_address",
+            "phone_public",
+            "map_url",
+            "representative_name",
+            "hours",
+            "ai_config",
+            "analytics_config"
+          ]
+        },
+        {
+          "table": "site_settings",
+          "categories": [
+            "contact",
+            "info",
+            "i18n",
+            "seo",
+            "social",
+            "tracking",
+            "scripts",
+            "config"
+          ]
+        }
+      ],
+      "public_readers": [
+        "src/lib/clinic.ts",
+        "src/components/layout/BaseLayout.astro",
+        "src/components/layout/Navbar.astro",
+        "src/components/layout/Footer.astro",
+        "src/components/seo/AEOSchemas.astro",
+        "src/components/seo/AEOScript.astro",
+        "src/pages/location.astro",
+        "src/pages/[locale]/location.astro",
+        "src/pages/blog.astro",
+        "src/pages/topics/[slug].astro"
+      ],
+      "agent_rule": "병원 기본 정보가 안 반영되면 개별 페이지보다 src/lib/clinic.ts 계약부터 확인한다."
+    },
+    {
+      "id": "business_hours_and_location_sections",
+      "admin_surfaces": [
+        "src/pages/admin/settings/index.astro",
+        "src/pages/api/admin/hours.ts"
+      ],
+      "storage": [
+        {
+          "table": "clinics",
+          "columns": [
+            "hours",
+            "full_address",
+            "phone_public",
+            "map_url"
+          ]
+        },
+        {
+          "table": "site_settings",
+          "categories": [
+            "contact"
+          ]
+        }
+      ],
+      "public_readers": [
+        "src/lib/clinic.ts",
+        "src/lib/dynamic-pages.ts",
+        "src/pages/location.astro",
+        "src/components/sections/LocationMap.astro",
+        "src/components/sections/BusinessHours.astro"
+      ],
+      "agent_rule": "주소/운영시간 관련 퍼블릭 불일치는 라우트별 직접 주입이 남아있는지 확인하고 공용 helper 우선으로 정리한다."
+    },
+    {
+      "id": "appearance_and_global_css",
+      "admin_surfaces": [
+        "src/pages/admin/settings/index.astro",
+        "src/pages/api/admin/appearance.ts",
+        "src/pages/api/admin/design.ts"
+      ],
+      "storage": [
+        {
+          "table": "site_settings",
+          "categories": [
+            "appearance",
+            "design"
+          ]
+        },
+        {
+          "table": "clinics",
+          "columns": [
+            "theme_json",
+            "theme_variant"
+          ]
+        }
+      ],
+      "public_readers": [
+        "src/lib/clinic.ts",
+        "src/components/layout/BaseLayout.astro",
+        "src/lib/design-system/themes.ts"
+      ],
+      "agent_rule": "디자인 설정 반영 문제는 BaseLayout과 theme loader를 함께 본다."
+    },
+    {
+      "id": "dynamic_pages_and_page_translations",
+      "admin_surfaces": [
+        "src/pages/admin/translations/[locale]/[type]/[id].astro",
+        "src/pages/api/admin/pages/index.ts",
+        "src/pages/api/admin/pages/[id].ts",
+        "src/pages/api/admin/pages/create.ts",
+        "src/pages/api/admin/translations/save.ts"
+      ],
+      "storage": [
+        {
+          "table": "pages",
+          "columns": [
+            "id",
+            "slug",
+            "title",
+            "description",
+            "sections",
+            "meta_title",
+            "meta_description",
+            "meta_keywords",
+            "is_published"
+          ]
+        },
+        {
+          "table": "page_translations",
+          "columns": [
+            "page_type",
+            "page_id",
+            "locale",
+            "title",
+            "description",
+            "sections",
+            "status"
+          ]
+        }
+      ],
+      "public_readers": [
+        "src/lib/dynamic-pages.ts",
+        "src/pages/[...slug].astro",
+        "src/pages/[locale]/[...path].astro",
+        "src/pages/location.astro",
+        "src/lib/i18n.ts"
+      ],
+      "agent_rule": "페이지/번역 반영 문제는 slug와 page.id 사용이 섞여 있지 않은지 먼저 점검한다."
+    },
+    {
+      "id": "ui_translations",
+      "admin_surfaces": [
+        "src/pages/admin/translations/index.astro",
+        "src/pages/api/admin/translations/ui.ts"
+      ],
+      "storage": [
+        {
+          "table": "ui_translations",
+          "columns": [
+            "key",
+            "locale",
+            "value"
+          ]
+        }
+      ],
+      "public_readers": [
+        "src/lib/i18n.ts",
+        "src/pages/location.astro",
+        "src/pages/[locale]/index.astro"
+      ],
+      "agent_rule": "UI 번역이 안 바뀌면 getUIText/getUITextAsync 혼용 여부와 hardcoded fallback을 함께 본다."
+    },
+    {
+      "id": "feature_flags_remote_consultation",
+      "admin_surfaces": [
+        "src/pages/admin/settings/index.astro",
+        "src/pages/api/admin/settings.ts"
+      ],
+      "storage": [
+        {
+          "table": "site_settings",
+          "categories": [
+            "features",
+            "feature"
+          ],
+          "keys": [
+            "remote_consultation",
+            "multilingual_enabled"
+          ]
+        }
+      ],
+      "public_readers": [
+        "src/lib/clinic.ts",
+        "src/lib/dynamic-pages.ts",
+        "src/pages/intake.astro",
+        "src/pages/intake/remote.astro",
+        "src/components/sections/FAQSection.astro"
+      ],
+      "agent_rule": "기능 플래그가 퍼블릭 노출에 안 먹으면 getClinicSettings와 직접 site_settings 조회가 섞여 있는지 확인한다."
+    },
+    {
+      "id": "seo_region_and_aeo_outputs",
+      "admin_surfaces": [
+        "src/pages/admin/aeo/index.astro",
+        "src/pages/admin/settings/index.astro"
+      ],
+      "storage": [
+        {
+          "table": "site_settings",
+          "categories": [
+            "seo",
+            "i18n",
+            "contact"
+          ]
+        },
+        {
+          "table": "clinics",
+          "columns": [
+            "ai_config",
+            "full_address",
+            "phone_public"
+          ]
+        }
+      ],
+      "public_readers": [
+        "src/components/seo/AEOSchemas.astro",
+        "src/components/seo/AEOScript.astro",
+        "src/lib/aeo.ts",
+        "src/pages/ai.txt.ts",
+        "src/pages/llms.txt.ts"
+      ],
+      "agent_rule": "SEO/AEO 불일치는 퍼블릭 HTML만 보지 말고 JSON-LD, ai.txt, llms.txt까지 같이 본다."
+    }
+  ]
+}

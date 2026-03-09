@@ -1,0 +1,15 @@
+export const E2E_ADMIN_ID = 'e2e-super-admin';
+export const E2E_ADMIN_EMAIL = 'e2e-admin@clinic-os.local';
+export const E2E_ADMIN_PASSWORD = 'clinic-os-e2e-123!';
+export const E2E_ADMIN_NAME = 'E2E 관리자';
+export const E2E_STRESS_RESULT_ID = 'e2e-stress-result-001';
+export const E2E_TOPIC_ID = 910001;
+export const E2E_TOPIC_SLUG = 'e2e-topic';
+export const E2E_CONDITION_ID = 910101;
+export const E2E_CONDITION_SLUG = 'e2e-condition';
+export const E2E_FAQ_ID = 910201;
+export const E2E_FAQ_SLUG = 'e2e-faq';
+export const E2E_NOTICE_ID = 910301;
+export const E2E_BLOG_ID = 910401;
+export const E2E_BLOG_SLUG = 'e2e-blog-post';
+export const E2E_PROGRAM_ID = 'e2e-program';

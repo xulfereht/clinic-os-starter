@@ -7,6 +7,7 @@ import { promises as fs, constants as fsConstants } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { execSync, spawn } from 'child_process';
+import { getNpmCommandParts } from '../../scripts/lib/npm-cli.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -164,7 +165,8 @@ export class AtomicUpdateManager {
         console.log('📦 Installing dependencies...');
 
         return new Promise((resolve, reject) => {
-            const npm = spawn('npm', ['ci'], {
+            const npmCommand = getNpmCommandParts(['ci']);
+            const npm = spawn(npmCommand.command, npmCommand.args, {
                 cwd: worktreePath,
                 stdio: 'pipe'
             });

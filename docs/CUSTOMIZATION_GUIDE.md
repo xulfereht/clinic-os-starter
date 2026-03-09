@@ -5,6 +5,22 @@
 >
 > This guide helps you safely customize your homepage using AI assistants (Claude, ChatGPT, etc.).
 
+> 이 문서는 **홈페이지/기존 공개 페이지 커스터마이징 상세 가이드**입니다.
+> 먼저 어떤 작업 공간이 맞는지 분류해야 하면 [LOCAL_WORKSPACES_GUIDE.md](./LOCAL_WORKSPACES_GUIDE.md) 를 먼저 보세요.
+> 검사도구는 [SURVEY_TOOLS_GUIDE.md](./SURVEY_TOOLS_GUIDE.md), 독립 기능은 [PLUGIN_DEVELOPMENT_GUIDE.md](./PLUGIN_DEVELOPMENT_GUIDE.md) 가 우선입니다.
+
+## 에이전트-드리븐 시작 순서
+
+로컬 에이전트는 보통 아래 순서로 읽고 시작해야 합니다.
+
+1. `AGENTS.md`
+2. `.agent/runtime-context.json`
+3. `.agent/manifests/change-strategy.json`
+4. `.agent/manifests/local-workspaces.json`
+5. `.agent/workflows/local-customization-agentic.md`
+
+그 다음에 이 문서로 들어와서 홈페이지/공개 페이지 오버라이드를 구체적으로 진행합니다.
+
 ---
 
 ## 목차 (Table of Contents)

@@ -22,6 +22,7 @@ import { fileURLToPath } from 'url';
 import { exec, execSync, spawn } from 'child_process';
 import { promisify } from 'util';
 import yaml from 'js-yaml';
+import { buildNpmCommand } from './lib/npm-cli.js';
 
 const execAsync = promisify(exec);
 const __filename = fileURLToPath(import.meta.url);
@@ -175,9 +176,9 @@ async function runInitConfig(progress) {
     const wranglerContent = `# Clinic-OS Configuration for ${progress.context.clinicName}
 name = "${cleanName}"
 # Note: 한국어 기관명은 client_id 기반 slug로 자동 변환됩니다
-compatibility_date = "2025-01-01"
+compatibility_date = "2026-03-01"
 compatibility_flags = ["nodejs_compat"]
-pages_build_output_dir = "dist"
+pages_build_output_dir = "core/dist"
 
 # R2 버킷
 [[r2_buckets]]
@@ -316,8 +317,9 @@ async function runNpmInstallSafe(cwd, label) {
   }
 
   // 메모리 제한 npm install (512MB 힙)
-  console.log('   npm install --no-audit --no-fund (max-old-space-size=512)');
-  await execAsync('npm install --no-audit --no-fund', {
+  const installCmd = buildNpmCommand('install --no-audit --no-fund');
+  console.log(`   ${installCmd} (max-old-space-size=512)`);
+  await execAsync(installCmd, {
     cwd,
     env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=512' },
     timeout: 300000 // 5분
@@ -680,6 +682,7 @@ async function main() {
         const { recordError } = await import('./lib/error-recovery.mjs');
         const stepDef = SETUP_STEPS.find(s => s.id === stepId);
         await recordError(error, {
+          command: `npm run setup:step -- --step=${stepId}`,
           step: stepId,
           stepName: stepDef?.name,
           phase: stepDef?.phase,
@@ -753,6 +756,7 @@ async function main() {
     try {
       const { recordError } = await import('./lib/error-recovery.mjs');
       await recordError(error, {
+        command: 'npm run setup:step -- --next',
         step: step.id,
         stepName: stepDef.name,
         phase: stepDef.phase,

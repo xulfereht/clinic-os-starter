@@ -1,633 +1,280 @@
 # Plugin API Reference
 
-플러그인 개발에 필요한 훅 이벤트와 SDK API 레퍼런스입니다.
+이 문서는 현재 Clinic-OS 플러그인 런타임 기준의 간단한 레퍼런스입니다.
 
----
+가장 중요한 점은 두 가지입니다.
 
-## 훅 이벤트 (Hooks)
+1. 로컬 플러그인은 앱 내부 소스로 동작하므로 import 경로를 실제 폴더 구조에 맞춰야 합니다.
+2. 데이터 쓰기와 스키마 변경은 `custom_` 범위 안에서만 해야 합니다.
 
-플러그인은 코어 시스템 이벤트에 반응하여 로직을 실행할 수 있습니다.
+## 1. 소스 오브 트루스
 
-### 훅 등록 방법
+플러그인 관련 문맥을 읽을 때 우선순위는 아래가 안전합니다.
+
+1. `src/lib/plugin-loader.ts`
+2. `src/pages/api/plugins/install.ts`
+3. `src/pages/api/plugins/submit.ts`
+4. `src/pages/api/plugins/migrate.ts`
+5. `src/lib/plugin-sdk/index.ts`
+6. `src/lib/plugin-sdk/api/*.ts`
+
+## 1.5. 플러그인 스캐폴드
+
+새 로컬 플러그인은 보통 아래처럼 시작하는 것이 가장 안전합니다.
+
+```bash
+npm run plugin:create -- --id=my-plugin --type=new-route --with-admin --dry-run --json
+```
+
+실제 생성:
+
+```bash
+npm run plugin:create -- --id=my-plugin --type=new-route --with-admin --with-api
+```
+
+## 2. SDK 초기화
+
+### API 핸들러 안에서
+
+```ts
+import type { APIRoute } from 'astro';
+import { createSDKFromContext } from '../../../../lib/plugin-sdk';
+
+export const GET: APIRoute = async ({ locals, plugin }) => {
+  const sdk = createSDKFromContext(locals, plugin.id);
+  const rows = await sdk.db.query('SELECT * FROM custom_my_plugin_table');
+
+  return new Response(JSON.stringify(rows), {
+    headers: { 'Content-Type': 'application/json' }
+  });
+};
+```
+
+### 일반 서버 코드 안에서
+
+```ts
+import { createSDK } from '../../../../lib/plugin-sdk';
+
+const sdk = createSDK({
+  db,
+  pluginId: 'my-plugin',
+  user: null,
+  permissions: ['read:patients']
+});
+```
+
+> 주의: `@clinic-os/plugin-sdk` alias는 현재 스타터킷에 기본 설정되어 있지 않습니다.
+
+## 3. 현재 SDK namespace
+
+`createSDK()` 가 반환하는 주요 API:
+
+- `patients`
+- `reservations`
+- `payments`
+- `products`
+- `programs`
+- `promotions`
+- `patientEvents`
+- `leads`
+- `staff`
+- `schedules`
+- `messages`
+- `campaigns`
+- `segments`
+- `shipping`
+- `tasks`
+- `settings`
+- `storage`
+- `db`
+- `migrations`
+
+## 4. 데이터 접근 규칙
+
+### 읽기
+
+현재 구현상 `sdk.db.query()` 와 `sdk.db.first()` 는 모든 테이블 읽기를 허용합니다.
+
+```ts
+const patients = await sdk.db.query(
+  'SELECT id, name, current_phone FROM patients ORDER BY created_at DESC LIMIT 20'
+);
+```
+
+### 쓰기
+
+`sdk.db.execute()` 는 아래 대상만 허용됩니다.
+
+- `custom_*`
+- `plugin_storage`
+
+```ts
+await sdk.db.execute(
+  'INSERT INTO custom_my_plugin_logs (id, message) VALUES (?, ?)',
+  [crypto.randomUUID(), 'created']
+);
+```
+
+금지 예:
+
+```ts
+await sdk.db.execute(
+  'UPDATE patients SET notes = ? WHERE id = ?',
+  ['test', patientId]
+);
+```
+
+## 5. 스키마 변경 규칙
+
+### migrations 폴더 사용
+
+```text
+src/plugins/local/my-plugin/migrations/
+├── 0001_create_tables.sql
+└── 0001_create_tables.rollback.sql
+```
+
+실행은 설치 후 관리자 UI 또는 `/api/plugins/migrate` 경로를 사용합니다.
+
+### SDK migrations 사용
+
+```ts
+await sdk.migrations.runMigration(
+  `
+  CREATE TABLE IF NOT EXISTS custom_my_plugin_items (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL
+  )
+  `,
+  'create_items_table',
+  {
+    rollbackSql: 'DROP TABLE IF EXISTS custom_my_plugin_items'
+  }
+);
+```
+
+허용 원칙:
+
+- `CREATE`, `ALTER`, `DROP`, `INSERT`, `UPDATE`, `DELETE`
+- 단, 대상은 `custom_` 범위여야 함
+- 내부 추적용 `plugin_migrations` 는 예외 허용
+
+## 6. manifest 훅 형식
+
+현재 런타임 loader 기준 manifest 훅은 보통 아래처럼 작성합니다.
 
 ```json
-// manifest.json
 {
   "hooks": [
-    { "event": "onPaymentCompleted", "handler": "handlePayment" },
-    { "event": "onPatientCreated", "handler": "handleNewPatient" }
+    { "event": "onPaymentCompleted", "handler": "handlePaymentCompleted" }
   ]
 }
 ```
 
-```typescript
-// lib/hooks.ts
-export async function handlePayment(context: HookContext) {
-  const { patientId, amount } = context.data;
-  // 플러그인 로직
+validator도 `event` 와 레거시 `type` 둘 다 읽도록 맞춰졌지만, 실제 plugin loader 문맥에서는 `event` 형식을 기준으로 생각하는 편이 안전합니다.
+
+## 7. 권장 훅 이름
+
+현재 코드 기준으로 자주 쓰이는 이벤트 이름:
+
+- `onReservationCreated`
+- `onReservationUpdated`
+- `onReservationCancelled`
+- `onPatientCreated`
+- `onPatientUpdated`
+- `onPatientCheckedIn`
+- `onPaymentCompleted`
+- `onPaymentRefunded`
+- `onLeadCreated`
+- `onLeadConverted`
+- `onCampaignSent`
+- `onDailySchedule`
+- `onWeeklyReport`
+
+## 8. API 라우팅 규칙
+
+manifest:
+
+```json
+{
+  "apis": [
+    { "path": "stats", "methods": ["GET"] }
+  ]
 }
 ```
 
----
+구현 파일:
 
-### 환자 (Patient) 이벤트
+```text
+src/plugins/local/my-plugin/api/stats.ts
+```
 
-#### onPatientCreated
+호출 경로:
 
-환자가 새로 생성될 때 발동
+- `/api/hub/my-plugin/stats`
+- `/api/plugins/run/my-plugin/stats`
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `patientId` | string | 환자 ID |
-| `name` | string | 환자 이름 |
-| `phone` | string | 연락처 |
-| `birthDate` | string | 생년월일 (YYYY-MM-DD) |
-| `gender` | string | 성별 (M/F) |
-| `source` | string | 생성 경로 (intake_form, lead_conversion) |
+## 9. 관리자/공개 페이지 규칙
 
-**트리거 위치:**
-- `POST /api/intake/submit` - 문진표 접수 시
-- `POST /api/admin/leads/[id]/convert` - 리드 → 환자 전환 시
+### 공개 페이지
 
----
+- 경로: `/ext/{pluginId}`
+- 파일: `pages/index.astro`
 
-#### onPatientUpdated
+### 관리자 페이지
 
-환자 정보가 수정될 때 발동
+manifest:
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `patientId` | string | 환자 ID |
-| `changes` | string[] | 변경된 항목 목록 |
-| `updatedFields` | object | 변경된 필드들 |
-
-**트리거 위치:**
-- `PUT /api/admin/patients/[id]` - 환자 정보 수정 시
-
----
-
-#### onPatientDeleted
-
-환자가 삭제(소프트 삭제)될 때 발동
-
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `patientId` | string | 환자 ID |
-
-**트리거 위치:**
-- `DELETE /api/admin/patients/[id]/delete` - 환자 삭제 시
-
----
-
-### 리드 (Lead) 이벤트
-
-#### onLeadCreated
-
-새 리드(문의)가 생성될 때 발동
-
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `leadId` | string | 리드 ID |
-| `name` | string | 이름 |
-| `contact` | string | 연락처 |
-| `channel` | string | 유입 경로 (phone, walk_in, etc.) |
-| `patientId` | string\|null | 연결된 환자 ID |
-| `patientType` | string | 환자 유형 (new_lead, existing_customer) |
-| `consultType` | string | 상담 유형 (visit, remote) |
-
-**트리거 위치:**
-- `POST /api/admin/leads/create` - 리드 수동 생성 시
-
----
-
-#### onLeadStatusChanged
-
-리드 상태가 변경될 때 발동
-
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `leadId` | string | 리드 ID |
-| `newStatus` | string | 새 상태 |
-| `consultType` | string\|null | 상담 유형 |
-| `patientType` | string\|null | 환자 유형 |
-| `holdReason` | string\|null | 보류 사유 |
-
-**상태 값:**
-- `new` - 신규
-- `pending` - 대기
-- `consulting` - 상담중
-- `first_visit_reservation` - 초진 예약
-- `remote_reservation` - 비대면 예약
-- `closed` - 종료
-- `hold` - 보류
-- `cancelled` - 취소
-
-**트리거 위치:**
-- `POST /api/admin/leads/update-status` - 상태 변경 시
-
----
-
-#### onLeadConverted
-
-리드가 환자로 전환될 때 발동
-
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `leadId` | string | 리드 ID |
-| `patientId` | string | 생성/연결된 환자 ID |
-| `action` | string | 'created' 또는 'linked' |
-
-**트리거 위치:**
-- `POST /api/admin/leads/[id]/convert` - 리드 전환 시
-
----
-
-### 예약 (Reservation) 이벤트
-
-#### onReservationCreated
-
-예약이 생성될 때 발동
-
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `reservationId` | string | 예약 ID |
-| `patientId` | string | 환자 ID |
-| `doctorId` | string\|null | 담당의 ID |
-| `reservedAt` | number | 예약 시간 (Unix timestamp) |
-| `status` | string | 상태 (scheduled, completed) |
-| `isWalkIn` | boolean | 워크인 여부 |
-
-**트리거 위치:**
-- `POST /api/reservations` - 예약 생성 시
-- `POST /api/admin/leads/[id]/convert` - 리드 전환 시 예약 생성
-
----
-
-#### onReservationUpdated
-
-예약 정보가 변경될 때 발동
-
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `reservationId` | string | 예약 ID |
-| `patientId` | string | 환자 ID |
-| `oldStatus` | string | 이전 상태 |
-| `newStatus` | string | 새 상태 |
-| `changes` | string[] | 변경 사항 목록 |
-
-**트리거 위치:**
-- `PATCH /api/reservations/[id]` - 예약 수정 시
-
----
-
-#### onReservationCancelled
-
-예약이 취소될 때 발동 (onReservationUpdated의 특수 케이스)
-
-`onReservationUpdated` 이벤트에서 `newStatus === 'cancelled'`로 감지 가능
-
----
-
-### 내원 (Visit) 이벤트
-
-#### onVisitCheckin
-
-환자가 내원 체크인할 때 발동
-
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `eventId` | string | 이벤트 ID |
-| `reservationId` | string\|undefined | 예약 ID (워크인은 없음) |
-| `patientId` | string | 환자 ID |
-| `doctorId` | string\|null | 담당의 ID |
-| `visitType` | string | 'first' (초진) 또는 'return' (재진) |
-| `visitTitle` | string | '초진 내원' 또는 '재진 내원' |
-| `isWalkIn` | boolean | 워크인 여부 |
-
-**트리거 위치:**
-- `PATCH /api/reservations/[id]` - 예약 완료 처리 시
-- `POST /api/admin/patients/[id]/walk-in` - 워크인 처리 시
-
----
-
-### 결제 (Payment) 이벤트
-
-#### onPaymentCompleted
-
-결제가 완료될 때 발동
-
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `paymentId` | string | 결제 ID |
-| `patientId` | string | 환자 ID |
-| `productId` | string\|null | 상품 ID |
-| `amount` | number | 결제 금액 |
-| `method` | string | 결제 방법 (card, cash, etc.) |
-| `quantity` | number | 수량 |
-| `paidAt` | number | 결제 시간 (Unix timestamp) |
-
-**트리거 위치:**
-- `POST /api/payments/create` - 결제 생성 시
-
----
-
-#### onPaymentRefunded
-
-환불이 처리될 때 발동
-
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `refundPaymentId` | string | 환불 결제 ID |
-| `originalPaymentId` | string | 원 결제 ID |
-| `patientId` | string | 환자 ID |
-| `productId` | string\|null | 상품 ID |
-| `refundAmount` | number | 환불 금액 |
-| `refundQuantity` | number | 환불 수량 |
-| `newStatus` | string | 원 결제 새 상태 |
-
-**트리거 위치:**
-- `POST /api/admin/payments/refund` - 환불 처리 시
-
----
-
-### 배송 (Shipping) 이벤트
-
-#### onShippingCreated
-
-배송 주문이 생성될 때 발동
-
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `shippingOrderId` | string | 배송 주문 ID |
-| `patientId` | string | 환자 ID |
-| `productName` | string | 상품명 |
-| `totalQuantity` | number | 총 수량 |
-| `status` | string | 상태 (active, completed) |
-| `paymentId` | string | 연관 결제 ID |
-
-**트리거 위치:**
-- `POST /api/admin/patients/[id]/payments` - 결제 생성 시 배송 주문 자동 생성
-
----
-
-#### onShippingStatusChanged
-
-배송 상태가 변경될 때 발동
-
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `shippingOrderId` | string | 배송 주문 ID |
-| `patientId` | string | 환자 ID |
-| `newStatus` | string | 새 상태 (active, completed) |
-| `remainingQuantity` | number | 남은 수량 |
-| `trackingNumber` | string\|null | 운송장 번호 |
-| `shippedAt` | number | 발송 시간 |
-
-**트리거 위치:**
-- `POST /api/admin/shipping/[id]/ship` - 발송 처리 시
-
----
-
-### 캠페인 (Campaign) 이벤트
-
-#### onCampaignSent
-
-캠페인이 발송될 때 발동
-
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `campaignId` | string | 캠페인 ID |
-| `runId` | string | 실행 ID |
-| `templateId` | string | 템플릿 ID |
-| `channel` | string | 채널 (SMS, ALIMTALK, BOTH) |
-| `totalCount` | number | 총 발송 수 |
-| `successCount` | number | 성공 수 |
-| `failCount` | number | 실패 수 |
-
-**트리거 위치:**
-- `POST /api/admin/campaigns/[id]/send` - 캠페인 발송 시
-
----
-
-### 메시지 (Message) 이벤트
-
-#### onMessageReceived
-
-메시지가 수신될 때 발동 (카카오톡 등)
-
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `messageId` | string | 메시지 ID |
-| `channelId` | string | 채널 ID |
-| `senderId` | string | 발신자 ID |
-| `content` | string | 메시지 내용 |
-
-**트리거 위치:** 메시지 수신 웹훅에서 호출 필요
-
----
-
-#### onMessageSent
-
-메시지가 발송될 때 발동
-
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `messageId` | string | 메시지 ID |
-| `channelId` | string | 채널 ID |
-| `recipientId` | string | 수신자 ID |
-| `content` | string | 메시지 내용 |
-| `type` | string | 메시지 유형 |
-
-**트리거 위치:** 메시지 발송 로직에서 호출 필요
-
----
-
-### 문서 (Document) 이벤트
-
-#### onConsentSigned
-
-동의서가 서명될 때 발동
-
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `consentId` | string | 동의 ID |
-| `patientId` | string | 환자 ID |
-| `consentType` | string | 동의 유형 |
-| `ipAddress` | string | IP 주소 |
-
-**트리거 위치:** 동의서 서명 로직에서 호출 필요
-
----
-
-#### onIntakeSubmitted
-
-문진표가 제출될 때 발동
-
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `intakeId` | string | 문진표 ID |
-| `patientId` | string | 환자 ID |
-| `intakeType` | string | 유형 (general, remote, remote_integrated) |
-| `isNewPatient` | boolean | 신규 환자 여부 |
-| `visitCategory` | string | 방문 목적 |
-| `mainSymptom` | string | 주요 증상 |
-
-**트리거 위치:**
-- `POST /api/intake/submit` - 문진표 제출 시
-
----
-
-## SDK API
-
-플러그인에서 코어 데이터에 접근할 때 사용하는 API입니다.
-
-### 초기화
-
-```typescript
-import { createPluginSDK } from '@clinic-os/plugin-sdk';
-
-export async function GET({ locals }) {
-  const sdk = createPluginSDK(db, context);
-  // SDK 사용
+```json
+{
+  "pages": [
+    { "path": "manage", "title": "관리" }
+  ]
 }
 ```
 
----
+파일:
 
-### sdk.patients
+```text
+src/plugins/local/my-plugin/pages/manage.astro
+```
 
-환자 데이터 접근 API
+경로:
 
-#### list(options)
+- `/admin/hub/my-plugin/manage`
 
-환자 목록 조회
+## 10. 응답 형식 권장
 
-```typescript
-const patients = await sdk.patients.list({
-  status: 'active',    // 선택: 상태 필터
-  limit: 50,           // 선택: 조회 수 (기본 50)
-  offset: 0            // 선택: 시작 위치
+```ts
+return new Response(JSON.stringify({
+  success: true,
+  data: result
+}), {
+  headers: { 'Content-Type': 'application/json' }
 });
 ```
 
-**필요 권한:** `read:patients`
+에러:
 
----
-
-#### get(id)
-
-환자 단일 조회
-
-```typescript
-const patient = await sdk.patients.get('patient-uuid');
+```ts
+return new Response(JSON.stringify({
+  success: false,
+  error: 'message'
+}), {
+  status: 400,
+  headers: { 'Content-Type': 'application/json' }
+});
 ```
 
-**필요 권한:** `read:patients`
+## 11. 주의할 점
 
----
+- 코어 테이블 `ALTER TABLE` 금지
+- 루트 `migrations/` 폴더 수정 금지
+- `@clinic-os/plugin-sdk` import 금지
+- 설치 후 자동 리빌드가 돌 수 있지만, 실패하면 rebuild 상태를 먼저 확인
+- disabled 플러그인 API 차단은 현재 일부 경로에서 약하므로 플러그인 내부 방어도 권장
 
-#### search(query)
+## 12. 함께 읽을 문서
 
-환자 검색
-
-```typescript
-const results = await sdk.patients.search('홍길동');
-```
-
-**필요 권한:** `read:patients`
-
----
-
-### sdk.payments
-
-결제 데이터 접근 API
-
-#### getByPatient(patientId)
-
-환자별 결제 내역 조회
-
-```typescript
-const payments = await sdk.payments.getByPatient('patient-uuid');
-```
-
-**필요 권한:** `read:payments`
-
----
-
-#### getTotalAmount(patientId)
-
-환자 총 결제액 조회
-
-```typescript
-const total = await sdk.payments.getTotalAmount('patient-uuid');
-// { total: 1500000, count: 5 }
-```
-
-**필요 권한:** `read:payments`
-
----
-
-### sdk.reservations
-
-예약 데이터 접근 API
-
-#### getToday()
-
-오늘 예약 목록 조회
-
-```typescript
-const reservations = await sdk.reservations.getToday();
-```
-
-**필요 권한:** `read:reservations`
-
----
-
-#### getByPatient(patientId)
-
-환자별 예약 내역 조회
-
-```typescript
-const reservations = await sdk.reservations.getByPatient('patient-uuid');
-```
-
-**필요 권한:** `read:reservations`
-
----
-
-### sdk.database
-
-커스텀 테이블 직접 접근 API
-
-#### query(sql, params)
-
-SELECT 쿼리 실행
-
-```typescript
-const members = await sdk.database.query(
-  'SELECT * FROM custom_vip_members WHERE tier = ?',
-  ['gold']
-);
-```
-
-**필요 권한:** `database:read`
-
----
-
-#### execute(sql, params)
-
-INSERT/UPDATE/DELETE 쿼리 실행
-
-```typescript
-await sdk.database.execute(
-  'INSERT INTO custom_vip_members (id, patient_id, tier) VALUES (?, ?, ?)',
-  [id, patientId, 'silver']
-);
-```
-
-**필요 권한:** `database:write`
-
----
-
-### sdk.settings
-
-플러그인 설정 접근 API
-
-#### get(key)
-
-설정 값 조회
-
-```typescript
-const apiKey = await sdk.settings.get('external_api_key');
-```
-
----
-
-#### set(key, value)
-
-설정 값 저장
-
-```typescript
-await sdk.settings.set('notification_enabled', 'true');
-```
-
----
-
-## 권한 (Permissions)
-
-manifest.json에 선언해야 사용 가능한 권한 목록
-
-| 권한 | 설명 | 관련 API |
-|------|------|----------|
-| `read:patients` | 환자 정보 읽기 | sdk.patients.* |
-| `write:patients` | 환자 정보 수정 | - |
-| `read:payments` | 결제 정보 읽기 | sdk.payments.* |
-| `read:reservations` | 예약 정보 읽기 | sdk.reservations.* |
-| `database:read` | 커스텀 테이블 조회 | sdk.database.query |
-| `database:write` | 커스텀 테이블 수정 | sdk.database.execute |
-
----
-
-## 훅 핸들러 구현 예시
-
-### VIP 포인트 자동 적립
-
-```typescript
-// src/plugins/vip-management/lib/hooks.ts
-
-import type { HookContext } from '@clinic-os/plugin-sdk';
-
-export async function handlePayment(context: HookContext) {
-  const { patientId, amount } = context.data;
-
-  // 1% 포인트 적립
-  const points = Math.floor(amount * 0.01);
-
-  // 기존 회원 확인
-  const member = await context.db.prepare(
-    'SELECT * FROM custom_vip_members WHERE patient_id = ?'
-  ).bind(patientId).first();
-
-  if (member) {
-    // 포인트 추가
-    await context.db.prepare(
-      'UPDATE custom_vip_members SET points = points + ? WHERE patient_id = ?'
-    ).bind(points, patientId).run();
-  } else {
-    // 신규 회원 생성
-    await context.db.prepare(
-      'INSERT INTO custom_vip_members (id, patient_id, points) VALUES (?, ?, ?)'
-    ).bind(crypto.randomUUID(), patientId, points).run();
-  }
-
-  // 포인트 히스토리 기록
-  await context.db.prepare(
-    'INSERT INTO custom_vip_point_history (id, patient_id, type, amount, description) VALUES (?, ?, ?, ?, ?)'
-  ).bind(
-    crypto.randomUUID(),
-    patientId,
-    'earn',
-    points,
-    `결제 적립 (${amount.toLocaleString()}원)`
-  ).run();
-}
-```
-
-### 예약 알림 발송
-
-```typescript
-export async function handleReservationCreated(context: HookContext) {
-  const { patientId, reservedAt, doctorId } = context.data;
-
-  // 예약 알림 로직
-  // ...
-}
-```
-
----
-
-## 버전 히스토리
-
-| 버전 | 날짜 | 변경 사항 |
-|------|------|----------|
-| 1.0.0 | 2025-01-18 | 최초 작성 |
+- [플러그인 개발 가이드](./PLUGIN_DEVELOPMENT_GUIDE.md)
+- [안전한 작업 흐름](./WORKFLOW_GUIDE.md)

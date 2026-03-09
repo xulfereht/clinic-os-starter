@@ -28,25 +28,17 @@ GitHub과 Cloudflare가 연결되어 있으면 간단하게 이전할 수 있습
 
 ## 마이그레이션 절차
 
+권장 흐름은 이렇습니다.
+
+1. 기존 컴퓨터에서 에이전트에게 백업 준비를 맡깁니다.
+2. 새 컴퓨터에서는 스타터킷 설치 또는 저장소 복제까지 bash로 진행합니다.
+3. 그 다음부터는 에이전트에게 상태 진단과 복원을 맡깁니다.
+
 ### Step 1: 기존 컴퓨터에서 최종 백업
 
-기존 컴퓨터에서 작업 중인 내용을 모두 저장합니다:
+기존 컴퓨터에서 작업 중인 내용을 모두 저장합니다.
 
-```bash
-# 1. 미저장 코드 확인
-git status
-
-# 2. 변경사항 저장 & 업로드
-git add -A
-git commit -m "마이그레이션 전 최종 저장"
-git push origin main
-
-# 3. DB 스냅샷 생성 & 업로드
-npx wrangler d1 export {db-name} --local --output .backups/d1-snapshot-latest.sql
-git add .backups/d1-snapshot-latest.sql
-git commit -m "DB 스냅샷 백업"
-git push origin main
-```
+아래 명령은 사용자가 직접 치기보다, 에이전트가 내부적으로 처리하는 작업 예시입니다.
 
 에이전트에게 한 번에 요청할 수도 있습니다:
 
@@ -108,12 +100,14 @@ npx wrangler login
 
 ### Step 5: 설정 확인
 
-```bash
-# 초기 설정 실행 (기존 clinic.json 자동 감지)
-npm run setup
+새 컴퓨터에서 프로젝트를 연 뒤 에이전트에게 이렇게 요청하세요:
+
+```text
+이 프로젝트는 다른 컴퓨터에서 옮겨온 설치본이야.
+기존 설정과 백업 폴더를 확인하고, 필요한 설치/복원 경로를 직접 진행해줘.
 ```
 
-`clinic.json`이 Git에 포함되어 있으므로, setup이 기존 설정을 감지하고 최소한의 단계만 실행합니다.
+`clinic.json`이 Git에 포함되어 있으면 에이전트가 setup 과정에서 기존 설정을 감지하고 최소한의 단계만 실행합니다.
 
 ### Step 6: 로컬 DB 복원 (선택)
 
@@ -134,12 +128,10 @@ npm run db:seed
 
 ### Step 7: 확인
 
-```bash
-# 개발 서버 시작
-npm run dev
+검증도 에이전트에게 맡기는 것을 권장합니다.
 
-# 전체 환경 체크
-npm run doctor
+```text
+로컬 서버 실행과 전체 환경 체크까지 해줘.
 ```
 
 ---
@@ -164,21 +156,11 @@ npm run doctor
 
 GitHub 없이 수동으로 옮기는 방법 (비추천):
 
-```bash
-# 기존 컴퓨터에서
-# 1. 프로젝트 폴더를 USB/클라우드 드라이브에 복사
-cp -r ~/clinic-os-seoul /Volumes/USB/
+새 컴퓨터에 폴더를 통째로 복사한 뒤, 프로젝트를 열고 에이전트에게 복원 계획을 먼저 세우게 하세요.
 
-# 새 컴퓨터에서
-# 2. 복사
-cp -r /Volumes/USB/clinic-os-seoul ~/
-cd ~/clinic-os-seoul
-
-# 3. 의존성 재설치
-npm install
-
-# 4. 설정 확인
-npm run setup
+```text
+예전 설치본 폴더가 그대로 복사돼 있어.
+새 버전으로 이관하는 게 맞는지 먼저 판단하고, 복원 가능한 코드/이미지/데이터를 정리해줘.
 ```
 
 > **주의**: 이 방법은 `.wrangler/` 폴더의 로컬 DB를 함께 복사하므로

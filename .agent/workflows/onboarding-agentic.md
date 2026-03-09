@@ -9,6 +9,16 @@
 **기존 방식**: 사용자가 `/admin/settings` 들어가서 직접 입력
 **Agent-First 방식**: 에이전트가 대화하며 하나씩 설정, 사용자는 확인/수정
 
+시작 전에 현재 설치본 시나리오를 먼저 확인합니다:
+
+```bash
+npm run agent:lifecycle -- --json
+```
+
+- `fresh_install`, `resume_setup`, `onboarding_ready`이면 일반 온보딩 진행
+- `legacy_reinstall_migration`이면 신규 설치 + snapshot 이관을 먼저 제안
+- `production_binding_drift`이면 wrangler 연결 검토 전까지 배포/전환 보류
+
 ---
 
 ## 체크포인트 기반 진행

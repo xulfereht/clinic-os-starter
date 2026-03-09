@@ -6,6 +6,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { execSync, spawn } from 'child_process';
+import { getNpmCommandParts } from '../../scripts/lib/npm-cli.js';
 
 export class WorktreeManager {
     constructor(projectRoot) {
@@ -291,11 +292,12 @@ export class WorktreeManager {
      */
     async installDependencies(worktreePath) {
         console.log(`📦 Installing dependencies in ${worktreePath}...`);
+        const npmCommand = getNpmCommandParts(['ci']);
 
         const { code, stdout, stderr } = await this.runInWorktree(
             worktreePath,
-            'npm',
-            ['ci']
+            npmCommand.command,
+            npmCommand.args
         );
 
         if (code !== 0) {

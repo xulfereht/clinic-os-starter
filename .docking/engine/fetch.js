@@ -16,7 +16,7 @@
 
 import fs from 'fs-extra';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import yaml from 'js-yaml';
 import { exec, execFileSync } from 'child_process';
 import { promisify } from 'util';
@@ -115,33 +115,69 @@ function findProjectRoot(startDir) {
 }
 
 const PROJECT_ROOT = findProjectRoot(__dirname);
+let errorRecoveryModulePromise = null;
 
 // ═══════════════════════════════════════════════════════════════
 // 에러 보고 시스템 — .agent/last-error.json
 // 에이전트가 프로젝트를 열면 이 파일을 감지하여 자동 복구 진입
 // ═══════════════════════════════════════════════════════════════
 
-function reportError({ phase, error, recovery, version }) {
-    try {
-        const errorReport = {
-            timestamp: new Date().toISOString(),
-            command: `core:pull ${process.argv.slice(2).join(' ')}`.trim(),
-            phase: phase || 'unknown',
-            error: typeof error === 'string' ? error : error?.message || String(error),
-            context: {
-                coreVersion: version || null,
-                isStarterKit: typeof IS_STARTER_KIT !== 'undefined' ? IS_STARTER_KIT : null,
-                projectRoot: PROJECT_ROOT
-            },
-            recovery: recovery || {
-                workflow: '.agent/workflows/troubleshooting.md',
-                commands: ['npm run health']
-            }
-        };
+async function loadErrorRecoveryModule() {
+    if (!errorRecoveryModulePromise) {
+        const moduleUrl = pathToFileURL(path.join(PROJECT_ROOT, 'scripts', 'lib', 'error-recovery.mjs')).href;
+        errorRecoveryModulePromise = import(moduleUrl).catch(() => null);
+    }
+    return errorRecoveryModulePromise;
+}
 
-        const errorPath = path.join(PROJECT_ROOT, '.agent', 'last-error.json');
-        fs.ensureDirSync(path.dirname(errorPath));
-        fs.writeJsonSync(errorPath, errorReport, { spaces: 2 });
+async function reportError({ phase, error, recovery, version, command }) {
+    try {
+        const helpers = await loadErrorRecoveryModule();
+        const resolvedCommand = command || `npm run core:pull -- ${process.argv.slice(2).join(' ')}`.trim();
+
+        if (helpers?.recordStructuredError) {
+            await helpers.recordStructuredError({
+                projectRoot: PROJECT_ROOT,
+                phase: phase || 'unknown',
+                error,
+                command: resolvedCommand,
+                context: {
+                    coreVersion: version || null,
+                    isStarterKit: typeof IS_STARTER_KIT !== 'undefined' ? IS_STARTER_KIT : null,
+                    projectRoot: PROJECT_ROOT,
+                },
+                recovery: recovery || {
+                    workflow: '.agent/workflows/troubleshooting.md',
+                    commands: ['npm run health'],
+                },
+                source: 'core-pull',
+            });
+        } else {
+            const errorReport = {
+                timestamp: new Date().toISOString(),
+                command: resolvedCommand,
+                phase: phase || 'unknown',
+                error: {
+                    message: typeof error === 'string' ? error : error?.message || String(error),
+                    stack: typeof error === 'object' ? error?.stack || null : null,
+                    code: typeof error === 'object' ? error?.code || 'UNKNOWN' : 'UNKNOWN',
+                },
+                context: {
+                    coreVersion: version || null,
+                    isStarterKit: typeof IS_STARTER_KIT !== 'undefined' ? IS_STARTER_KIT : null,
+                    projectRoot: PROJECT_ROOT,
+                },
+                recovery: recovery || {
+                    workflow: '.agent/workflows/troubleshooting.md',
+                    commands: ['npm run health'],
+                },
+                attempts: [],
+            };
+
+            const errorPath = path.join(PROJECT_ROOT, '.agent', 'last-error.json');
+            fs.ensureDirSync(path.dirname(errorPath));
+            fs.writeJsonSync(errorPath, errorReport, { spaces: 2 });
+        }
 
         console.log('\n   ╔══════════════════════════════════════════════════╗');
         console.log('   ║  📋 에러 보고서: .agent/last-error.json         ║');
@@ -156,14 +192,29 @@ function reportError({ phase, error, recovery, version }) {
 /**
  * 에러 보고서 삭제 (성공적 완료 후)
  */
-function clearErrorReport() {
+async function clearErrorReport() {
     try {
-        const errorPath = path.join(PROJECT_ROOT, '.agent', 'last-error.json');
-        if (fs.existsSync(errorPath)) {
-            fs.removeSync(errorPath);
+        const helpers = await loadErrorRecoveryModule();
+        if (helpers?.clearLastError) {
+            await helpers.clearLastError(PROJECT_ROOT);
+        } else {
+            const errorPath = path.join(PROJECT_ROOT, '.agent', 'last-error.json');
+            if (fs.existsSync(errorPath)) {
+                fs.removeSync(errorPath);
+            }
         }
     } catch (e) {
         // 삭제 실패는 무시
+    }
+}
+
+async function refreshAgentRuntimeContext() {
+    const scriptPath = path.join(PROJECT_ROOT, 'scripts', 'generate-agent-context.js');
+    if (!fs.existsSync(scriptPath)) return;
+
+    const result = await runCommand('node scripts/generate-agent-context.js --quiet', true, 30000);
+    if (!result.success) {
+        console.log(`   ⚠️  agent runtime context 갱신 실패: ${result.stderr || 'unknown error'}`);
     }
 }
 
@@ -224,6 +275,7 @@ try {
         'src/lib/', 'src/plugins/custom-homepage/', 'src/plugins/survey-tools/',
         'src/survey-tools/stress-check/', 'src/content/aeo/',
         'migrations/', 'seeds/', 'docs/',
+        '.agent/README.md', '.agent/manifests/',
         '.agent/onboarding-registry.json', '.agent/workflows/',
         '.claude/commands/', '.claude/rules/',
         'scripts/', '.docking/engine/', 'package.json', 'astro.config.mjs',
@@ -1935,7 +1987,7 @@ async function corePull(targetVersion = 'latest', options = {}) {
         const stderr = fetchResult.stderr || '';
         if (stderr.includes('not a git repository')) {
             const msg = 'Git 저장소가 아닙니다. git init을 먼저 실행하세요.';
-            reportError({
+            await reportError({
                 phase: 'git-fetch',
                 error: msg,
                 recovery: {
@@ -1949,7 +2001,7 @@ async function corePull(targetVersion = 'latest', options = {}) {
         }
         if (stderr.includes('No such remote')) {
             const msg = 'upstream remote가 등록되지 않았습니다.\n   → npm run setup을 실행하세요.';
-            reportError({
+            await reportError({
                 phase: 'git-fetch',
                 error: msg,
                 recovery: {
@@ -1961,7 +2013,7 @@ async function corePull(targetVersion = 'latest', options = {}) {
             });
             throw new Error(msg);
         }
-        reportError({
+        await reportError({
             phase: 'git-fetch',
             error: 'upstream fetch 실패. 네트워크 연결 또는 인증 문제.',
             recovery: {
@@ -2621,7 +2673,7 @@ async function corePull(targetVersion = 'latest', options = {}) {
         } else {
             console.log('   ⚠️  마이그레이션 실패로 seeds를 건너뜁니다.');
             console.log('   💡 문제 해결 후 npm run db:seed로 수동 실행하세요.');
-            reportError({
+            await reportError({
                 phase: 'migration',
                 error: '마이그레이션 실패로 seeds 실행을 건너뜀',
                 version,
@@ -2722,8 +2774,10 @@ async function corePull(targetVersion = 'latest', options = {}) {
     console.log('  2. npm run dev (to test locally)');
     console.log('════════════════════════════════════════════');
 
+    await refreshAgentRuntimeContext();
+
     // 성공 시 이전 에러 보고서 삭제
-    clearErrorReport();
+    await clearErrorReport();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -3242,7 +3296,7 @@ async function main() {
         // 아직 보고되지 않은 에러만 보고 (이미 reportError 호출된 경우 중복 방지)
         const errorPath = path.join(PROJECT_ROOT, '.agent', 'last-error.json');
         if (!fs.existsSync(errorPath)) {
-            reportError({
+            await reportError({
                 phase: 'unknown',
                 error: error.message,
                 recovery: {

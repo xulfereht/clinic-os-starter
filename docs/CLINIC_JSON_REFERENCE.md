@@ -8,7 +8,7 @@ hq_active: true
 # clinic.json 레퍼런스
 
 `clinic.json`은 HQ 서버가 스타터킷에 서명하여 포함시키는 설정 파일입니다.
-한의원의 라이선스, 기관 정보, 업데이트 채널을 담고 있으며 `npm run setup` 시 자동으로 읽혀 Zero-Touch 설정을 가능하게 합니다.
+한의원의 라이선스, 기관 정보, 업데이트 채널을 담고 있으며 초기 설치 과정에서 에이전트가 setup을 진행할 때 자동으로 읽혀 Zero-Touch 설정을 가능하게 합니다.
 
 ---
 
@@ -63,7 +63,7 @@ clinic-os-starter-vX.X.X-signed.zip
 
 ## setup-clinic.js 연동
 
-`npm run setup` 실행 시 clinic.json이 있으면 Zero-Touch 모드로 동작합니다:
+설치 과정에서 에이전트가 setup을 진행할 때 clinic.json이 있으면 Zero-Touch 모드로 동작합니다:
 
 ```
 clinic.json 존재?

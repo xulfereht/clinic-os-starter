@@ -49,8 +49,30 @@ npm run setup:step -- --next
 - 각 단계는 멱등성 보장 (이미 완료된 단계는 skip)
 - SIGKILL 발생 시 해당 단계부터 자동 재시작
 - 진행 상태가 `.agent/setup-progress.json`에 저장
+- `setup:agent`도 기본적으로 이 경로를 사용하며, fast setup 실패 시 자동으로 여기로 폴백
 
-### 방법 B: 레거시 일괄 설치
+### 방법 B: 빠른 일괄 설치 (고성능 환경)
+
+비Windows + 메모리 8GB 이상 환경이라면 루트/core 의존성 설치를 병렬 처리하는 빠른 경로를 사용할 수 있습니다.
+
+```bash
+npm run setup:fast
+```
+
+**적합한 경우:**
+- macOS 또는 Linux
+- 메모리 8GB 이상
+- 사용자가 브라우저 인증과 일괄 설치 흐름을 받아들일 수 있음
+- signed `clinic.json`이 있어 `setup:agent`가 자동 fast 선택 가능
+
+```bash
+npm run setup:agent -- --prefer-fast
+```
+
+`setup:agent`는 고성능 fresh install + signed `clinic.json`이면 내부적으로 `setup:fast -- --auto`를 먼저 시도하고,
+실패하면 `setup:step`으로 자동 전환합니다.
+
+### 방법 C: 레거시 일괄 설치
 
 ```bash
 npm run setup
@@ -131,7 +153,8 @@ npm run db:init      # 스키마 마이그레이션 (wrangler.toml 필수)
 npm run db:seed      # 샘플 데이터 삽입
 ```
 
-wrangler.toml이 없다면 먼저 `npm run setup`을 실행하세요.
+wrangler.toml이 없다면 먼저 `npm run setup:step -- --next`를 진행하세요.
+고성능 환경이라면 `npm run setup:fast`도 가능합니다.
 마이그레이션 실패 시 seeds는 자동으로 건너뛰며, 복구 후 `npm run db:seed`로 별도 실행할 수 있습니다.
 
 ### 에러 자동 복구
@@ -179,6 +202,7 @@ npm run error:resolve
 | `npm run status` | **통합 상태 확인** (설치+온볼딩+건강도+Lock) |
 | `npm run setup:step -- --next` | 다음 설치 단계 실행 |
 | `npm run setup:step -- --status` | 설치 진행도 확인 |
+| `npm run setup:fast` | 고성능 환경용 빠른 일괄 설치 |
 | `npm run error:status` | 에러 복구 상태 확인 |
 | `npm run error:recover` | 자동 복구 시도 |
 
@@ -187,6 +211,7 @@ npm run error:resolve
 | 명령어 | 용도 |
 |--------|------|
 | `npm run setup` | 초기 설정 마법사 (레거시) |
+| `npm run setup:fast` | 병렬 의존성 설치가 포함된 빠른 모놀리식 setup |
 | `npm run fetch` | 앱 패키지 가져오기 |
 | `npm run dev` | 로컬 개발 서버 |
 | `npm run deploy` | 프로덕션 배포 |

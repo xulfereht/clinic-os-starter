@@ -1,274 +1,111 @@
-# Gemini CLI 설치 가이드
+# AI 에이전트 CLI 설정 가이드
 
-> Starter Kit 클라이언트를 위한 AI 어시스턴트 설정 가이드
+> 파일 경로는 레거시 호환을 위해 `GEMINI_CLI_SETUP.md` 를 유지합니다.
+> 현재 권장 방향은 특정 모델 고정이 아니라 "에이전트가 레포를 읽고 주도적으로 진행"하는 것입니다.
 
----
+## 권장 에이전트
 
-## 개요
+현재 Clinic-OS 기준 권장 순서는 아래와 같습니다.
 
-Gemini CLI는 Google의 Gemini AI를 터미널에서 직접 사용할 수 있는 오픈소스 CLI 도구입니다.
+1. `Claude Code`
+2. `Codex 계열 (GPT-5.4+)`
+3. `OpenClaw 계열`
+4. `Kimi 2.5+ 등 프론티어 모델을 연결한 에이전트`
 
-**장점:**
-- 가볍고 빠른 실행
-- 터미널 기반으로 WSL과 완벽 호환
-- **Google 로그인만으로 사용** (API 키 관리 불필요)
-- 무료 티어: 60 요청/분, 1,000 요청/일
-- Gemini 2.5 Pro + 1M 토큰 컨텍스트 윈도우
+핵심은 모델 이름보다 다음 능력입니다.
 
----
+- 터미널 명령 실행
+- 레포 전체 탐색
+- 파일 수정 및 검증
+- 안전하지 않은 작업을 먼저 진단하고 우회 경로를 선택하는 능력
 
-## 1단계: Node.js 확인
+## 설치 원칙
 
-Gemini CLI는 Node.js v20 이상이 필요합니다.
+- 사용자는 스타터킷 설치와 에이전트 CLI 실행까지만 직접 합니다.
+- 그 이후 설치, 복구, 이관, 배포는 에이전트와의 대화로 진행합니다.
+- 외부 CLI의 최신 설치 명령은 바뀔 수 있으므로 각 도구의 공식 설치 문서를 따르세요.
 
-```bash
-node -v
-# v20.x.x 이상이어야 함
+## 프로젝트를 열었을 때 첫 프롬프트
+
+아래 문장 하나면 충분합니다.
+
+```text
+이 프로젝트를 읽고 현재 상태를 진단해줘.
+AGENTS.md와 .agent/README.md를 먼저 읽고,
+필요하면 설치/복구/이관 플로우를 안전한 순서로 진행해줘.
 ```
 
-Node.js가 없다면 [WINDOWS_GUIDE.md](./WINDOWS_GUIDE.md)를 먼저 참고하세요.
+## 에이전트가 인지해야 하는 기본 명령
 
----
+사용자가 직접 외울 필요는 없지만, 에이전트는 아래 명령을 알고 있어야 합니다.
 
-## 2단계: Gemini CLI 설치
+| 목적 | 명령 |
+|------|------|
+| 현재 상태 진단 | `npm run agent:doctor -- --json` |
+| 설치본 시나리오 판별 | `npm run agent:lifecycle -- --json` |
+| 보호 스냅샷 생성 | `npm run agent:snapshot -- --reason=manual` |
+| 복원 계획 미리보기 | `npm run agent:restore -- --dry-run --json` |
+| 설치 진행 | `npm run setup:step -- --next` |
+| 워크스페이스 컨텍스트 갱신 | `npm run agent:context` |
+| 기본 health 점검 | `npm run health` |
+| 배포 전 검증/가드 | `npm run deploy` |
 
-### 방법 1: npm 전역 경로를 유저 홈으로 설정 (⭐ 권장)
+## 좋은 요청 방식
 
-> sudo 없이, 환경도 깔끔하게 유지됩니다. Claude Code CLI, Gemini CLI 등 AI CLI 도구들을 함께 쓰기에 가장 안정적입니다.
+### 좋음
 
-**1️⃣ 전역 설치 경로 생성**
-```bash
-mkdir -p ~/.npm-global
-```
+- "현재 설치가 신규인지 구형 이관인지 먼저 판단해줘"
+- "내 작업물이 남아 있는지 확인하고 안전한 업데이트 경로를 골라줘"
+- "관리자에서 바꾼 내용이 퍼블릭에도 반영되게 수정해줘"
+- "플러그인을 로컬에서 만들고 테스트한 뒤 제출 가능 상태까지 정리해줘"
 
-**2️⃣ npm 설정 변경**
-```bash
-npm config set prefix '~/.npm-global'
-```
+### 좋지 않음
 
-**3️⃣ PATH에 추가**
+- "`npm run setup` 그냥 쳐봐"
+- "`npm run core:pull` 바로 돌려"
+- "안 되면 다시 처음부터 설치해"
 
-macOS/Linux (zsh):
-```bash
-echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-```
+이런 식의 요청은 에이전트가 대화형 프롬프트나 잘못된 업데이트 경로로 들어갈 가능성을 높입니다.
 
-Linux (bash) / WSL:
-```bash
-echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-```
+## 에이전트가 이렇게 행동해야 합니다
 
-**4️⃣ Gemini CLI 설치**
-```bash
-npm install -g @google/gemini-cli
-```
+### 사용자가 위험한 명령을 시키면
 
-**5️⃣ 설치 확인**
-```bash
-which gemini
-# → ~/.npm-global/bin/gemini 나오면 정상
-```
+에이전트는 그대로 실행하기보다 이유를 설명하고 안전한 대안을 제안해야 합니다.
 
----
+예:
 
-### 방법 2: 일반 npm 전역 설치
+- 사용자가 "`npm run setup` 해줘"라고 하면
+  에이전트는 "`setup:step` 기반으로 진행하겠습니다. 현재 설치 상태를 먼저 보고 이어서 설치하는 편이 안전합니다."라고 안내
 
-```bash
-npm install -g @google/gemini-cli
-```
+- 사용자가 "`core:pull` 바로 해줘"라고 하면
+  에이전트는 "구형 설치본이면 재설치 이관이 더 안전할 수 있으니 먼저 lifecycle/doctor로 판별하겠습니다."라고 안내
 
-> ⚠️ 권한 오류 시 "방법 1"을 사용하세요. `sudo`로 설치하면 나중에 문제가 생길 수 있습니다.
+### 사용자가 "해줘"라고 했을 때
 
-### 방법 3: 설치 없이 바로 실행
+가능한 경우 에이전트가 직접 실행해야 합니다. 사람에게 명령어를 대신 입력하게 넘기는 방식은 지양합니다.
 
-```bash
-npx @google/gemini-cli
-```
+## 첫 실행 체크리스트
 
-### 방법 4: Homebrew (macOS/Linux)
+1. 프로젝트 루트에서 에이전트 CLI 실행
+2. `AGENTS.md` 읽기
+3. `.agent/README.md` 읽기
+4. `npm run agent:doctor -- --json`
+5. `npm run agent:lifecycle -- --json`
+6. 신규 설치 또는 이관 플로우 분기
 
-```bash
-brew install gemini-cli
-```
+## 자주 있는 실패 패턴
 
-### 설치 확인
+| 패턴 | 더 나은 방식 |
+|------|---------------|
+| 대화형 setup에서 멈춤 | `setup:step` 기반 진행 |
+| 구형 설치본에 바로 `core:pull` | `agent:lifecycle` 후 필요 시 재설치 이관 |
+| 수동 배포로 대상 연결이 꼬임 | deploy guard와 snapshot을 먼저 사용 |
+| 사용자가 직접 명령어를 따라치다가 상태를 망침 | 에이전트가 직접 실행하고 결과만 설명 |
 
-```bash
-gemini --version
-```
+## 함께 보면 좋은 문서
 
----
-
-## 3단계: Google 로그인 인증
-
-**API 키가 필요 없습니다!** Google 계정으로 로그인하면 됩니다.
-
-```bash
-# Gemini CLI 실행
-gemini
-```
-
-처음 실행 시:
-1. **"Login with Google"** 선택
-2. 브라우저가 열리면 Google 계정으로 로그인
-3. 인증 완료 후 터미널로 돌아오면 바로 사용 가능
-
-### Google One AI Premium (Pro) 연동
-
-Google One AI Premium 구독자는 자동으로 향상된 기능을 사용할 수 있습니다:
-- 더 높은 요청 제한
-- 우선순위 응답
-- 최신 모델 접근
-
-Pro 구독이 연결된 Google 계정으로 로그인하면 자동 적용됩니다.
-
-### Preview Features 활성화 (⭐ 권장)
-
-최신 기능을 사용하려면 Preview Features를 켜세요:
-
-1. Gemini CLI 실행 후 `/settings` 입력
-2. **Preview Features** 항목 찾기
-3. `false` → `true`로 변경
-4. 저장 후 종료
-
-```
-> /settings
-# Preview Features 항목에서 false → true 변경
-```
-
-이렇게 하면 최신 실험적 기능들을 먼저 사용할 수 있습니다.
-
----
-
-## 4단계: 프로젝트에서 사용
-
-### 기본 사용
-
-```bash
-# 프로젝트 디렉토리로 이동
-cd ~/clinic-os
-
-# Gemini CLI 실행
-gemini
-```
-
-### 첫 실행 시 프로젝트 인식시키기 (⭐ 중요)
-
-Gemini CLI를 처음 실행하면 AI가 프로젝트 구조를 모릅니다. **첫 프롬프트로 프로젝트를 파악하게 해주세요:**
-
-```
-> 이 폴더의 구조와 주요 파일들을 읽고 프로젝트를 파악해. GEMINI.md를 먼저 읽어봐.
-```
-
-또는 더 직접적으로:
-
-```
-> 프로젝트 전체를 분석해서 어떤 시스템인지 장악해.
-> GEMINI.md, package.json, src/ 폴더 구조를 확인하고 정리해줘.
-```
-
-이렇게 하면 AI가:
-1. `GEMINI.md`를 읽어 프로젝트 맥락 파악
-2. 폴더 구조 스캔
-3. 주요 설정 파일 확인
-4. 이후 질문에 더 정확하게 응답
-
-### GEMINI.md 컨텍스트 활용
-
-Gemini CLI는 프로젝트 루트의 `GEMINI.md` 파일을 자동으로 인식합니다. Clinic-OS 프로젝트에는 이미 AI가 프로젝트를 이해할 수 있도록 작성된 `GEMINI.md`가 포함되어 있습니다.
-
-```bash
-# GEMINI.md가 있는 디렉토리에서 실행
-cd ~/clinic-os
-gemini
-
-# AI가 프로젝트 맥락을 이해하고 응답
-```
-
----
-
-## 유용한 사용 예시
-
-### 프로젝트 질문
-
-```
-> 이 프로젝트의 플러그인 시스템이 어떻게 동작해?
-> 새 검사도구를 추가하려면 어떻게 해야 해?
-> DB 마이그레이션 파일은 어디에 있어?
-```
-
-### 코드 작업
-
-```
-> src/plugins/custom-homepage/pages/index.astro 파일 분석해줘
-> 홈페이지에 새로운 섹션 추가하고 싶어
-> 에러가 나는데 도와줘: [에러 메시지]
-```
-
-### 운영 명령어
-
-```
-> npm run dev 실행해줘
-> 배포하려면 어떻게 해야 해?
-> core:pull 후 충돌이 발생했어
-```
-
----
-
-## 트러블슈팅
-
-### "command not found: gemini"
-
-**해결책 1: "2단계 방법 1"로 재설치 (권장)**
-
-위 "방법 1: npm 전역 경로를 유저 홈으로 설정" 섹션을 따라 `~/.npm-global` 경로로 재설치하세요.
-
-**해결책 2: 기존 설치 경로를 PATH에 추가**
-
-```bash
-# 현재 npm prefix 확인
-npm config get prefix
-# → /usr/local 또는 다른 경로가 나옴
-
-# 해당 경로의 bin을 PATH에 추가 (zsh)
-echo 'export PATH="$(npm config get prefix)/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-
-# bash/WSL의 경우
-echo 'export PATH="$(npm config get prefix)/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-### 로그인이 안 됨
-
-- 브라우저 팝업 차단 확인
-- WSL에서 실행 시 Windows 기본 브라우저가 열림
-- VPN 사용 중이면 일시적으로 해제
-
-### 느린 응답
-
-- 네트워크 상태 확인
-- 대용량 파일을 직접 붙여넣기보다 파일 경로 참조
-- `--model gemini-2.0-flash` 옵션으로 빠른 모델 사용
-
-### 인증 초기화
-
-```bash
-# 기존 인증 정보 삭제 후 재로그인
-rm -rf ~/.gemini
-gemini
-```
-
----
-
-## 다음 단계
-
-- [터미널 꾸미기 가이드](./TERMINAL_BEAUTIFY.md) - 더 나은 터미널 UX
-- [GEMINI.md](../GEMINI.md) - 프로젝트 컨텍스트 이해
-- [플러그인 개발 가이드](./PLUGIN_DEVELOPMENT_GUIDE.md) - 플러그인 커스터마이징
-
----
-
-> 최종 업데이트: 2026-01-22
+- [온보딩 가이드](./ONBOARDING.md)
+- [Windows 가이드](./WINDOWS_GUIDE.md)
+- [안전한 작업 흐름](./WORKFLOW_GUIDE.md)
+- [플러그인 개발 가이드](./PLUGIN_DEVELOPMENT_GUIDE.md)

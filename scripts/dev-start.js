@@ -14,6 +14,7 @@ import path from 'path';
 import { createHash } from 'crypto';
 import { execSync, spawn } from 'child_process';
 import { fileURLToPath } from 'url';
+import { buildNpmCommand } from './lib/npm-cli.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -118,7 +119,7 @@ function ensureDependencies() {
 function runInstall() {
     console.log('\n📦 의존성 설치 중 (npm install)...');
     try {
-        execSync('npm install', { stdio: 'inherit', cwd: PROJECT_ROOT });
+        execSync(buildNpmCommand('install'), { stdio: 'inherit', cwd: PROJECT_ROOT });
         console.log('   ✅ 의존성 설치 완료\n');
     } catch (e) {
         console.error('   ❌ npm install 실패:', e.message);

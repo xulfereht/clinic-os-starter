@@ -12,6 +12,7 @@
   - `src/layouts/`
   - `src/styles/` (except `src/styles/global.css — PROTECTED_EXACT`)
   - `src/lib/` (except `src/lib/local/`)
+  - `src/skins/` (except `src/skins/local/`)
   - `src/plugins/custom-homepage/`
   - `src/plugins/survey-tools/`
   - `src/survey-tools/stress-check/`
@@ -19,12 +20,13 @@
   - `migrations/`
   - `seeds/`
   - `docs/`
+  - `.agent/manifests/`
   - `.agent/workflows/`
   - `.claude/commands/`
   - `.claude/rules/`
   - `scripts/`
   - `.docking/engine/`
-  - Core single files: `.agent/onboarding-registry.json`, `package.json`, `astro.config.mjs`, `tsconfig.json`, `.cursorrules`, `.windsurfrules`, `.clinerules`
+  - Core single files: `.agent/README.md`, `.agent/onboarding-registry.json`, `package.json`, `astro.config.mjs`, `tsconfig.json`, `.cursorrules`, `.windsurfrules`, `.clinerules`
 
 - **[HARD] NEVER modify protected single files:**
   - `wrangler.toml`
@@ -42,6 +44,7 @@
 
 - **[HARD] Use `local/` directories for client code:**
   - `src/lib/local/`
+  - `src/skins/local/`
   - `src/plugins/local/`
   - `src/pages/_local/`
   - `src/survey-tools/local/`
@@ -66,6 +69,7 @@
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/layouts/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/styles/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/lib/ |
+| `CORE_PATHS` | 코어 → 덮어쓰기 | src/skins/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/plugins/custom-homepage/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/plugins/survey-tools/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/survey-tools/stress-check/ |
@@ -73,6 +77,8 @@
 | `CORE_PATHS` | 코어 → 덮어쓰기 | migrations/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | seeds/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | docs/ |
+| `CORE_PATHS` | 코어 → 덮어쓰기 | .agent/README.md |
+| `CORE_PATHS` | 코어 → 덮어쓰기 | .agent/manifests/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | .agent/onboarding-registry.json |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | .agent/workflows/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | .claude/commands/ |
@@ -86,6 +92,7 @@
 | `CORE_PATHS` | 코어 → 덮어쓰기 | .windsurfrules |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | .clinerules |
 | `LOCAL_PREFIXES` | 절대 건드리지 않음 | src/lib/local/ |
+| `LOCAL_PREFIXES` | 절대 건드리지 않음 | src/skins/local/ |
 | `LOCAL_PREFIXES` | 절대 건드리지 않음 | src/plugins/local/ |
 | `LOCAL_PREFIXES` | 절대 건드리지 않음 | src/pages/_local/ |
 | `LOCAL_PREFIXES` | 절대 건드리지 않음 | src/survey-tools/local/ |
@@ -141,5 +148,8 @@ CREATE TABLE custom_my_data (...);
 ## Reference Docs
 
 - `docs/CUSTOMIZATION_GUIDE.md` — full guide with examples
+- `docs/LOCAL_WORKSPACES_GUIDE.md` — safe workspace selector
+- `docs/SURVEY_TOOLS_GUIDE.md` — survey tool guide
+- `docs/SKIN_SYSTEM_GUIDE.md` — skin pack guide
 - `docs/internal/LOCAL_GIT_ARCHITECTURE.md` — technical spec (개발자 전용)
 - `docs/PLUGIN_DEVELOPMENT_GUIDE.md` — plugin creation guide

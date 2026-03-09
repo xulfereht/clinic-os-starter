@@ -2,6 +2,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
+import { buildNpmCommand } from './lib/npm-cli.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,7 +26,7 @@ async function preflight() {
     if (!fs.existsSync(coreModules)) {
         console.log("📦 의존성 설치 중...");
         try {
-            execSync('npm install', { stdio: 'inherit', cwd: corePath });
+            execSync(buildNpmCommand('install'), { stdio: 'inherit', cwd: corePath });
         } catch (e) {
             console.error("❌ npm install 실패:", e.message);
             process.exit(1);

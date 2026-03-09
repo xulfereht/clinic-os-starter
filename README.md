@@ -5,17 +5,29 @@
 **복잡한 설정 없이 로컬에서 바로 개발을 시작하세요.**
 
 1. **설치**: 이 폴더에서 터미널을 열고 `npm install` 을 실행합니다. (Node.js 18+ 및 **Git** 필수)
-2. **초기화**: `npm run setup` 명령어를 실행합니다.
-   - 최신 코드를 Git을 통해 자동으로 받아오고 설치합니다.
-   - 로컬 데이터베이스(SQLite)를 자동으로 구성합니다.
-   - Cloudflare 설정은 "나중에 하기"를 선택하고 건너뜁니다.
-3. **실행**: `npm run dev` 를 입력하면 즉시 로컬 서버가 실행됩니다.
+2. **초기화**: 에이전트가 있다면 `npm run setup:agent` 를 우선 사용하세요.
+   - 브라우저 인증, 코어 다운로드, 의존성 설치, 단계별 setup을 자동으로 진행합니다.
+   - 설치 도중 멈추면 같은 명령을 다시 실행하면 이어서 진행합니다.
+3. **문제 진단**: 설치/업데이트가 꼬이면 `npm run agent:doctor -- --json` 으로 현재 상태를 먼저 확인합니다.
+   - 너무 구형 설치본이면 `npm run agent:lifecycle -- --json` 이 신규 설치 + 마이그레이션 권장을 알려줍니다.
+   - 새 스타터킷을 다시 받으면서 예전 폴더가 통째로 남았다면 `npm run agent:restore -- --dry-run --json` 으로 추출 가능한 복원 계획을 먼저 확인합니다.
+4. **실행**: `npm run dev` 를 입력하면 즉시 로컬 서버가 실행됩니다.
+
+에이전트를 쓰지 않는 수동 환경에서는 `npm run setup:step -- --next` 로 단계별 설치를 진행하세요.
 
 ## 업데이트 (Update)
 
 새로운 기능이 출시되면 다음 명령어로 코어만 업데이트할 수 있습니다:
 ```bash
-npm run core:pull
+npm run core:pull -- --auto
+```
+
+업데이트 전에 무엇을 해야 할지 모르겠다면:
+```bash
+npm run agent:doctor -- --json
+npm run agent:lifecycle -- --json
+npm run agent:restore -- --dry-run --json
+npm run agent:sync -- --dry-run
 ```
 
 ## 배포하기 (Production)

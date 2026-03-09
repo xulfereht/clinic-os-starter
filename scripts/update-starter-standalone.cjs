@@ -13,9 +13,11 @@
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const crypto = require('crypto');
+const zlib = require('zlib');
 const { execSync } = require('child_process');
 
-// 업데이트 대상 인프라 파일 목록 (package.json 제외 - 스타터킷 자체 유지)
+// fallback 업데이트 대상 starter 파일 목록
 const INFRA_FILES = [
     // 코어 엔진
     '.docking/engine/fetch.js',
@@ -43,6 +45,37 @@ const INFRA_FILES = [
 ];
 
 const DEFAULT_HQ_URL = 'https://clinic-os-hq.pages.dev';
+const GENERATED_COMPATIBILITY_DATES = new Set([
+    '2024-11-01',
+    '2025-01-01',
+]);
+const TARGET_COMPATIBILITY_DATE = '2026-03-01';
+const STARTER_BUNDLE_THRESHOLD = 8;
+const STARTER_UPDATE_BUNDLE_FORMAT = 'clinic-os-starter-update-bundle.v1';
+
+function mergeObject(localValue, upstreamValue) {
+    return {
+        ...(localValue || {}),
+        ...(upstreamValue || {}),
+    };
+}
+
+function mergeStarterPackageJson(localPackageJson = {}, upstreamPackageJson = {}) {
+    const merged = {
+        ...localPackageJson,
+        ...upstreamPackageJson,
+    };
+
+    merged.scripts = mergeObject(localPackageJson.scripts, upstreamPackageJson.scripts);
+    merged.dependencies = mergeObject(localPackageJson.dependencies, upstreamPackageJson.dependencies);
+    merged.devDependencies = mergeObject(localPackageJson.devDependencies, upstreamPackageJson.devDependencies);
+    merged.bin = mergeObject(localPackageJson.bin, upstreamPackageJson.bin);
+    merged.engines = upstreamPackageJson.engines
+        ? { ...upstreamPackageJson.engines }
+        : (localPackageJson.engines || undefined);
+
+    return merged;
+}
 
 function httpsGet(url) {
     return new Promise((resolve, reject) => {
@@ -62,11 +95,127 @@ function httpsGet(url) {
     });
 }
 
+function httpsGetBuffer(url) {
+    return new Promise((resolve, reject) => {
+        https.get(url, (res) => {
+            if (res.statusCode === 301 || res.statusCode === 302) {
+                return httpsGetBuffer(res.headers.location).then(resolve).catch(reject);
+            }
+            if (res.statusCode !== 200) {
+                reject(new Error(`HTTP ${res.statusCode}`));
+                return;
+            }
+            const chunks = [];
+            res.on('data', chunk => chunks.push(chunk));
+            res.on('end', () => resolve(Buffer.concat(chunks)));
+            res.on('error', reject);
+        }).on('error', reject);
+    });
+}
+
+function hashBufferSha256(buffer) {
+    return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
+function hashFileSha256(filePath) {
+    return hashBufferSha256(fs.readFileSync(filePath));
+}
+
+function getChangedStarterFiles(projectRoot, files, manifestHashes) {
+    if (!manifestHashes || Object.keys(manifestHashes).length === 0) {
+        return [...files];
+    }
+
+    return files.filter((file) => {
+        const expectedHash = manifestHashes[file];
+        if (!expectedHash) return true;
+
+        const filePath = path.join(projectRoot, file);
+        if (!fs.existsSync(filePath)) return true;
+
+        try {
+            return hashFileSha256(filePath) !== expectedHash;
+        } catch (e) {
+            return true;
+        }
+    });
+}
+
+function applyStarterUpdateBundle(projectRoot, bundleBuffer, onlyFiles) {
+    const bundle = JSON.parse(zlib.gunzipSync(bundleBuffer).toString('utf8'));
+    if (bundle.format !== STARTER_UPDATE_BUNDLE_FORMAT || !bundle.files || typeof bundle.files !== 'object') {
+        throw new Error('starter bundle 형식이 올바르지 않습니다.');
+    }
+
+    const targetFiles = onlyFiles ? new Set(onlyFiles) : null;
+    let appliedCount = 0;
+    for (const [file, content] of Object.entries(bundle.files)) {
+        if (targetFiles && !targetFiles.has(file)) continue;
+        const filePath = path.join(projectRoot, file);
+        ensureDir(filePath);
+        fs.writeFileSync(filePath, content, 'utf8');
+        appliedCount += 1;
+    }
+
+    return appliedCount;
+}
+
 function ensureDir(filePath) {
     const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
     }
+}
+
+async function syncStarterPackageJson(projectRoot) {
+    const packageJsonPath = path.join(projectRoot, 'package.json');
+    const localPackageJson = fs.existsSync(packageJsonPath)
+        ? JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'))
+        : {};
+    const rawUpstreamPackageJson = await httpsGet(`${DEFAULT_HQ_URL}/api/v1/starter-files/package.json`);
+    const upstreamPackageJson = JSON.parse(rawUpstreamPackageJson);
+    const mergedPackageJson = mergeStarterPackageJson(localPackageJson, upstreamPackageJson);
+    const changed = JSON.stringify(localPackageJson) !== JSON.stringify(mergedPackageJson);
+
+    if (changed) {
+        fs.writeFileSync(packageJsonPath, `${JSON.stringify(mergedPackageJson, null, 2)}\n`);
+    }
+
+    return {
+        changed,
+        fromVersion: localPackageJson.version || '(없음)',
+        toVersion: mergedPackageJson.version || '(없음)',
+    };
+}
+
+function refreshGeneratedWranglerDefaults(projectRoot) {
+    const wranglerPath = path.join(projectRoot, 'wrangler.toml');
+    if (!fs.existsSync(wranglerPath)) {
+        return { changed: false, updates: [] };
+    }
+
+    let content = fs.readFileSync(wranglerPath, 'utf8');
+    const updates = [];
+
+    const compatibilityMatch = content.match(/compatibility_date\s*=\s*"([^"]+)"/);
+    if (compatibilityMatch && GENERATED_COMPATIBILITY_DATES.has(compatibilityMatch[1])) {
+        content = content.replace(
+            /compatibility_date\s*=\s*"([^"]+)"/,
+            `compatibility_date = "${TARGET_COMPATIBILITY_DATE}"`
+        );
+        updates.push(`compatibility_date ${compatibilityMatch[1]} → ${TARGET_COMPATIBILITY_DATE}`);
+    }
+
+    if (content.includes('pages_build_output_dir = "dist"')) {
+        content = content.replace('pages_build_output_dir = "dist"', 'pages_build_output_dir = "core/dist"');
+        updates.push('pages_build_output_dir dist → core/dist');
+    }
+
+    if (updates.length > 0) {
+        fs.writeFileSync(wranglerPath, content);
+    }
+
+    return { changed: updates.length > 0, updates };
 }
 
 function findProjectRoot() {
@@ -212,23 +361,56 @@ async function main() {
     console.log(`   Project Root: ${PROJECT_ROOT}`);
     console.log(`   HQ Server: ${DEFAULT_HQ_URL}`);
 
-    // 버전 정보 조회
+    // manifest/버전 정보 조회
     console.log('\n📥 최신 버전 확인 중...');
+    let manifest = null;
+    let infraFiles = INFRA_FILES;
     try {
-        const versionData = await httpsGet(`${DEFAULT_HQ_URL}/api/v1/update/channel-version?channel=stable`);
-        const version = JSON.parse(versionData);
-        console.log(`   최신 버전: v${version.version}`);
+        const manifestData = await httpsGet(`${DEFAULT_HQ_URL}/api/v1/starter-files/manifest.json`);
+        manifest = JSON.parse(manifestData);
+        infraFiles = manifest.files || INFRA_FILES;
+        console.log(`   최신 버전: v${manifest.version} (${infraFiles.length}개 파일)`);
     } catch (e) {
-        console.log('   버전 확인 실패 (계속 진행)');
+        try {
+            const versionData = await httpsGet(`${DEFAULT_HQ_URL}/api/v1/update/channel-version?channel=stable`);
+            const version = JSON.parse(versionData);
+            console.log(`   최신 버전: v${version.version}`);
+        } catch {
+            console.log('   버전 확인 실패 (계속 진행)');
+        }
+        console.log(`   ⚠️  starter manifest 로드 실패, fallback 사용 (${infraFiles.length}개 파일)`);
     }
+
+    const changedFiles = getChangedStarterFiles(PROJECT_ROOT, infraFiles, manifest?.hashes || {});
+    const skippedFiles = infraFiles.length - changedFiles.length;
 
     // 파일 다운로드 및 적용
     console.log('\n📦 인프라 파일 업데이트 중...\n');
+    console.log(`   변경 파일: ${changedFiles.length}개 / 전체 ${infraFiles.length}개`);
+    if (skippedFiles > 0) {
+        console.log(`   해시 일치로 건너뜀: ${skippedFiles}개`);
+    }
 
     let successCount = 0;
     let failCount = 0;
+    let bundleApplied = false;
 
-    for (const file of INFRA_FILES) {
+    if (changedFiles.length > 0 && manifest && manifest.bundle && manifest.bundle.path && changedFiles.length >= STARTER_BUNDLE_THRESHOLD) {
+        try {
+            console.log(`\n📦 starter bundle 다운로드 중... (${manifest.bundle.path})`);
+            const bundleBuffer = await httpsGetBuffer(`${DEFAULT_HQ_URL}/api/v1/starter-files/${encodeURIComponent(manifest.bundle.path)}`);
+            if (manifest.bundle.sha256 && hashBufferSha256(bundleBuffer) !== manifest.bundle.sha256) {
+                throw new Error('starter bundle 무결성 검증 실패');
+            }
+            successCount += applyStarterUpdateBundle(PROJECT_ROOT, bundleBuffer, changedFiles);
+            bundleApplied = true;
+            console.log(`   ✅ starter bundle 적용 완료 (${successCount}개 파일)`);
+        } catch (e) {
+            console.log(`   ⚠️  starter bundle 적용 실패, 개별 다운로드로 폴백: ${e.message}`);
+        }
+    }
+
+    for (const file of bundleApplied ? [] : changedFiles) {
         process.stdout.write(`   ${file}... `);
 
         try {
@@ -244,6 +426,27 @@ async function main() {
         } catch (e) {
             console.log(`❌ ${e.message}`);
             failCount++;
+        }
+    }
+
+    console.log('\n📦 starter package.json 동기화 중...\n');
+    try {
+        const packageSync = await syncStarterPackageJson(PROJECT_ROOT);
+        if (packageSync.changed) {
+            console.log(`   package.json... ✅ (${packageSync.fromVersion} → ${packageSync.toVersion})`);
+        } else {
+            console.log('   package.json... ✅ (이미 최신)');
+        }
+    } catch (e) {
+        console.log(`   package.json... ❌ ${e.message}`);
+        failCount++;
+    }
+
+    const wranglerRefresh = refreshGeneratedWranglerDefaults(PROJECT_ROOT);
+    if (wranglerRefresh.changed) {
+        console.log('\n🛠️  wrangler.toml 생성 기본값 보정...');
+        for (const update of wranglerRefresh.updates) {
+            console.log(`   ✅ ${update}`);
         }
     }
 
@@ -282,9 +485,13 @@ async function main() {
     // 결과 출력
     console.log('\n════════════════════════════════════════════');
     if (failCount === 0) {
-        console.log(`✅ 업데이트 완료! (${successCount}개 파일)`);
+        console.log(`✅ 업데이트 완료! (적용: ${successCount}개, 건너뜀: ${skippedFiles}개)`);
+        if (fs.existsSync(path.join(PROJECT_ROOT, 'scripts/update-starter-core.js'))) {
+            console.log('\n다음 단계:');
+            console.log('  node scripts/update-starter-core.js --stable  # starter + core 묶음 업데이트');
+        }
     } else {
-        console.log(`⚠️  일부 파일 업데이트 실패 (성공: ${successCount}, 실패: ${failCount})`);
+        console.log(`⚠️  일부 파일 업데이트 실패 (성공: ${successCount}, 건너뜀: ${skippedFiles}, 실패: ${failCount})`);
     }
     console.log('════════════════════════════════════════════');
 }

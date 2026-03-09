@@ -19,7 +19,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { exec } from 'child_process';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import crypto from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -67,9 +67,63 @@ function findProjectRoot(startDir) {
 }
 
 const PROJECT_ROOT = findProjectRoot(__dirname);
+let errorRecoveryModulePromise = null;
 
 // 기본 설정 (wrangler.toml에서 읽지 못할 경우의 fallback)
 const DEFAULT_DB_NAME = 'clinic-os-db';
+
+async function loadErrorRecoveryModule() {
+    if (!errorRecoveryModulePromise) {
+        const moduleUrl = pathToFileURL(path.join(PROJECT_ROOT, 'scripts', 'lib', 'error-recovery.mjs')).href;
+        errorRecoveryModulePromise = import(moduleUrl).catch(() => null);
+    }
+    return errorRecoveryModulePromise;
+}
+
+async function reportMigrationError({ phase = 'migration', error, command, context = {}, recovery = {} }) {
+    try {
+        const helpers = await loadErrorRecoveryModule();
+        const resolvedCommand = command || 'npm run db:migrate';
+
+        if (helpers?.recordStructuredError) {
+            await helpers.recordStructuredError({
+                projectRoot: PROJECT_ROOT,
+                phase,
+                error,
+                command: resolvedCommand,
+                context: {
+                    projectRoot: PROJECT_ROOT,
+                    ...context,
+                },
+                recovery,
+                source: 'migration-runner',
+            });
+            return;
+        }
+
+        const errorReport = {
+            timestamp: new Date().toISOString(),
+            command: resolvedCommand,
+            phase,
+            error: {
+                message: typeof error === 'string' ? error : error?.message || String(error),
+                stack: typeof error === 'object' ? error?.stack || null : null,
+                code: typeof error === 'object' ? error?.code || 'UNKNOWN' : 'UNKNOWN',
+            },
+            context: {
+                projectRoot: PROJECT_ROOT,
+                ...context,
+            },
+            recovery,
+            attempts: [],
+        };
+        const errorPath = path.join(PROJECT_ROOT, '.agent', 'last-error.json');
+        fs.ensureDirSync(path.dirname(errorPath));
+        fs.writeJsonSync(errorPath, errorReport, { spaces: 2 });
+    } catch (_) {
+        // 에러 보고 실패는 무시
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════
 // SQLITE_BUSY Retry Helper
@@ -618,22 +672,18 @@ export async function runMigrations(options = {}) {
         console.log('   ❌ wrangler.toml이 없습니다. npm run setup을 먼저 실행하세요.');
         // 에러 보고서 저장 (에이전트 자동 복구용)
         try {
-            const errorReport = {
-                timestamp: new Date().toISOString(),
-                command: 'db:init / db:migrate',
+            await reportMigrationError({
                 phase: 'precondition',
                 error: 'wrangler.toml이 없습니다. npm run setup을 먼저 실행하세요.',
-                context: { projectRoot: PROJECT_ROOT },
+                command: 'npm run db:migrate',
+                context: { wranglerPath },
                 recovery: {
                     workflow: '.agent/workflows/troubleshooting.md',
-                    section: '6',
+                    section: 'precondition',
                     suggestion: 'npm run setup으로 초기 설정 실행',
-                    commands: ['npm run setup']
-                }
-            };
-            const errorPath = path.join(PROJECT_ROOT, '.agent', 'last-error.json');
-            fs.ensureDirSync(path.dirname(errorPath));
-            fs.writeJsonSync(errorPath, errorReport, { spaces: 2 });
+                    commands: ['npm run setup:step -- --next']
+                },
+            });
             console.log('   📋 에러 보고서: .agent/last-error.json');
             console.log('   🤖 에이전트: .agent/workflows/troubleshooting.md를 참조하세요.');
         } catch (e) { /* 보고서 저장 실패 무시 */ }
@@ -964,7 +1014,8 @@ export async function runAllPluginMigrations(options = {}) {
         }
     }
 
-    return { success: true, plugins: results };
+    const failed = results.filter((result) => result.success === false).length;
+    return { success: failed === 0, plugins: results, failed };
 }
 
 /**
@@ -987,6 +1038,26 @@ async function main() {
         console.log('\n✅ 모든 마이그레이션 완료');
         process.exit(0);
     } else {
+        const primaryError =
+            coreResult.errors?.[0]?.error
+            || pluginResult.plugins?.find((plugin) => plugin.success === false)?.error
+            || '일부 마이그레이션 실패';
+        await reportMigrationError({
+            phase: 'migration',
+            error: typeof primaryError === 'string' ? primaryError : JSON.stringify(primaryError),
+            command: isLocal ? 'npm run db:migrate' : 'npm run db:migrate -- --remote',
+            context: {
+                local: isLocal,
+                core_failed: coreResult.failed || 0,
+                plugin_failed: pluginResult.failed || 0,
+            },
+            recovery: {
+                workflow: '.agent/workflows/troubleshooting.md',
+                section: 'migration',
+                suggestion: 'doctor로 스키마 상태를 확인한 뒤 마이그레이션을 다시 실행하세요.',
+                commands: ['npm run doctor', 'npm run db:migrate'],
+            },
+        });
         console.log('\n❌ 일부 마이그레이션 실패');
         process.exit(1);
     }

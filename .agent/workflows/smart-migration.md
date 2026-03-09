@@ -18,6 +18,16 @@
 
 **에이전트 역할**: 전 과정을 주도하고, 사용자는 검토/승인만
 
+시작 전에 먼저 실행:
+
+```bash
+npm run agent:lifecycle -- --json
+```
+
+- `legacy_reinstall_migration`이면 인플레이스 업데이트보다 신규 설치 + snapshot 이관을 우선
+- 신규 스타터킷을 다시 내려받아 원 폴더가 형제 디렉터리 백업으로 남아 있으면 `npm run agent:restore -- --dry-run --json` 으로 코드 local 수정본, data, public/local 이미지, 로컬 R2 상태까지 추출 가능한 복원 계획을 먼저 확인
+- `safe_update_in_place`이면 snapshot 후 core/starter 업데이트 진행
+
 ---
 
 ## 6단계 마이그레이션 게이트
@@ -160,6 +170,9 @@ const preservationPlan = {
 **업데이트 직전 완전한 스냅샷 생성:**
 
 ```bash
+# 표준 보호 스냅샷
+npm run agent:snapshot -- --reason=pre-update
+
 # 1. Git 스냅샷 (있는 경우)
 git stash push -m "pre-update-snapshot-$(date +%Y%m%d-%H%M%S)"
 git tag "before-core-update-$(date +%Y%m%d)"

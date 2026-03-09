@@ -14,3 +14,11 @@ dist/
 clinic.json
 wrangler.toml
 .wrangler/
+.agent/agent-context.json
+.agent/runtime-context.json
+.agent/support-status.json
+.agent/issue-history.json
+.agent/issue-report-status.json
+.agent/lifecycle-status.json
+.agent/deployment-target.json
+.agent/protection-snapshots/

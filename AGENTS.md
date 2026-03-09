@@ -27,7 +27,7 @@ npm run setup:agent
         ↓
     [체크] AGENT_INSTALLER.md 존재? (이 파일)
         ├── ✅ 있음 → 스타터킷 초기 → npm run setup:agent
-        └── ❌ 없음 → 레거시 모드 → npm run setup
+        └── ❌ 없음 → 레거시 모드 → npm run setup:fast (고성능) / npm run setup
 ```
 
 ## 📋 상태별 행동
@@ -50,6 +50,40 @@ npm run setup:step -- --next
 npm run setup:step -- --status
 ```
 
+### 코드 수정 전
+```bash
+# 워크스페이스 구조/오버라이드/app root 스캔
+npm run agent:context
+
+# 설치/업데이트/마이그레이션/버전 문제는 먼저 진단
+npm run agent:doctor -- --json
+
+# 지금 설치본이 신규 설치/업데이트/재설치 마이그레이션 중 어디인지 판별
+npm run agent:lifecycle -- --json
+
+# 예전 폴더 전체 백업/보호 스냅샷에서 복원할 항목 미리보기
+npm run agent:restore -- --dry-run --json
+```
+
+그 후 아래 파일을 읽습니다:
+- `.agent/runtime-context.json`
+- `.agent/manifests/change-strategy.json`
+- `.agent/manifests/local-workspaces.json`
+- `.agent/manifests/admin-public-bindings.json`
+- `.agent/manifests/command-safety.json`
+- `.agent/lifecycle-status.json`
+- 필요 시 `.agent/workflows/local-customization-agentic.md`
+- 검사도구면 `.agent/workflows/survey-tools-agentic.md`
+
+### 업데이트/복구 시
+```bash
+# 자동 실행 후보만 먼저 확인
+npm run agent:sync -- --dry-run
+
+# 실제 자동 실행
+npm run agent:sync
+```
+
 ### Phase O: 설치 완료 후
 ```bash
 # 온볼딩 시작
@@ -62,7 +96,7 @@ npm run setup:agent -- --onboarding
 |------|--------|
 | 인증 실패 | `npm run setup:agent -- --reauth` |
 | 중간에 멈춤 | 그대로 `npm run setup:agent` 재실행 |
-| 수동 모드 | `npm run setup` (대화형) |
+| 수동 모드 | `npm run setup:step -- --next` (권장), 고성능 환경의 비대화형 설치는 `npm run setup:fast -- --auto`, `npm run setup`은 최후 수단 |
 
 ## 📝 상세 가이드
 

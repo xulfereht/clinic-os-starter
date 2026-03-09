@@ -13,6 +13,7 @@ import path from 'path';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import os from 'os';
+import { buildNpmCommand } from './lib/npm-cli.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -364,7 +365,7 @@ async function applyFixes(checks, verbose) {
             case 'npm_install': {
                 if (verbose) console.log('   🔧 npm install 실행 중...');
                 try {
-                    execSync('npm install', { cwd: PROJECT_ROOT, stdio: verbose ? 'inherit' : 'pipe', timeout: 120000 });
+                    execSync(buildNpmCommand('install'), { cwd: PROJECT_ROOT, stdio: verbose ? 'inherit' : 'pipe', timeout: 120000 });
                     fixes.push('npm install 완료');
                 } catch (e) {
                     if (verbose) console.log(`   ⚠️  npm install 실패: ${e.message}`);

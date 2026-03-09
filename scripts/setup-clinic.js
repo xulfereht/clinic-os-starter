@@ -7,13 +7,17 @@ import { fileURLToPath } from 'url';
 import readline from 'readline';
 import { exec, execSync, spawn } from 'child_process';
 import { promisify } from 'util';
+import { buildNpmCommand } from './lib/npm-cli.js';
 
 const execAsync = promisify(exec);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.join(__dirname, '..');
 
-const IS_AUTO = process.argv.includes('--auto') || process.env.CI === 'true' || process.env.CLINIC_OS_AUTO === 'true';
+const CLI_ARGS = new Set(process.argv.slice(2));
+const IS_AUTO = CLI_ARGS.has('--auto') || !process.stdin.isTTY || process.env.CI === 'true' || process.env.CLINIC_OS_AUTO === 'true';
+const FORCE_PARALLEL_INSTALL = CLI_ARGS.has('--parallel-install') || process.env.CLINIC_OS_SETUP_PARALLEL === 'true';
+const FORCE_SEQUENTIAL_INSTALL = CLI_ARGS.has('--sequential-install') || process.env.CLINIC_OS_SETUP_SEQUENTIAL === 'true';
 
 // ... Imports ...
 import { runCheck } from './check-system.js';
@@ -99,13 +103,17 @@ function ask(question, defaultValue = '') {
     });
 }
 
-function runCommand(cmd, cwd = PROJECT_ROOT) {
+function runCommand(cmd, cwd = PROJECT_ROOT, options = {}) {
     console.log(`   Running: ${cmd}`);
     return new Promise((resolve) => {
         const child = spawn(cmd, {
             cwd,
             stdio: 'inherit',
-            shell: true
+            shell: true,
+            env: {
+                ...process.env,
+                ...(options.env || {})
+            }
         });
 
         child.on('close', (code) => {
@@ -121,6 +129,231 @@ function runCommand(cmd, cwd = PROJECT_ROOT) {
             resolve(false);
         });
     });
+}
+
+function shouldUseParallelInstall() {
+    if (FORCE_SEQUENTIAL_INSTALL) return false;
+    if (FORCE_PARALLEL_INSTALL) return true;
+
+    const totalMemGb = os.totalmem() / 1024 / 1024 / 1024;
+    return process.platform !== 'win32' && totalMemGb >= 8;
+}
+
+const INSTALL_SMOKE_CHECKS = [
+    {
+        packageDir: 'node_modules/yargs-parser',
+        relativePath: 'node_modules/yargs-parser/build/lib/string-utils.js',
+        minBytes: 32,
+        requiredSnippets: ['camelCase', 'decamelize', 'looksLikeNumber']
+    }
+];
+
+function createInstallRuntime(label) {
+    const safeLabel = label.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
+    const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), `clinic-os-npm-cache-${safeLabel}-`));
+    return {
+        label,
+        cacheDir,
+        env: {
+            npm_config_cache: cacheDir
+        }
+    };
+}
+
+async function cleanupInstallRuntimes(runtimes) {
+    for (const runtime of runtimes) {
+        if (!runtime?.cacheDir) continue;
+        try {
+            await fs.remove(runtime.cacheDir);
+        } catch {
+            // ignore temp cache cleanup errors
+        }
+    }
+}
+
+export function runInstallSmokeChecks(packageRoot, checks = INSTALL_SMOKE_CHECKS) {
+    const issues = [];
+
+    for (const check of checks) {
+        const packageDir = path.join(packageRoot, check.packageDir);
+        if (!fs.existsSync(packageDir)) continue;
+
+        const targetPath = path.join(packageRoot, check.relativePath);
+        if (!fs.existsSync(targetPath)) {
+            issues.push(`${check.relativePath} 파일이 없습니다.`);
+            continue;
+        }
+
+        const content = fs.readFileSync(targetPath);
+        if (content.length < (check.minBytes || 1)) {
+            issues.push(`${check.relativePath} 파일 크기가 비정상적으로 작습니다 (${content.length} bytes).`);
+            continue;
+        }
+
+        if (check.requiredSnippets?.length) {
+            const text = content.toString('utf8');
+            const missing = check.requiredSnippets.filter((snippet) => !text.includes(snippet));
+            if (missing.length > 0) {
+                issues.push(`${check.relativePath} 파일에서 필요한 식별자를 찾지 못했습니다: ${missing.join(', ')}`);
+            }
+        }
+    }
+
+    return issues;
+}
+
+function parseJsonSafely(raw) {
+    if (!raw) return null;
+    try {
+        return JSON.parse(raw);
+    } catch {
+        return null;
+    }
+}
+
+function runNpmLsReport(packageRoot) {
+    const lsCmd = buildNpmCommand('ls --json --depth=1');
+
+    try {
+        const stdout = execSync(lsCmd, {
+            cwd: packageRoot,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            encoding: 'utf8'
+        });
+        return {
+            ok: true,
+            tree: parseJsonSafely(stdout),
+            error: null
+        };
+    } catch (error) {
+        const stdout = typeof error.stdout === 'string' ? error.stdout : error.stdout?.toString?.('utf8');
+        const stderr = typeof error.stderr === 'string' ? error.stderr : error.stderr?.toString?.('utf8');
+
+        return {
+            ok: false,
+            tree: parseJsonSafely(stdout),
+            error: stderr || error.message || 'npm ls failed'
+        };
+    }
+}
+
+export function buildInstallValidationReport(packageRoot, options = {}) {
+    const packageName = options.packageName || path.basename(packageRoot);
+    const lsReport = options.npmLsReport || runNpmLsReport(packageRoot);
+    const smokeIssues = runInstallSmokeChecks(packageRoot, options.smokeChecks);
+    const npmProblems = Array.isArray(lsReport.tree?.problems) ? lsReport.tree.problems : [];
+    const issues = [...npmProblems, ...smokeIssues];
+
+    if (!lsReport.ok && !lsReport.tree) {
+        issues.unshift(lsReport.error || `${packageName} npm ls 검증 실패`);
+    }
+
+    return {
+        packageName,
+        ok: issues.length === 0,
+        issues,
+        npmProblems,
+        smokeIssues
+    };
+}
+
+async function repairDependencies(packageRoot, packageName) {
+    const nodeModulesPath = path.join(packageRoot, 'node_modules');
+    if (fs.existsSync(nodeModulesPath)) {
+        await fs.remove(nodeModulesPath);
+    }
+
+    const runtime = createInstallRuntime(`${packageName}-repair`);
+    try {
+        const installCmd = buildNpmCommand('install --no-audit --no-fund');
+        const repaired = await runCommand(installCmd, packageRoot, { env: runtime.env });
+        if (!repaired) {
+            throw new Error(`${packageName} 의존성 재설치 실패`);
+        }
+    } finally {
+        await cleanupInstallRuntimes([runtime]);
+    }
+
+    const validation = buildInstallValidationReport(packageRoot, { packageName });
+    if (!validation.ok) {
+        throw new Error(`${packageName} 의존성 재설치 후에도 무결성 문제가 남아 있습니다: ${validation.issues.join(' | ')}`);
+    }
+}
+
+async function installDependenciesForSetup() {
+    const installCmd = buildNpmCommand('install --no-audit --no-fund');
+    const corePath = path.join(PROJECT_ROOT, 'core');
+    const hasCorePackage = fs.existsSync(path.join(corePath, 'package.json'));
+    const useParallelInstall = shouldUseParallelInstall() && hasCorePackage;
+
+    if (useParallelInstall) {
+        console.log('   🚀 병렬 설치 모드 사용');
+        console.log('   - 루트 의존성과 core 의존성을 동시에 설치합니다.');
+        console.log('   - 저사양/Windows 환경은 --sequential-install 로 순차 실행 가능합니다.');
+
+        const rootRuntime = createInstallRuntime('root');
+        const coreRuntime = createInstallRuntime('core');
+        let rootOk = false;
+        let coreOk = false;
+
+        try {
+            [rootOk, coreOk] = await Promise.all([
+                runCommand(installCmd, PROJECT_ROOT, { env: rootRuntime.env }),
+                runCommand(installCmd, corePath, { env: coreRuntime.env })
+            ]);
+        } finally {
+            await cleanupInstallRuntimes([rootRuntime, coreRuntime]);
+        }
+
+        if (!rootOk || !coreOk) {
+            throw new Error(`병렬 의존성 설치 실패 (root=${rootOk ? 'ok' : 'fail'}, core=${coreOk ? 'ok' : 'fail'})`);
+        }
+
+        const validations = [
+            buildInstallValidationReport(PROJECT_ROOT, { packageName: 'root' }),
+            buildInstallValidationReport(corePath, { packageName: 'core' })
+        ];
+        const failed = validations.filter((entry) => !entry.ok);
+
+        if (failed.length === 0) {
+            return;
+        }
+
+        console.log('   ⚠️  병렬 설치 후 무결성 문제 감지 — 순차 재설치로 복구합니다.');
+        for (const entry of failed) {
+            console.log(`   - ${entry.packageName}: ${entry.issues.join(' | ')}`);
+            await repairDependencies(entry.packageName === 'root' ? PROJECT_ROOT : corePath, entry.packageName);
+        }
+
+        return;
+    }
+
+    console.log('   🐢 순차 설치 모드 사용');
+    const rootOk = await runCommand(installCmd, PROJECT_ROOT);
+    if (!rootOk) {
+        throw new Error('루트 의존성 설치 실패');
+    }
+
+    if (!hasCorePackage) {
+        console.log('   ⏭️  core/package.json 없음, core 의존성 설치 생략');
+        return;
+    }
+
+    const coreOk = await runCommand(installCmd, corePath);
+    if (!coreOk) {
+        throw new Error('core 의존성 설치 실패');
+    }
+
+    const validations = [
+        buildInstallValidationReport(PROJECT_ROOT, { packageName: 'root' }),
+        buildInstallValidationReport(corePath, { packageName: 'core' })
+    ];
+    const failed = validations.filter((entry) => !entry.ok);
+
+    if (failed.length > 0) {
+        const summary = failed.map((entry) => `${entry.packageName}: ${entry.issues.join(' | ')}`).join(' / ');
+        throw new Error(`의존성 설치 무결성 검증 실패 (${summary})`);
+    }
 }
 
 function getMachineId() {
@@ -310,7 +543,7 @@ async function setupCoreViaGit(hqUrl, deviceToken, channel = 'stable') {
 
 // --- Main Setup Flow ---
 
-async function setupClinic() {
+export async function setupClinic() {
     console.log("═══════════════════════════════════════════════════════════");
     console.log("   🏥  Clinic-OS 초기 설정 마법사 v3.0  🏥");
     console.log("═══════════════════════════════════════════════════════════\n");
@@ -513,9 +746,9 @@ clinic_name: "${clinicName}"
     const writeWrangler = async (dId) => {
         const content = `# Clinic-OS Configuration for ${clinicName}
 name = "${cleanName}"
-compatibility_date = "2025-01-01"
+compatibility_date = "2026-03-01"
 compatibility_flags = ["nodejs_compat"]
-pages_build_output_dir = "dist"
+pages_build_output_dir = "core/dist"
 
 # R2 버킷 (이미지/파일 업로드용)
 [[r2_buckets]]
@@ -569,10 +802,8 @@ database_id = "${dId}"
         }
     }
 
-    console.log("   [1/2] 프로젝트 루트 의존성 설치...");
-    await runCommand('npm install');
-
-    await runCommand('npm install', path.join(PROJECT_ROOT, 'core'));
+    console.log(`   설치 모드: ${shouldUseParallelInstall() ? '병렬(자동/강제)' : '순차'}`);
+    await installDependenciesForSetup();
 
     // --- Git Injection for Zip Users (Local Git Architecture v1.2) ---
     const injectGitSupport = async () => {
@@ -593,7 +824,7 @@ database_id = "${dId}"
             }
 
             // 1) Git init (클라이언트 소유)
-            await runCommand(`git init`);
+            await runCommand(`git init -b main`);
             await runCommand(`git config user.name "ClinicOS Local"`);
             await runCommand(`git config user.email "local@clinic-os.local"`);
 
@@ -1050,6 +1281,13 @@ exit 0
         console.log("   ⏭️  기존 온보딩 상태 유지");
     }
 
+    try {
+        await execAsync('node scripts/generate-agent-context.js --quiet', { cwd: PROJECT_ROOT, timeout: 30000 });
+        console.log("   ✅ .agent/runtime-context.json 갱신 완료");
+    } catch (e) {
+        console.log("   ⚠️  agent runtime context 생성 실패:", e.message);
+    }
+
     // Done
     console.log("\n═══════════════════════════════════════════════════════════");
     console.log("   🎉  설정 완료!  🎉");
@@ -1073,4 +1311,6 @@ exit 0
   `);
 }
 
-setupClinic().catch(console.error);
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+    setupClinic().catch(console.error);
+}

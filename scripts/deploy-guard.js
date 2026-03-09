@@ -4,11 +4,24 @@ import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import readline from 'readline';
+import {
+    createProtectionSnapshot,
+    detectTargetDrift,
+    loadRecordedDeploymentTarget,
+    parseWranglerDeploymentTarget,
+    recordDeploymentTarget
+} from './lib/deployment-safety.js';
 
 const execAsync = promisify(exec);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.join(__dirname, '..');
+const CLI_ARGS = new Set(process.argv.slice(2));
+const IS_NON_INTERACTIVE = CLI_ARGS.has('--non-interactive') || process.env.CI === 'true';
+const AUTO_YES = CLI_ARGS.has('--yes');
+const SKIP_SECRETS = CLI_ARGS.has('--skip-secrets') || IS_NON_INTERACTIVE;
+const ALLOW_TARGET_CHANGE = CLI_ARGS.has('--allow-target-change');
+const LAST_DEPLOY_FILE = path.join(PROJECT_ROOT, '.agent', 'last-deploy.json');
 
 const OPTIONAL_SECRETS = ['ALIGO_API_KEY', 'ALIGO_USER_ID', 'ALIGO_SENDER', 'GOOGLE_AUTH_SECRET'];
 
@@ -35,6 +48,45 @@ async function runCommand(cmd, silent = false) {
     }
 }
 
+function resolvePagesBuildOutputDir(tomlContent) {
+    const match = tomlContent.match(/pages_build_output_dir\s*=\s*"([^"]+)"/);
+    if (!match?.[1]) {
+        return {
+            relative: 'dist',
+            absolute: path.join(PROJECT_ROOT, 'dist')
+        };
+    }
+
+    const relativePath = match[1].replace(/^\.\//, '');
+    return {
+        relative: relativePath,
+        absolute: path.resolve(PROJECT_ROOT, relativePath)
+    };
+}
+
+function writeLastDeployReport(report) {
+    fs.ensureDirSync(path.dirname(LAST_DEPLOY_FILE));
+    fs.writeJsonSync(LAST_DEPLOY_FILE, report, { spaces: 2 });
+}
+
+async function getGitHeadShortSha() {
+    const result = await runCommand('git rev-parse --short HEAD', true);
+    if (!result.success) return null;
+    return result.stdout.trim() || null;
+}
+
+async function getLatestProductionDeployment(projectName) {
+    const result = await runCommand(`npx wrangler pages deployment list --project-name ${projectName} --json`, true);
+    if (!result.success) return null;
+
+    try {
+        const parsed = JSON.parse(result.stdout || '[]');
+        return parsed.find((entry) => entry?.Environment === 'Production') || null;
+    } catch {
+        return null;
+    }
+}
+
 const PLACEHOLDER_VALUES = [
     'YOUR_DATABASE_ID_HERE',
     'your-database-id-here',
@@ -45,6 +97,16 @@ const PLACEHOLDER_VALUES = [
 const DANGEROUS_DEFAULTS = {
     ADMIN_PASSWORD: ['change-me-in-production', 'admin', 'password', '1234', 'changeme'],
 };
+const ALIGO_PLACEHOLDERS = new Set([
+    '',
+    'your-aligo-api-key',
+    'your-aligo-username',
+    '02-000-0000',
+]);
+
+function extractVarValue(tomlContent, key) {
+    return tomlContent.match(new RegExp(`${key}\\s*=\\s*"([^"]*)"`, 'i'))?.[1]?.trim() || '';
+}
 
 async function deployGuard() {
     console.log("\n🛡️  Clinic-OS Deployment Guardrails v2.0\n");
@@ -100,20 +162,34 @@ async function deployGuard() {
     }
 
     const tomlContent = await fs.readFile(tomlPath, 'utf8');
-    const projectNameMatch = tomlContent.match(/name\s*=\s*"([^"]+)"/);
-    const projectName = projectNameMatch ? projectNameMatch[1] : null;
-
-    const dbIdMatch = tomlContent.match(/database_id\s*=\s*"([^"]+)"/);
-    const dbId = dbIdMatch ? dbIdMatch[1] : null;
-
-    const bucketMatch = tomlContent.match(/bucket_name\s*=\s*"([^"]+)"/);
-    const bucketName = bucketMatch ? bucketMatch[1] : null;
+    const currentTarget = parseWranglerDeploymentTarget(PROJECT_ROOT);
+    const recordedTarget = loadRecordedDeploymentTarget(PROJECT_ROOT);
+    const targetDrift = detectTargetDrift(currentTarget, recordedTarget);
+    const projectName = currentTarget.project_name;
+    const dbId = currentTarget.database_id;
+    const bucketName = currentTarget.bucket_name;
+    const buildOutput = resolvePagesBuildOutputDir(tomlContent);
+    const dbNameMatch = tomlContent.match(/database_name\s*=\s*"([^"]+)"/);
+    const dbName = dbNameMatch ? dbNameMatch[1] : null;
+    const dbIdentifier = dbName || dbId;
 
     if (!projectName) {
         console.error("❌ wrangler.toml에서 Pages 프로젝트 이름을 찾을 수 없습니다.");
         process.exit(1);
     }
     console.log(`   ✅ 프로젝트: ${projectName}`);
+
+    if (targetDrift.risky_fields.length > 0) {
+        console.error(`   ❌ 마지막 배포 기록과 연결 대상이 다릅니다: ${targetDrift.risky_fields.join(', ')}`);
+        if (!ALLOW_TARGET_CHANGE) {
+            console.log('      💡 다른 D1/R2/Pages 프로젝트에 연결될 수 있어 배포를 차단합니다.');
+            console.log('      💡 의도된 변경이면 snapshot 확인 후 --allow-target-change로 재실행하세요.\n');
+            blockers++;
+        } else {
+            console.log('      ⚠️  --allow-target-change 플래그로 차단을 해제했습니다.');
+            warnings++;
+        }
+    }
 
     // DG1: database_id 플레이스홀더 검증
     if (!dbId || PLACEHOLDER_VALUES.some(p => dbId.toLowerCase() === p.toLowerCase())) {
@@ -183,12 +259,19 @@ async function deployGuard() {
     }
 
     // DG9: ALIGO_TESTMODE 프로덕션 경고
-    const testModeMatch = tomlContent.match(/ALIGO_TESTMODE\s*=\s*"([^"]+)"/);
-    const testMode = testModeMatch ? testModeMatch[1] : null;
+    const testMode = extractVarValue(tomlContent, 'ALIGO_TESTMODE');
+    const aligoApiKey = extractVarValue(tomlContent, 'ALIGO_API_KEY');
+    const aligoUserId = extractVarValue(tomlContent, 'ALIGO_USER_ID');
+    const aligoSender = extractVarValue(tomlContent, 'ALIGO_SENDER');
+    const hasRealAligoConfig = [aligoApiKey, aligoUserId, aligoSender].every((value) => !ALIGO_PLACEHOLDERS.has(value));
     if (testMode === 'Y') {
-        console.log('   ⚠️  ALIGO_TESTMODE = "Y" — SMS가 실제 전송되지 않습니다.');
-        console.log('      💡 프로덕션에서는 "N"으로 변경하세요.');
-        warnings++;
+        if (hasRealAligoConfig) {
+            console.log('   ⚠️  ALIGO_TESTMODE = "Y" — SMS가 실제 전송되지 않습니다.');
+            console.log('      💡 프로덕션에서는 "N"으로 변경하세요.');
+            warnings++;
+        } else {
+            console.log('   ℹ️  ALIGO_TESTMODE = "Y" — 현재는 Aligo 실서버 설정이 없어 테스트 모드 유지가 안전합니다.');
+        }
     }
 
     // DG10: compatibility_date 검증
@@ -211,9 +294,9 @@ async function deployGuard() {
     console.log("☁️  Step 3: 리모트 리소스 검증...");
 
     if (dbId && !PLACEHOLDER_VALUES.some(p => dbId.toLowerCase() === p.toLowerCase())) {
-        const dbCheck = await runCommand(`npx wrangler d1 info ${dbId} --remote`, true);
+        const dbCheck = await runCommand(`npx wrangler d1 info ${dbIdentifier} --json`, true);
         if (!dbCheck.success) {
-            console.error(`   ❌ D1 데이터베이스(${dbId})를 찾을 수 없거나 접근할 수 없습니다.`);
+            console.error(`   ❌ D1 데이터베이스(${dbIdentifier})를 찾을 수 없거나 접근할 수 없습니다.`);
             blockers++;
         } else {
             console.log("   ✅ D1 데이터베이스 확인됨.");
@@ -223,7 +306,7 @@ async function deployGuard() {
                 .filter(f => f.endsWith('.sql')).length;
             try {
                 const migCheck = await runCommand(
-                    `npx wrangler d1 execute ${dbId} --remote --command "SELECT COUNT(*) as cnt FROM d1_migrations"`,
+                    `npx wrangler d1 execute ${dbIdentifier} --remote --command "SELECT COUNT(*) as cnt FROM d1_migrations"`,
                     true
                 );
                 if (migCheck.success) {
@@ -269,37 +352,45 @@ async function deployGuard() {
     console.log("   Clinic-OS 기능 작동에 필요한 비밀키들을 확인합니다.\n");
 
     // DG6: Secrets 설정 — echo 파이프로 실제 동작 구현
-    for (const secret of OPTIONAL_SECRETS) {
-        const setNow = await ask(`   ❓ ${secret}를 설정하시겠습니까? (현재 설정값이 있다면 덮어씌워집니다) [y/N]: `);
-        if (setNow.toLowerCase() === 'y') {
-            const val = await ask(`   ${secret} 값을 입력하세요: `);
-            if (val) {
-                try {
-                    // echo로 값을 stdin에 파이프하여 실제 설정
-                    const result = await runCommand(
-                        `echo "${val.replace(/"/g, '\\"')}" | npx wrangler pages secret put ${secret} --project-name ${projectName}`,
-                        true
-                    );
-                    if (result.success) {
-                        console.log(`   ✅ ${secret} 설정 완료`);
-                    } else {
+    if (SKIP_SECRETS) {
+        console.log('   ℹ️  비대화형 모드 또는 --skip-secrets — 선택형 secret 프롬프트를 건너뜁니다.');
+    } else {
+        for (const secret of OPTIONAL_SECRETS) {
+            const setNow = await ask(`   ❓ ${secret}를 설정하시겠습니까? (현재 설정값이 있다면 덮어씌워집니다) [y/N]: `);
+            if (setNow.toLowerCase() === 'y') {
+                const val = await ask(`   ${secret} 값을 입력하세요: `);
+                if (val) {
+                    try {
+                        // echo로 값을 stdin에 파이프하여 실제 설정
+                        const result = await runCommand(
+                            `echo "${val.replace(/"/g, '\\"')}" | npx wrangler pages secret put ${secret} --project-name ${projectName}`,
+                            true
+                        );
+                        if (result.success) {
+                            console.log(`   ✅ ${secret} 설정 완료`);
+                        } else {
+                            console.log(`   ❌ ${secret} 설정 실패 — Cloudflare 대시보드에서 수동 설정하세요.`);
+                        }
+                    } catch {
                         console.log(`   ❌ ${secret} 설정 실패 — Cloudflare 대시보드에서 수동 설정하세요.`);
                     }
-                } catch {
-                    console.log(`   ❌ ${secret} 설정 실패 — Cloudflare 대시보드에서 수동 설정하세요.`);
                 }
             }
         }
     }
     console.log("");
 
-    // 4.5. Auto-backup local DB before deploy
-    console.log("💾 Step 4.5: 로컬 DB 백업...");
+    // 4.5. Auto snapshot before deploy/update
+    console.log("💾 Step 4.5: 보호 스냅샷 생성...");
     try {
-        const { backup: dbBackup } = await import('./db-backup.js');
-        dbBackup({ force: true });
+        const snapshot = await createProtectionSnapshot({
+            projectRoot: PROJECT_ROOT,
+            reason: 'predeploy',
+            includeDbBackup: true
+        });
+        console.log(`   ✅ snapshot: ${snapshot.snapshot_dir}`);
     } catch (e) {
-        console.log(`   ⚠️  백업 실패 (무시됨): ${e.message}`);
+        console.log(`   ⚠️  스냅샷 실패 (무시됨): ${e.message}`);
     }
     console.log("");
 
@@ -325,11 +416,11 @@ async function deployGuard() {
     console.log("   ✅ 빌드 성공.");
 
     // DG2: 빌드 산출물 검증
-    const distDir = path.join(PROJECT_ROOT, 'dist');
+    const distDir = buildOutput.absolute;
     const routesJson = path.join(distDir, '_routes.json');
     const workerJs = path.join(distDir, '_worker.js');
     if (!fs.existsSync(routesJson)) {
-        console.error("   ❌ dist/_routes.json이 존재하지 않습니다 — 모든 동적 경로가 404됩니다.");
+        console.error(`   ❌ ${buildOutput.relative}/_routes.json이 존재하지 않습니다 — 모든 동적 경로가 404됩니다.`);
         console.log("      💡 빌드 설정(astro.config.mjs)을 확인하세요.");
         process.exit(1);
     }
@@ -337,21 +428,56 @@ async function deployGuard() {
         const workerDir = path.join(distDir, '_worker.js');
         // Astro Cloudflare adapter can output _worker.js as a directory
         if (!fs.existsSync(workerDir)) {
-            console.error("   ❌ dist/_worker.js가 존재하지 않습니다 — SSR이 작동하지 않습니다.");
+            console.error(`   ❌ ${buildOutput.relative}/_worker.js가 존재하지 않습니다 — SSR이 작동하지 않습니다.`);
             process.exit(1);
         }
     }
-    console.log("   ✅ 빌드 산출물 검증 완료 (_routes.json, _worker.js)\n");
+    console.log(`   ✅ 빌드 산출물 검증 완료 (${buildOutput.relative}/_routes.json, _worker.js)\n`);
 
     // 7. Deploy
     console.log("🚀 Step 7: 최종 배포...");
-    const confirm = await ask(`   ${projectName}으로 배포를 진행하시겠습니까? (y/n): `);
-    if (confirm.toLowerCase() === 'y') {
-        const deployCmd = `npx wrangler pages deploy dist --project-name ${projectName}`;
+    let shouldDeploy = AUTO_YES;
+    if (!AUTO_YES && !IS_NON_INTERACTIVE) {
+        const confirm = await ask(`   ${projectName}으로 배포를 진행하시겠습니까? (y/n): `);
+        shouldDeploy = confirm.toLowerCase() === 'y';
+    }
+
+    if (!shouldDeploy && IS_NON_INTERACTIVE) {
+        console.log("   ℹ️  비대화형 프리플라이트만 완료했습니다. 실제 배포는 --yes를 추가하세요.");
+        return;
+    }
+
+    if (shouldDeploy) {
+        const deployCmd = `npx wrangler pages deploy "${buildOutput.relative}" --project-name ${projectName}`;
         const deployResult = await runCommand(deployCmd);
         if (deployResult.success) {
+            const gitHead = await getGitHeadShortSha();
+            const latestProduction = await getLatestProductionDeployment(projectName);
+            recordDeploymentTarget(PROJECT_ROOT, currentTarget, {
+                source: 'deploy-guard',
+                non_interactive: IS_NON_INTERACTIVE,
+                allow_target_change: ALLOW_TARGET_CHANGE
+            });
+
+            writeLastDeployReport({
+                version: 1,
+                deployed_at: new Date().toISOString(),
+                project_name: projectName,
+                site_url: cloudflareUrl || defaultPagesUrl,
+                deployment_id: latestProduction?.Id || null,
+                deployment_url: latestProduction?.Deployment || defaultPagesUrl,
+                deployment_source: latestProduction?.Source || gitHead,
+                deployment_status: latestProduction?.Status || null,
+                git_head: gitHead,
+                non_interactive: IS_NON_INTERACTIVE,
+                auto_yes: AUTO_YES
+            });
             console.log("\n✅ 배포가 성공적으로 완료되었습니다!");
             console.log(`   🌍 URL: https://${projectName}.pages.dev\n`);
+            if (latestProduction?.Source && gitHead && latestProduction.Source !== gitHead) {
+                console.log(`   ⚠️  최신 Production 배포 Source(${latestProduction.Source})가 현재 HEAD(${gitHead})와 다릅니다.`);
+                console.log('      💡 release-validate DEPLOYED 단계에서 다시 확인하세요.\n');
+            }
         } else {
             console.error("\n❌ 배포 중 오류가 발생했습니다.");
             console.error(deployResult.error.message);

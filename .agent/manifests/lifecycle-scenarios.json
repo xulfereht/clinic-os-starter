@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "intent": "에이전트가 로컬 설치본의 현재 수명주기 시나리오를 먼저 판별하고, 안전한 설치/업데이트/재설치 마이그레이션 경로를 선택하도록 돕는다.",
+  "scenarios": [
+    {
+      "id": "fresh_install",
+      "when": [
+        "setup-progress.json 없음",
+        "wrangler.toml 없음",
+        "기존 운영 신호 없음"
+      ],
+      "strategy": "new_install",
+      "default_command": "npm run setup:agent"
+    },
+    {
+      "id": "resume_setup",
+      "when": [
+        "setup-progress.json 존재",
+        "pending 단계 존재"
+      ],
+      "strategy": "resume_setup",
+      "default_command": "npm run setup:step -- --next"
+    },
+    {
+      "id": "safe_update_in_place",
+      "when": [
+        "기존 운영 신호 있음",
+        "버전 차이가 작음",
+        "최신 agent manifests 존재"
+      ],
+      "strategy": "update_in_place_with_snapshot",
+      "default_commands": [
+        "npm run agent:snapshot -- --reason=pre-update",
+        "npm run core:pull -- --auto"
+      ]
+    },
+    {
+      "id": "legacy_reinstall_migration",
+      "when": [
+        "starter-version 없음 또는 runtime-context 없음",
+        "최신 agent manifests 부재",
+        "기존 운영 신호 있음"
+      ],
+      "strategy": "fresh_reinstall_migrate",
+      "default_commands": [
+        "npm run agent:snapshot -- --reason=legacy-migration",
+        "npm run agent:restore -- --dry-run --json",
+        "신규 starter-kit 설치 후 자동 백업/형제 폴더/보호 스냅샷 기준으로 local/custom config 이관"
+      ]
+    },
+    {
+      "id": "production_binding_drift",
+      "when": [
+        "기록된 배포 대상과 project/database/bucket이 달라짐"
+      ],
+      "strategy": "block_and_review",
+      "default_commands": [
+        "npm run agent:snapshot -- --reason=target-drift",
+        "wrangler.toml 연결 변경 의도 검토"
+      ]
+    },
+    {
+      "id": "operational_guarded",
+      "when": [
+        "이미 배포 경험 있음",
+        "현재 연결과 버전이 큰 문제 없이 유지됨"
+      ],
+      "strategy": "protect_before_deploy",
+      "default_commands": [
+        "npm run agent:doctor -- --json",
+        "배포 전 보호 스냅샷 생성"
+      ]
+    }
+  ],
+  "guardrails": {
+    "always_snapshot_before_deploy_or_major_update": true,
+    "prefer_reinstall_for_legacy_clients": true,
+    "block_on_target_drift_without_review": true
+  }
+}

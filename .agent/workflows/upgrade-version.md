@@ -22,6 +22,18 @@ Starter Kit 저장소에서 최신 설정을 가져옵니다.
 - 스크립트 업데이트
 - 의존성 변경
 
+## 시작 전 시나리오 판별
+
+먼저 현재 설치본이 안전한 인플레이스 업데이트 대상인지 확인합니다.
+
+```bash
+npm run agent:lifecycle -- --json
+```
+
+- `safe_update_in_place` → snapshot 후 일반 업데이트
+- `legacy_reinstall_migration` → 신규 starter-kit 설치 + snapshot 이관 우선
+- `production_binding_drift` → wrangler 연결 변경 검토 전까지 업데이트/배포 보류
+
 ---
 
 ## Phase 1: 백업 생성
@@ -29,6 +41,7 @@ Starter Kit 저장소에서 최신 설정을 가져옵니다.
 // turbo
 1. Git 상태 확인 및 현재 상태 저장
 ```bash
+npm run agent:snapshot -- --reason=pre-update
 git status
 git add -A && git commit -m "Backup before upgrade"
 git branch backup-$(date +%Y%m%d)
@@ -42,7 +55,7 @@ HQ에서 최신 앱 패키지를 가져옵니다.
 
 // turbo
 ```bash
-npm run core:pull
+npm run core:pull -- --auto
 ```
 
 또는

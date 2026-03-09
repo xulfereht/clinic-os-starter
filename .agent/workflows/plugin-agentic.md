@@ -1,453 +1,191 @@
-# 플러그인 관리 Agent-First 워크플로우
+# 플러그인 Agent-First 워크플로우
 
-> 에이전트가 설치/검증/관리하고, 사용자는 활성화만 결정하는 안전한 플러그인 생태계
+> 목적: 로컬 클리닉 설치본에서 에이전트가 플러그인을 안전하게 만들고, 테스트하고, HQ 스토어 제출/설치까지 주도하도록 돕는 실행 문서
 
----
+## 0. 먼저 분류
 
-## 플러그인 생명주기
+사용자 요청이 들어오면 먼저 아래 중 어디에 해당하는지 판별한다.
 
-```
-[발견/개발] → [설치] → [샌드박스 테스트] → [사용자 승인] → [활성화] → [모니터링]
-     ↑                                                                    ↓
-     └────────────────────────── [업데이트/제거] ←────────────────────────┘
-```
+1. 기존 코어 페이지 수정
+   - `src/pages/_local/...`
+   - 플러그인 불필요
+2. 새 기능, 새 경로, 새 API, 새 관리자 탭 추가
+   - `src/plugins/local/{plugin-id}/`
+   - 플러그인 사용
+3. 코어 버그 수정 또는 스토어/플랫폼 문제
+   - 중앙 패치 대상
+   - 로컬 플러그인으로 우회하지 말고 core/HQ 수정 여부 판단
 
-**에이전트 역할:** 설치부터 모니터링까지 전체 관리
-**사용자 역할:** 검토 후 활성화/비활성화 결정만
+## 1. 읽을 파일
 
----
+플러그인 작업 전 아래 순서로 읽는다.
 
-## 1. 플러그인 발견 (Discovery)
+1. `docs/PLUGIN_DEVELOPMENT_GUIDE.md`
+2. `docs/PLUGIN_API_REFERENCE.md`
+3. `src/lib/plugin-loader.ts`
+4. `src/pages/api/plugins/install.ts`
+5. `src/pages/api/plugins/submit.ts`
+6. `src/pages/api/plugins/migrate.ts`
+7. `src/pages/ext/[...path].astro`
+8. `src/pages/admin/hub/[...path].astro`
 
-### HQ 스토어에서 검색
+HQ 스토어 제출/검수까지 보려면 추가로 읽는다.
 
-```
-[에이전트] "어떤 기능을 찾으시나요?"
+1. `hq/src/index.js`
+2. `hq/migrations/0014_plugin_marketplace.sql`
+3. `hq/schema.sql`
 
-사용자: "예약 알림톡 기능 있어?"
+## 2. 로컬 플러그인 생성 규칙
 
-에이전트: "🔍 HQ 스토어에서 검색 중..."
-         
-┌─────────────────────────────────────────────┐
-│  검색 결과: "알림톡" (3개)                    │
-├─────────────────────────────────────────────┤
-│  1. 📱 예약 알림톡 자동 발송 v2.1            │
-│     ⭐ 4.8 (128 리뷰) | By Clinic-OS        │
-│     ✅ 공식 플러그인 | 🛡️ 검증됨             │
-│                                            │
-│  2. 📲 카카오톡 비즈메시지 v1.5              │
-│     ⭐ 4.5 (64 리뷰) | By thrd-party       │
-│     ⚠️  서드파티 | 1,200원/월               │
-│                                            │
-│  3. 🔔 SMS+알림톡 통합 v3.0                 │
-│     ⭐ 4.9 (256 리뷰) | By Clinic-OS        │
-│     ✅ 공식 플러그인 | 🛡️ 검증됨             │
-├─────────────────────────────────────────────┤
-│  [1번 상세 보기] [2번 상세 보기] [직접 개발] │
-└─────────────────────────────────────────────┘
+플러그인은 반드시 아래에 만든다.
+
+```text
+src/plugins/local/{plugin-id}/
 ```
 
-### 직접 개발
+기본 구조:
 
-```
-사용자: "내가 직접 만들고 싶어"
-
-에이전트: "새 플러그인을 생성하겠습니다."
-         
-┌─────────────────────────────────────────────┐
-│  플러그인 템플릿 선택                        │
-├─────────────────────────────────────────────┤
-│  1. 🚀 빈 플러그인                           │
-│     - 기본 구조만 제공                       │
-│                                            │
-│  2. 📊 대시보드 위젯                         │
-│     - 관리자 대시보드에 위젯 추가            │
-│                                            │
-│  3. 📄 새 페이지                             │
-│     - 프론트엔드/관리자 페이지 추가          │
-│                                            │
-│  4. 🔌 API 확장                              │
-│     - 새로운 API 엔드포인트 추가             │
-│                                            │
-│  5. 🔄 외부 연동                             │
-│     - 서드파티 서비스 연동 템플릿            │
-└─────────────────────────────────────────────┘
-
-→ 선택 후 자동 생성:
-   src/plugins/local/my-plugin/
-   ├── manifest.json
-   ├── pages/
-   └── README.md
+```text
+src/plugins/local/{plugin-id}/
+├── manifest.json
+├── README.md
+├── pages/
+├── api/          # optional
+├── lib/          # optional
+└── migrations/   # optional
 ```
 
----
-
-## 2. 플러그인 설치 (Installation)
-
-### 보안 검증 게이트
-
-**에이전트가 자동 검증:**
-
-```javascript
-const securityCheck = {
-  // 1. 출처 검증
-  source: 'official' | 'verified' | 'community' | 'unverified',
-  
-  // 2. 권한 분석
-  permissions: ['db:read', 'api:write'],
-  riskLevel: 'low',  // low, medium, high
-  
-  // 3. 코드 스캔 (서드파티의 경우)
-  scanResults: {
-    malicious: false,
-    suspiciousPatterns: [],
-    networkCalls: ['https://api.example.com'],
-    fileSystemAccess: ['src/plugins/local/my-plugin']
-  },
-  
-  // 4. 의존성 검사
-  dependencies: {
-    vulnerable: false,
-    outdated: ['lodash@4.17.20']
-  }
-};
-```
-
-**검증 결과 제시:**
-
-```
-[에이전트] "📱 예약 알림톡 자동 발송 플러그인을 설치하겠습니다."
-
-┌─────────────────────────────────────────────┐
-│  🔍 보안 검증 결과                           │
-├─────────────────────────────────────────────┤
-│  출처: ✅ Clinic-OS 공식 플러그인             │
-│  검증: ✅ HQ 보안팀 검증 완료                │
-│  권한: 🟡 제한적 (DB 읽기, 메시지 발송)       │
-├─────────────────────────────────────────────┤
-│  ⚠️  주의사항                               │
-│  - Aligo API 키 필요                        │
-│  - 월 최대 1,000건 발송 제한                 │
-├─────────────────────────────────────────────┤
-│  [🛡️ 샌드박스에서 설치] [❌ 취소]           │
-└─────────────────────────────────────────────┘
-```
-
----
-
-## 3. 샌드박스 테스트 (Sandbox)
-
-**격리된 환경에서 자동 테스트:**
-
-```
-[에이전트] "🧪 샌드박스 환경에서 플러그인을 테스트합니다."
-
-Step 1: 샌드박스 생성
-  ↳ 격리된 DB 인스턴스 생성
-  ↳ 테스트 환경 구성
-  ✅ 완료
-
-Step 2: 설치 테스트
-  ↳ 파일 복사
-  ↳ 의존성 설치
-  ↳ 마이그레이션 실행
-  ✅ 완료
-
-Step 3: 기능 테스트
-  ↳ 기본 기능 동작 확인
-  ↳ API 응답 테스트
-  ↳ UI 렌더링 테스트
-  ✅ 완료
-
-Step 4: 보안 테스트
-  ↳ 권한 초과 시도 차단 확인
-  ↳ SQL 인젝션 방어 확인
-  ↳ XSS 방어 확인
-  ✅ 완료
-
-Step 5: 성능 테스트
-  ↳ 메모리 사용량: 12MB
-  ↳ 로딩 시간: 0.3s
-  ✅ 정상 범위
-
-┌─────────────────────────────────────────────┐
-│  ✅ 샌드박스 테스트 완료                      │
-│  모든 테스트를 통과했습니다.                  │
-├─────────────────────────────────────────────┤
-│  [✅ 프로덕션에 활성화] [🔍 상세 로그 보기]   │
-│  [🗑️  삭제]                                 │
-└─────────────────────────────────────────────┘
-```
-
-**테스트 실패 시:**
-
-```
-[에이전트] "❌ 샌드박스 테스트에서 문제가 발견되었습니다."
-
-실패 항목:
-- DB 권한 초과: plugins 테이블 이외 접근 시도
-- 네트워크: 허용되지 않은 외부 API 호출 (tracking.com)
-
-⚠️  이 플러그인은 보안상 설치하지 않는 것을 권장합니다.
-
-[🗑️ 삭제] [⚠️ 그래도 강제 설치 (위험)]
-```
-
----
-
-## 4. 활성화 게이트 (Activation)
-
-**사용자 최종 승인:**
-
-```
-[에이전트] "📱 예약 알림톡 플러그인이 준비되었습니다."
-
-┌─────────────────────────────────────────────┐
-│  플러그인 활성화                              │
-├─────────────────────────────────────────────┤
-│  이름: 예약 알림톡 자동 발송 v2.1            │
-│  출처: Clinic-OS 공식                        │
-│  상태: 🧪 샌드박스 테스트 완료                │
-├─────────────────────────────────────────────┤
-│  필요 설정:                                  │
-│  1. Aligo API 키: [입력 필요] ⭐필수         │
-│  2. 발신번호: [입력 필요] ⭐필수             │
-│  3. 테스트 모드: [ON/OFF]                    │
-├─────────────────────────────────────────────┤
-│  ⚠️  활성화 후 시스템에 다음이 추가됩니다:    │
-│     - /admin/settings에 "알림톡 설정" 메뉴   │
-│     - 예약 생성 시 자동 메시지 발송          │
-│     - 월 1,000건 발송 한량                   │
-├─────────────────────────────────────────────┤
-│  [✅ 활성화] [⚙️ 설정 먼저] [⏸️ 보류]        │
-└─────────────────────────────────────────────┘
-```
-
-**활성화 후:**
-
-```
-[에이전트] "✅ 플러그인이 활성화되었습니다.
-         
-         바로 설정하시겠습니까, 나중에 하시겠습니까?"
-
-→ 설정 즉시 진행 또는
-→ onboarding-state.json에 "plugin:alimtalk-setup": "pending" 추가
-```
-
----
-
-## 5. 모니터링 및 관리
-
-### 상태 모니터링
+기본 시작은 아래 명령이다.
 
 ```bash
-# 플러그인 상태 확인
-npm run plugin:status
-
-# 출력:
-┌─────────────────────────────────────────────┐
-│  설치된 플러그인 (3개)                       │
-├─────────────────────────────────────────────┤
-│  ✅ 예약 알림톡 v2.1                         │
-│     상태: 활성화 | 사용량: 234/1000 (23%)   │
-│     마지막 동작: 5분 전                      │
-│                                            │
-│  ✅ 환자 후기 관리 v1.3                      │
-│     상태: 활성화 | 사용량: -                │
-│     마지막 동작: 1시간 전                    │
-│                                            │
-│  ⏸️  네이버 예약 연동 v2.0 (비활성화)        │
-│     상태: 일시 중지 | 사유: API 키 만료      │
-└─────────────────────────────────────────────┘
+npm run plugin:create -- --id=my-plugin --type=new-route --with-admin --dry-run --json
 ```
 
-### 자동 문제 감지
+구조가 맞으면 실제 생성한다.
 
-```
-[에이전트] "⚠️  플러그인 문제 감지"
+## 3. manifest 작성 규칙
 
-네이버 예약 연동 플러그인:
-- API 키 만료 (3일 전)
-- 동작 중단 상태
+런타임 SOT는 `src/lib/plugin-loader.ts` 이다.
 
-[🔧 API 키 업데이트] [🔄 재연결 시도] [🗑️ 제거]
-```
+필수에 가까운 필드:
 
----
+- `id`
+- `name`
+- `description`
+- `version`
+- `author`
+- `permissions`
+- `type`
 
-## 플러그인 개발 가드레일
+권장 필드:
 
-### 개발 환경 보호
+- `routes`
+- `pages`
+- `apis`
+- `hooks`
+- `documentation`
 
-```javascript
-// 플러그인 SDK 자동 검증
-const guardrails = {
-  // 코어 파일 접근 차단
-  blockedPaths: [
-    'src/pages/**',
-    'src/components/**',
-    'src/lib/**',
-    '!src/lib/local/**',
-    '!src/plugins/local/my-plugin/**'
-  ],
-  
-  // DB 직접 접근 제한
-  allowedTables: [
-    'plugin_storage',
-    'plugin_migrations',
-    // 명시적 허가된 테이블만
-  ],
-  requireMigration: true,  // DB 변경 시 마이그레이션 필수
-  
-  // API 제한
-  rateLimit: {
-    requests: 100,
-    window: '1m'
-  },
-  
-  // 외부 네트워크
-  allowedHosts: ['api.clinic-os.com'],  // 명시적 허가만
-  blockTracking: true
-};
-```
+주의:
 
-### 개발 시 에이전트 지원
+- `hooks` 는 현재 loader 기준으로 `event` 사용
+- validator 코드에는 `type` 용어가 남아 있어도 runtime 우선
 
-```
-사용자: "플러그인 개발할게"
+## 4. import 규칙
 
-에이전트: "🔧 플러그인 개발 모드로 전환합니다."
+로컬 플러그인은 현재 앱 내부 소스로 실행된다.
 
-┌─────────────────────────────────────────────┐
-│  개발 도구 활성화                            │
-├─────────────────────────────────────────────┤
-│  - 핫 리로드: 활성화                          │
-│  - 타입 체크: 활성화                          │
-│  - 보안 검사: 활성화                          │
-├─────────────────────────────────────────────┤
-│  사용 가능한 도구:                           │
-│  - npm run plugin:dev <name>                 │
-│  - npm run plugin:test <name>                │
-│  - npm run plugin:package <name>             │
-│  - npm run plugin:submit <name> (HQ 제출)    │
-└─────────────────────────────────────────────┘
+따라서:
+
+- `@clinic-os/plugin-sdk` 를 기본 import 경로로 가정하지 말 것
+- 실제 파일 깊이에 맞는 상대 경로를 사용
+
+예:
+
+- `src/plugins/local/my-plugin/api/stats.ts`
+  - `../../../../lib/plugin-sdk`
+- `src/plugins/local/my-plugin/pages/index.astro`
+  - `../../../components/layout/BaseLayout.astro`
+
+## 5. 데이터/스키마 규칙
+
+반드시 지켜야 한다.
+
+1. 코어 테이블 수정 금지
+2. 루트 `migrations/` 수정 금지
+3. 플러그인 쓰기는 `custom_*` 와 `plugin_storage` 범위만 사용
+4. 스키마 변경은 `src/plugins/local/{pluginId}/migrations/` 또는 `sdk.migrations` 만 사용
+
+권장 테이블명:
+
+```text
+custom_{plugin_id}_{entity}
 ```
 
----
+## 6. 로컬 개발 절차
 
-## HQ 제출 및 검증 (개발자용)
+1. 요청을 플러그인으로 분류
+2. `src/plugins/local/{plugin-id}` 생성
+3. `manifest.json` / `README.md` / `pages/` 작성
+4. 필요 시 `api/`, `lib/`, `migrations/` 추가
+5. `npm run plugin:create -- --id={plugin-id} ...` 로 스캐폴드 생성
+6. `npm run build`
+7. `/ext/{pluginId}` 와 `/admin/hub/{pluginId}` 확인
+8. 필요 시 `/api/plugins/migrate` 또는 관리자 UI에서 migration 실행
 
-### 제출 게이트
+## 7. HQ 제출 절차
 
-```
-[에이전트] "HQ 스토어에 플러그인을 제출하겠습니다."
+로컬 제출 전 확인:
 
-제출 전 검증:
-✅ manifest.json 유효성
-✅ README.md 작성
-✅ 보안 스캔 통과
-✅ 성능 테스트 통과
-⚠️  아이콘 누락 (권장)
+- 관리자 세션 존재
+- dev 모드
+- 유효한 라이선스
+- README 와 `documentation.summary`, `documentation.features` 작성
 
-┌─────────────────────────────────────────────┐
-│  제출 정보                                   │
-├─────────────────────────────────────────────┤
-│  이름: 스마트 접수 폼                        │
-│  버전: 1.0.0                                 │
-│  설명: AI가 자동으로 분류하는 접수 폼        │
-│  가격: 무료 / 유료 / 구독                    │
-│  카테고리: 환자 서비스                       │
-├─────────────────────────────────────────────┤
-│  [🚀 HQ에 제출] [⚙️ 수정] [⏸️ 보류]         │
-└─────────────────────────────────────────────┘
-```
+실행 흐름:
 
-### 검증 프로세스
+1. 로컬 validator 통과
+2. zip 패키징
+3. checksum 생성
+4. HQ `/api/plugins/submit` 전송
 
-```
-[에이전트 - HQ 검증 결과]
+현재 구현상 첫 제출 때 developer 레코드가 자동 생성될 수 있다. 다만 HQ 개발자 신청/심사 흐름과 완전히 정렬되어 있지 않을 수 있으므로, 플랫폼 버그와 정책을 구분해서 판단한다.
 
-"HQ 검증팀의 결과가 나왔습니다."
+## 8. HQ 설치 절차
 
-┌─────────────────────────────────────────────┐
-│  검증 결과: ✅ 승인 (2일 소요)               │
-├─────────────────────────────────────────────┤
-│  리뷰 코멘트:                                │
-│  - 좋은 점: 코드 품질 우수                    │
-│  - 개선: 에러 핸들링 강화 권장               │
-│                                            │
-│  조치 필요: 없음                             │
-├─────────────────────────────────────────────┤
-│  다음 단계:                                  │
-│  - 스토어에 자동 게시됩니다                  │
-│  - 버전 관리가 활성화됩니다                  │
-└─────────────────────────────────────────────┘
-```
+현재 코드 기준:
 
----
+1. HQ 메타데이터 조회
+2. 권한 분석
+3. dev 모드면 `src/plugins/local/{pluginId}` 에 추출
+4. DB에 `installed_pending_rebuild` 기록
+5. rebuild 후 활성화
 
-## 명령어 인터페이스
+중요:
 
-```bash
-# 플러그인 검색/발견
-npm run plugin:search "키워드"
-npm run plugin:list --category=marketing
+- 설치 후 바로 보이지 않으면 rebuild 필요 가능성이 큼
+- 사용자에게 `Ctrl+C` 와 같은 수동 지시를 넘기지 말고 가능한 자동 rebuild 경로를 사용
 
-# 설치 (에이전트 모드)
-npm run plugin:install <name>
-npm run plugin:install <name> --source=github:user/repo
+## 9. 에이전트가 먼저 찾아야 할 위험 신호
 
-# 샌드박스 관리
-npm run plugin:sandbox <name>      # 샌드박스 테스트
-npm run plugin:sandbox:logs <name> # 로그 확인
+1. HQ schema/init 과 marketplace 코드가 어긋나 fresh DB 에서 제출/검수 플로우가 깨질 수 있음
+2. plugin_submissions 기록이 누락되면 검수 추적이 불분명해질 수 있음
+3. auth 가 일부 API 에서 `admin_session=` 문자열 검사 수준에 머물러 있음
+4. 플러그인 권한/스토어 정책과 실제 로컬 요청이 일치하는지 끝까지 검증해야 함
 
-# 활성화/비활성화
-npm run plugin:enable <name>
-npm run plugin:disable <name>
-npm run plugin:remove <name>
+## 10. 이 경우는 중앙 패치로 올린다
 
-# 상태/모니터링
-npm run plugin:status
-npm run plugin:logs <name>
-npm run plugin:metrics <name>
+- 스토어 제출/검수 자체가 안 되는 버그
+- HQ schema mismatch
+- 설치된 플러그인 enable/disable 정책 버그
+- manifest contract drift
+- SDK import path 문서 오류
 
-# 개발
-npm run plugin:create <name>
-npm run plugin:dev <name>
-npm run plugin:test <name>
-npm run plugin:submit <name>  # HQ 제출
-```
+## 11. 작업 완료 전 체크
 
----
-
-## 상태 파일
-
-```json
-// .agent/plugin-state.json
-{
-  "installed": [
-    {
-      "id": "alimtalk-reservation",
-      "name": "예약 알림톡 자동 발송",
-      "version": "2.1.0",
-      "source": "hq:official",
-      "status": "active",  // active, inactive, sandbox, error
-      "installedAt": "2026-03-05T10:00:00Z",
-      "lastCheck": "2026-03-05T12:00:00Z",
-      "sandbox": {
-        "tested": true,
-        "passed": true,
-        "report": ".agent/sandbox/alimtalk-reservation-report.json"
-      },
-      "config": {
-        "apiKey": "***",
-        "sender": "02-1234-5678"
-      },
-      "usage": {
-        "monthlyQuota": 1000,
-        "usedThisMonth": 234
-      }
-    }
-  ]
-}
-```
+- [ ] `_local/` 과 플러그인 중 올바른 방식을 골랐는가
+- [ ] `src/plugins/local/` 밖을 건드리지 않았는가
+- [ ] 코어 테이블을 수정하지 않았는가
+- [ ] `custom_` 테이블만 생성했는가
+- [ ] 빌드와 라우트를 검증했는가
+- [ ] 제출 시 README 와 documentation 을 채웠는가
+- [ ] 플랫폼 이슈면 audit 또는 중앙 패치로 분리했는가

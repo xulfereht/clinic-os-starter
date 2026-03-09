@@ -62,6 +62,58 @@
 
 ## 미완료
 
+### 로컬 에이전트 반복 오류 → HQ 이슈 보고 강화 (2026-03-07)
+
+- [x] P0: 로컬 반복 오류 fingerprint/history 기반 `agent:report-issue` CLI 추가
+- [x] P0: support-agent-worker `/support/report-bug` duplicate append / 신규 생성 경로 연결
+- [x] P0: `agent:doctor`에 `issue_reporting` 요약 및 안전 제안 연결
+- [x] P1: 스타터킷 배포물에 issue reporting 스크립트/ignore 파일 포함
+- [x] P2: `.agent/last-error.json` 발생원 스키마를 fetch/migrate/recovery 경로에서 완전 통일
+- [x] P2: HQ `/admin/support/issues`에서 raw bug report 조회/triage/GitHub 생성 가능하게 연결
+- [x] P2: HQ 운영면에서 반복 설치/업데이트 오류 집계 뷰 강화
+
+### Public Skin System 확장 (2026-03-07)
+
+- [x] P0: 관리자 설정 변경 -> 퍼블릭 반영 계약 테스트에 skin 변경 축 추가
+- [x] P0: `/admin/design` 미리보기를 multi-surface preview pack으로 확장
+- [x] P0: skin pack 검증 커맨드 (`skin:check`) 추가
+- [x] P1: 코어 신규 프리셋 2-3종 실제 디자인 제작
+- [x] P1: skin pack 공유/스토어 제출 포맷 정의
+- [x] P1: direct-import 페이지(`programs/[id]` 등)도 skin override helper로 정렬
+- [x] P2: Pencil MCP가 연결된 환경에서 skin preset 디자인 authoring 경로 문서화
+- [x] P2: HQ 공개 페이지에 스킨 라이브러리와 최신 가이드 연결
+- [x] P2: 로컬 관리자 `/admin/skins/store` 와 HQ `/api/skins` 기반 curated skin install 흐름 연결
+- [x] P3: HQ에서 스킨 제출/심사/승인까지 다루는 중앙 마켓플레이스 스키마 설계 및 1차 구현
+- [x] P3: 운영 HQ 기준 테스트 클라이언트/임시 community skin 스모크 검증
+
+### HQ 공개면 최신화 (2026-03-07)
+
+- [x] P0: HQ 홈 랜딩에 agent-driven 설치/복원/스킨 스토어 흐름 반영
+- [x] P0: HQ `Windows/macOS 설치 가이드`를 최신 에이전트 경로 기준으로 정렬
+- [x] P0: HQ `로컬 vs 프로덕션`, `마이그레이션과 재설치 이관` 최신화
+- [x] P1: HQ `/plugins`, `/survey-tools` 소개면의 최신 agent-driven 경로 감사
+- [x] P1: HQ 홈/가이드의 고정 운영 카피 재감사
+
+### Release Pipeline 감사 (2026-03-07)
+
+- [x] P0: HQ 배포 경로에 원격 D1 마이그레이션 자동 적용
+- [x] P0: `starter:push -> create-starter -> publish-release` 사이 starter 중복 생성/검증 제거
+- [x] P1: `publish-release` starter infra R2 업로드 제한 병렬화
+- [x] P1: `total-release`의 `create-starter` / `core-mirror` 안전 병렬화
+- [x] P1: 클라이언트 Phase 2에 `update:starter`를 공식 순서로 반영
+- [x] P1: `release-validate`가 starter manifest drift와 로컬 starter infra 누락을 잡도록 강화
+- [x] P1: master/HQ/client 전체 상태를 한 번에 보는 `release:pipeline:audit` 커맨드 추가
+- [x] P1: `update:starter` manifest를 `.starter-staging` 기준 전체 starter 파일 세트로 확장
+- [x] P1: 구형 클라이언트 bootstrap용 `update-starter-core` 경로 추가 및 package.json 별도 merge-safe 동기화
+- [x] P2: 릴리스 단계별 duration/결과를 남기는 `release-last-run` 요약 파일 추가
+- [x] P2: 릴리스 동시 실행 충돌 방지용 공통 release lock 추가
+- [x] P2: `total-release` / `release-modular` 내부 npm 실행 경로를 Node 번들 npm 우선으로 안정화
+- [x] P2: starter update를 `bundle + hash skip` 구조로 바꿔 이후 릴리스/클라이언트 업데이트 왕복 수를 축소
+- [x] P2: `clinic-release` 단일 운영 진입점과 `.agent/release-ops-report.{json,md}` 요약 리포트 추가
+- [x] P3: `release-conductor.sh`가 공통 lock / last-run / modular state를 함께 보여주고 시작 충돌을 막도록 정리
+- [x] P3: `release-conductor`와 `release-modular` 상태 파일을 `.agent/release-modular-state.json` 하나로 통합하고 legacy `release-state.json` 자동 이관
+- [x] P3: `DEPLOYED` 검증을 실제 Production deployment source + last-deploy metadata 기준으로 강화
+
 ### 운영 커맨드 & 배포 체계 감사 (2026-02-26)
 
 - [x] 2026-02-26 H1: `BRD Clinic` 하드코딩 → 제네릭 이름으로 교체 (8건)

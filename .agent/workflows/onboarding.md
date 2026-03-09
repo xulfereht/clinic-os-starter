@@ -15,6 +15,12 @@ description: npm run setup 이후 병원 개별화 셋업을 에이전트가 안
 - `npm run dev`로 로컬 서버 실행 중
 - `/admin`에 로그인 가능
 
+구형 설치본/재설치 마이그레이션 여부가 의심되면 먼저:
+
+```bash
+npm run agent:lifecycle -- --json
+```
+
 ---
 
 ## 상태 관리
