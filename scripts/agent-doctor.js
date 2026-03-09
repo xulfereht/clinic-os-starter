@@ -546,7 +546,10 @@ function printHuman(status, syncResults = null) {
     }
 
     if (status.issue_reporting?.available) {
-        console.log(`- issue reporting: ${status.issue_reporting.occurrence_count}회 (${status.issue_reporting.severity})`);
+        const endpointBadge = status.issue_reporting.support_url_meta?.official ? ', official endpoint' : '';
+        console.log(`- issue reporting: ${status.issue_reporting.occurrence_count}회 (${status.issue_reporting.severity}${endpointBadge})`);
+    } else if (status.issue_reporting?.support_url_meta?.official) {
+        console.log(`- support endpoint: official (${status.issue_reporting.support_url_meta.host})`);
     }
 
     if (status.install.exists) {
