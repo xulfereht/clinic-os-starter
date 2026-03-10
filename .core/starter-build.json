@@ -1,10 +1,10 @@
 {
-  "version": "1.26.9",
-  "generated_at": "2026-03-09T08:50:47.232Z",
+  "version": "1.27.0",
+  "generated_at": "2026-03-10T06:49:37.252Z",
   "mode": "mirror-push",
-  "source_signature": "893375ca9861c70e5d7bf8e1953a6a7f70ce57c7a334de4b68db40e8ec40bde0",
-  "source_file_count": 196,
-  "git_head": "d982187b360f18a17a495ea6d547dc6ddb6ef754",
+  "source_signature": "ce548074d083dd50fa8f210a9d3c4c2b876a7b9038bc979719a6b05ca2499d9c",
+  "source_file_count": 197,
+  "git_head": "156b7091def9d30867c5f2891647a85ac4e3237f",
   "git_dirty": true,
   "source_files_sample": [
     ".agent/AGENT_INSTALLER.md",
