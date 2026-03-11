@@ -23,6 +23,7 @@ import { exec, execSync, spawn } from 'child_process';
 import { promisify } from 'util';
 import yaml from 'js-yaml';
 import { buildNpmCommand } from './lib/npm-cli.js';
+import { buildLocalDbBootstrapReport } from './lib/setup-db-bootstrap.js';
 
 const execAsync = promisify(exec);
 const __filename = fileURLToPath(import.meta.url);
@@ -115,6 +116,10 @@ function getNextStep(progress) {
 
 async function runCheckSystem(progress) {
   console.log('🔍 시스템 환경을 확인합니다...\n');
+
+  if (process.platform === 'win32') {
+    throw new Error('네이티브 Windows 설치는 지원하지 않습니다. macOS 또는 WSL Ubuntu에서 다시 실행하세요.');
+  }
   
   const checks = [
     { name: 'Node.js', cmd: 'node --version', minVersion: '18.0.0' },
@@ -338,7 +343,7 @@ async function runGitInit(progress) {
     return { success: true };
   }
   
-  await execAsync('git init', { cwd: PROJECT_ROOT });
+  await execAsync('git init -b main', { cwd: PROJECT_ROOT });
   await execAsync('git config user.name "ClinicOS Local"', { cwd: PROJECT_ROOT });
   await execAsync('git config user.email "local@clinic-os.local"', { cwd: PROJECT_ROOT });
   
@@ -434,8 +439,7 @@ async function runDbMigrate(progress) {
   }
   
   if (!fs.existsSync(migrationsDir)) {
-    console.log('   ⏭️  마이그레이션 디렉토리 없음');
-    return { success: true };
+    throw new Error('로컬 DB 마이그레이션 디렉토리가 없습니다.');
   }
   
   // wrangler/workerd 프로세스 정리 (DB 잠금 방지)
@@ -451,14 +455,27 @@ async function runDbMigrate(progress) {
   if (fs.existsSync(migratePath)) {
     const { runMigrations } = await import(migratePath);
     const result = await runMigrations({ local: true, verbose: false, verify: false });
-    
+    let schemaResult = null;
+
     if (result.success) {
-      console.log(`   ✅ ${result.applied}개 마이그레이션 적용`);
-    } else {
-      console.log(`   ⚠️  일부 마이그레이션 실패: ${result.failed}개`);
+      const { runSchemaDoctor } = await import('./doctor.js');
+      schemaResult = await runSchemaDoctor(dbName, { fix: false, verbose: false });
     }
+
+    const report = buildLocalDbBootstrapReport({
+      hasMigrationFiles: true,
+      migrationResult: result,
+      schemaResult,
+      seedResults: [],
+    });
+
+    if (!report.ok) {
+      throw new Error(report.issues.join(' / '));
+    }
+
+    console.log(`   ✅ ${result.applied}개 마이그레이션 적용`);
   } else {
-    console.log('   ⚠️  마이그레이션 엔진 없음, skip');
+    throw new Error('로컬 DB 마이그레이션 엔진을 찾을 수 없습니다.');
   }
   
   return { success: true };
@@ -503,7 +520,7 @@ async function runDbSeed(progress, seedType) {
     });
     console.log(`   ✅ ${config.name} 시드 완료`);
   } catch (e) {
-    console.log(`   ⚠️  ${config.name} 시드 실패 (무시하고 계속): ${e.message}`);
+    throw new Error(`${config.name} 시드 실패: ${e.message}`);
   }
   
   return { success: true };
@@ -559,6 +576,21 @@ async function runOnboardingInit(progress) {
     last_updated: new Date().toISOString(),
     current_tier: 1,
     deployment_count: 0,
+    briefing_completed_at: null,
+    chosen_track: {
+      mode: 'recommended',
+      tier: 1,
+      feature_id: null,
+      updated_at: null,
+      notes: null
+    },
+    current_focus: {
+      feature_id: null,
+      checkpoint: null,
+      updated_at: null
+    },
+    session_notes: [],
+    deferred_items: [],
     clinic_name: progress.context.clinicName,
     features: featureStates
   };
