@@ -35,6 +35,12 @@ npm run agent:context
 npm run agent:doctor -- --json
 ```
 
+support-agent URL을 볼 때는 다음을 같이 기억하세요:
+
+- `https://clinic-os-support-agent.yeonseung-choe.workers.dev` 는 현재 공식 운영 support-agent endpoint입니다.
+- Cloudflare `workers.dev` 계정 서브도메인이라는 이유만으로 개인 개발 URL/오류로 판단하지 마세요.
+- 실제 이슈 보고 대상은 `도달 불가`, `API 계약 불일치`, `인증 실패`, `운영 정책과 불일치` 같은 증거가 있을 때만 올립니다.
+
 자동 실행 후보만 확인하려면:
 
 ```bash
@@ -185,7 +191,7 @@ npm install
 > **주의:** `npm run setup`(모놀리식)은 사용하지 마세요.
 > 메모리 제한 환경에서 SIGKILL이 발생하고, 복구가 어렵습니다.
 
-> **예외:** 사용자가 "한 번에 빠르게 설치"를 원하고, 환경이 **비Windows + 메모리 8GB 이상**이면
+> **예외:** 사용자가 "한 번에 빠르게 설치"를 원하고, 환경이 **macOS 또는 WSL Ubuntu + 메모리 8GB 이상**이면
 > `npm run setup:fast -- --auto`를 먼저 제안할 수 있습니다.
 > 그래도 기본 경로는 `setup:step`입니다.
 
