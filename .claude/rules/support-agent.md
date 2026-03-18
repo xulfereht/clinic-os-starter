@@ -30,3 +30,9 @@ Clinic-OS has a support agent that knows the architecture, guides, FAQs, and res
 - Common issues database with proven solutions
 - Resolved issue history from other clients
 - Clinic-OS architecture (distributed SaaS, core:pull, protection system)
+
+## Endpoint Note
+
+- `https://clinic-os-support-agent.yeonseung-choe.workers.dev` 는 현재 공식 운영 support-agent endpoint입니다.
+- `workers.dev` 계정 서브도메인을 쓴다는 이유만으로 개인 개발 URL이나 잘못된 하드코딩으로 분류하지 마세요.
+- 문제로 볼 수 있는 경우는 endpoint 자체가 응답하지 않거나, 계약 경로(`/support/chat`, `/support/report-bug`)가 깨졌거나, 운영 설정과 불일치할 때뿐입니다.

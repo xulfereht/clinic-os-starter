@@ -434,6 +434,41 @@ async function deployGuard() {
     }
     console.log(`   ✅ 빌드 산출물 검증 완료 (${buildOutput.relative}/_routes.json, _worker.js)\n`);
 
+    // DG14: E2E 테스트 (배포 전 회귀 검증)
+    const SKIP_E2E = CLI_ARGS.has('--skip-e2e');
+    if (!SKIP_E2E) {
+        console.log("🎭 Step 6.5: E2E 테스트 (배포 전 회귀 검증)...");
+        const playwrightConfig = path.join(PROJECT_ROOT, 'playwright.config.ts');
+        if (fs.existsSync(playwrightConfig)) {
+            try {
+                // DB 시드 (E2E용)
+                await runCommand('npm run db:init && npm run db:seed', true);
+                const e2eSeedScript = path.join(PROJECT_ROOT, 'scripts', 'e2e-admin-seed.js');
+                if (fs.existsSync(e2eSeedScript)) {
+                    await runCommand('node scripts/e2e-admin-seed.js', true);
+                }
+
+                // Playwright 실행
+                const e2eResult = await runCommand('npx playwright test --project=public');
+                if (!e2eResult.success) {
+                    console.error('   ❌ E2E 테스트 실패 — 배포를 중단합니다.');
+                    console.log('   💡 npx playwright test --project=public --headed 로 디버깅하세요.\n');
+                    blockers++;
+                } else {
+                    console.log('   ✅ E2E 테스트 통과\n');
+                }
+            } catch (e) {
+                console.warn(`   ⚠️  E2E 테스트 실행 중 오류: ${e.message}`);
+                console.log('   💡 npx playwright install chromium 으로 브라우저를 설치하세요.\n');
+                warnings++;
+            }
+        } else {
+            console.log('   ℹ️  playwright.config.ts 없음 — E2E 테스트 건너뜀\n');
+        }
+    } else {
+        console.log("⏭️  E2E 테스트 건너뜀 (--skip-e2e)\n");
+    }
+
     // 7. Deploy
     console.log("🚀 Step 7: 최종 배포...");
     let shouldDeploy = AUTO_YES;
