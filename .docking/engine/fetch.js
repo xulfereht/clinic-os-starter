@@ -288,7 +288,7 @@ try {
     // Fallback: bootstrap 또는 manifest 미존재 시 (하드코딩 값 유지)
     CORE_PATHS = [
         'src/pages/', 'src/components/', 'src/layouts/', 'src/styles/',
-        'src/lib/', 'src/plugins/custom-homepage/', 'src/plugins/survey-tools/',
+        'src/lib/', 'src/skins/', 'src/plugins/survey-tools/',
         'src/survey-tools/stress-check/', 'src/content/aeo/',
         'migrations/', 'seeds/', 'docs/',
         '.agent/README.md', '.agent/manifests/',
@@ -298,7 +298,7 @@ try {
         'tsconfig.json', '.cursorrules', '.windsurfrules', '.clinerules',
     ];
     LOCAL_PREFIXES = [
-        'src/lib/local/', 'src/plugins/local/', 'src/pages/_local/',
+        'src/lib/local/', 'src/skins/local/', 'src/plugins/local/', 'src/pages/_local/',
         'src/survey-tools/local/', 'public/local/', 'docs/internal/',
     ];
     PROTECTED_EXACT = new Set([
@@ -306,7 +306,7 @@ try {
         'src/config.ts', 'src/styles/global.css',
         '.agent/onboarding-state.json',
     ]);
-    PROTECTED_PREFIXES = ['.env', '.core/', 'src/plugins/local/'];
+    PROTECTED_PREFIXES = ['.env', '.core/', 'src/plugins/local/', 'src/plugins/custom-homepage/'];
     SPECIAL_MERGE_FILES = new Set(['package.json']);
 }
 
