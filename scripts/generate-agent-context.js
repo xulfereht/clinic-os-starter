@@ -99,7 +99,9 @@ function summarizeOnboarding(state) {
             exists: false,
             current_tier: null,
             pending: 0,
-            completed: 0
+            completed: 0,
+            chosen_track: null,
+            current_focus: null
         };
     }
 
@@ -108,7 +110,9 @@ function summarizeOnboarding(state) {
         exists: true,
         current_tier: state.current_tier || null,
         pending: values.filter((item) => item?.status === 'pending').length,
-        completed: values.filter((item) => item?.status === 'done').length
+        completed: values.filter((item) => item?.status === 'done').length,
+        chosen_track: state.chosen_track || null,
+        current_focus: state.current_focus || null
     };
 }
 

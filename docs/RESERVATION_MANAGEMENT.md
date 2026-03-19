@@ -1,7 +1,7 @@
 ---
 hq_slug: reservation-management
 hq_title: "예약 관리 가이드"
-hq_category: "05. 환자 & 예약 관리"
+hq_category: "07. 환자 & 예약 관리"
 hq_sort: 3
 hq_active: true
 ---
