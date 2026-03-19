@@ -1,10 +1,10 @@
 {
-  "version": "1.26.3",
-  "generated_at": "2026-03-09T03:09:37.421Z",
+  "version": "1.28.8",
+  "generated_at": "2026-03-19T06:00:55.755Z",
   "mode": "mirror-push",
-  "source_signature": "23cf9e07c4a00adba061fe02ca06124d8332eefecc35a69fe5bc2f8d76feac5e",
-  "source_file_count": 192,
-  "git_head": "867548dd6118efad6e777052e0ea6fe1b7563bda",
+  "source_signature": "eb6c3214022dcbc43442bbae45e5f19b1d274a8d00782a97ead26a5ed10b5ed1",
+  "source_file_count": 208,
+  "git_head": "8ab9c6382691c4897d72fc0cba3e35b44f1a0977",
   "git_dirty": true,
   "source_files_sample": [
     ".agent/AGENT_INSTALLER.md",
@@ -17,6 +17,8 @@
     ".agent/onboarding-registry.json",
     ".agent/onboarding-state.template.json",
     ".agent/workflows/core-update-agentic.md",
+    ".agent/workflows/delegated-handoff.md",
+    ".agent/workflows/delegated-setup.md",
     ".agent/workflows/first-contact-v2.md",
     ".agent/workflows/first-contact.md",
     ".agent/workflows/help.md",
@@ -29,8 +31,6 @@
     ".agent/workflows/setup-clinic.md",
     ".agent/workflows/skins-agentic.md",
     ".agent/workflows/smart-migration.md",
-    ".agent/workflows/softgate.md",
-    ".agent/workflows/survey-tools-agentic.md",
-    ".agent/workflows/transaction-checkpoint.md"
+    ".agent/workflows/softgate.md"
   ]
 }
