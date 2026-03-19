@@ -1,7 +1,7 @@
 ---
 hq_slug: staff-management
 hq_title: "직원 및 권한 관리 가이드"
-hq_category: "09. 시스템 설정"
+hq_category: "10. 시스템 설정"
 hq_sort: 2
 hq_active: true
 ---
