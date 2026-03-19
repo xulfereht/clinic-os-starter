@@ -90,6 +90,12 @@ function printResult(result, options) {
 
   if (result.mode === 'preview') {
     console.log(`support_url: ${result.support_url}`);
+    if (result.support_url_meta?.status) {
+      console.log(`support_url_status: ${result.support_url_meta.status}`);
+    }
+    if (result.support_url_meta?.note) {
+      console.log(`support_url_note: ${result.support_url_meta.note}`);
+    }
     console.log(`has_license_key: ${result.has_license_key ? 'yes' : 'no'}`);
   }
 }

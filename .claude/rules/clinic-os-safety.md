@@ -13,7 +13,6 @@
   - `src/styles/` (except `src/styles/global.css — PROTECTED_EXACT`)
   - `src/lib/` (except `src/lib/local/`)
   - `src/skins/` (except `src/skins/local/`)
-  - `src/plugins/custom-homepage/`
   - `src/plugins/survey-tools/`
   - `src/survey-tools/stress-check/`
   - `src/content/aeo/`
@@ -70,7 +69,6 @@
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/styles/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/lib/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/skins/ |
-| `CORE_PATHS` | 코어 → 덮어쓰기 | src/plugins/custom-homepage/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/plugins/survey-tools/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/survey-tools/stress-check/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/content/aeo/ |
@@ -107,6 +105,7 @@
 | `PROTECTED_PREFIXES` | 접두사 매칭 보호 | .env |
 | `PROTECTED_PREFIXES` | 접두사 매칭 보호 | .core/ |
 | `PROTECTED_PREFIXES` | 접두사 매칭 보호 | src/plugins/local/ |
+| `PROTECTED_PREFIXES` | 접두사 매칭 보호 | src/plugins/custom-homepage/ |
 | `SPECIAL_MERGE_FILES` | 스마트 병합 | package.json |
 
 ## Why These Rules Exist
