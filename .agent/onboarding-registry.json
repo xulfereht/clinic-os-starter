@@ -992,6 +992,64 @@
       "depends_on": [],
       "db_tables": ["plugin_status", "plugin_storage"],
       "source_paths": ["src/pages/admin/plugins/index.astro", "src/pages/admin/plugins/installed.astro", "src/lib/plugin-loader.ts", "src/lib/plugin-sdk.ts"]
+    },
+
+    {
+      "id": "skin-customization",
+      "name": "스킨 커스터마이징",
+      "description": "병원 톤앤매너에 맞게 디자인 스킨을 선택하거나 로컬 스킨 팩을 생성/조정합니다.",
+      "tier": 5,
+      "category": "advanced",
+      "requires_human": true,
+      "human_inputs": [
+        { "key": "design_goal", "label": "원하는 분위기", "type": "text", "required": false, "example": "차분하고 신뢰감 있는 한방 클리닉" },
+        { "key": "use_existing_skin", "label": "기존 스킨 활용 여부", "type": "boolean", "required": false },
+        { "key": "custom_skin_needed", "label": "로컬 스킨 생성 여부", "type": "boolean", "required": false }
+      ],
+      "admin_path": "/admin/design",
+      "doc_ref": "SKIN_SYSTEM_GUIDE.md",
+      "depends_on": ["branding-minimal"],
+      "db_tables": ["site_settings", "clinics"],
+      "source_paths": ["src/pages/admin/design.astro", "src/lib/design-system/themes.ts", "src/skins/local"],
+      "setup_notes": "기본 테마 선택만으로 끝낼지, src/skins/local 기반의 병원 전용 스킨 팩까지 만들지 먼저 결정한다."
+    },
+
+    {
+      "id": "style-override-planning",
+      "name": "스타일 오버라이드 계획",
+      "description": "공용 코어를 직접 수정하지 않고, 병원별 스타일 오버라이드가 필요한 영역을 _local/skin/plugin 경로로 설계합니다.",
+      "tier": 5,
+      "category": "advanced",
+      "requires_human": true,
+      "human_inputs": [
+        { "key": "target_pages", "label": "우선 수정할 페이지/섹션", "type": "text", "required": false, "example": "홈페이지 히어로, 프로그램 상세, 푸터" },
+        { "key": "override_scope", "label": "오버라이드 범위", "type": "text", "required": false, "example": "색상만, 레이아웃 포함, 전체 섹션 교체" }
+      ],
+      "admin_path": null,
+      "doc_ref": "CUSTOMIZATION_GUIDE.md",
+      "depends_on": ["skin-customization"],
+      "db_tables": [],
+      "source_paths": ["src/pages/_local", "src/lib/local", "src/skins/local", "src/plugins/local", "public/local"],
+      "setup_notes": "global.css나 core 경로 직접 수정이 아니라 _local/local 기반 우회 경로를 먼저 설계한다."
+    },
+
+    {
+      "id": "local-plugin-extension",
+      "name": "로컬 플러그인 확장",
+      "description": "병원 전용 기능, 관리자 탭, 새 라우트를 코어 수정 없이 src/plugins/local 기반 플러그인으로 설계/생성합니다.",
+      "tier": 5,
+      "category": "system",
+      "requires_human": true,
+      "human_inputs": [
+        { "key": "plugin_goal", "label": "플러그인 목적", "type": "text", "required": false, "example": "VIP 고객 관리, 상담 전용 입력 폼, 예약 후속 안내" },
+        { "key": "plugin_surface", "label": "필요한 화면", "type": "text", "required": false, "example": "관리자 페이지, 새 퍼블릭 라우트, API" }
+      ],
+      "admin_path": null,
+      "doc_ref": "PLUGIN_DEVELOPMENT_GUIDE.md",
+      "depends_on": [],
+      "db_tables": [],
+      "source_paths": ["scripts/plugin-create.js", "src/plugins/local"],
+      "setup_notes": "기능이 공유 코어 패치가 아니라 병원 전용 확장이라면 local plugin으로 우선 분류한다."
     }
   ],
 

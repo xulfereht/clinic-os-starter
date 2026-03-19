@@ -73,3 +73,5 @@ CREATE TABLE custom_my_data (...);
 - `docs/CUSTOMIZATION_GUIDE.md` — full guide with examples
 - `docs/LOCAL_GIT_ARCHITECTURE.md` — technical spec
 - `docs/PLUGIN_DEVELOPMENT_GUIDE.md` — plugin creation guide
+- `docs/internal/ADMIN_PAGE_LAYOUT_PATTERNS.md` — 관리자/플러그인 페이지 레이아웃 기준
+- `docs/internal/PLUGIN_ADMIN_PAGE_STARTERS.md` — 플러그인 관리자 페이지 스타터 템플릿

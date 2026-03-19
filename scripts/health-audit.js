@@ -238,6 +238,7 @@ async function checkMigrationState() {
             result.ok = false;
             result.score = -10;
             result.issues.push(`마이그레이션 불일치: 적용 ${appliedCount}개 / 파일 ${sqlFiles.length}개`);
+            result.fixable = 'db_migrate';
         }
     } catch {
         // d1_migrations 테이블이 없거나 DB 접근 불가 → 경고만
@@ -358,6 +359,17 @@ async function applyFixes(checks, verbose) {
                     }
                 } catch (e) {
                     if (verbose) console.log(`   ⚠️  스키마 복구 실패: ${e.message}`);
+                }
+                break;
+            }
+
+            case 'db_migrate': {
+                if (verbose) console.log('   🔧 로컬 마이그레이션 재실행 중...');
+                try {
+                    execSync(buildNpmCommand('run db:migrate'), { cwd: PROJECT_ROOT, stdio: verbose ? 'inherit' : 'pipe', timeout: 120000 });
+                    fixes.push('db:migrate 완료');
+                } catch (e) {
+                    if (verbose) console.log(`   ⚠️  db:migrate 실패: ${e.message}`);
                 }
                 break;
             }

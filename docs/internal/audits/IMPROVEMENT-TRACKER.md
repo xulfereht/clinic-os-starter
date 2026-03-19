@@ -141,3 +141,8 @@
 
 - [x] 2026-02-27 H1: fetch.js 하드코딩 폴백에 `.cursorrules`/`.windsurfrules`/`.clinerules` 추가
 - [x] 2026-02-27 M1: GEMINI.md (마스터) 코어 단일 파일 목록에 에이전트 파일 3종 추가
+
+### 설치 진단 후속 정리 (2026-03-09)
+
+- [x] 2026-03-09 H1: fetch.js 폴백 보호 경로에 `src/skins/` + `src/skins/local/` 추가
+- [x] 2026-03-09 H2: support-agent `yeonseung-choe.workers.dev` hostname 오탐 방지 규칙을 first-contact / support-agent / issue-reporting 진단 경로에 명시

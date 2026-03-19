@@ -2,16 +2,97 @@ import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
+import { createHash } from 'crypto';
 import { buildNpmCommand } from './lib/npm-cli.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.join(__dirname, '..');
 
-async function preflight() {
-    const corePath = path.join(PROJECT_ROOT, 'core');
+function buildDependencyHash(packageJsonPath) {
+    if (!fs.existsSync(packageJsonPath)) return null;
+
+    const pkg = fs.readJsonSync(packageJsonPath);
+    const depsStr = JSON.stringify({
+        dependencies: pkg.dependencies || {},
+        devDependencies: pkg.devDependencies || {}
+    });
+
+    return createHash('md5').update(depsStr).digest('hex');
+}
+
+export function resolveCoreDependencyState(projectRoot = PROJECT_ROOT) {
+    const corePath = path.join(projectRoot, 'core');
     const corePkg = path.join(corePath, 'package.json');
     const coreModules = path.join(corePath, 'node_modules');
+    const hashFile = path.join(coreModules, '.deps-hash');
+
+    if (!fs.existsSync(corePkg)) {
+        return {
+            corePath,
+            corePkg,
+            coreModules,
+            hashFile,
+            needsInstall: false,
+            reason: 'missing-core-package'
+        };
+    }
+
+    if (!fs.existsSync(coreModules)) {
+        return {
+            corePath,
+            corePkg,
+            coreModules,
+            hashFile,
+            needsInstall: true,
+            reason: 'missing-node_modules',
+            dependencyHash: buildDependencyHash(corePkg)
+        };
+    }
+
+    try {
+        const dependencyHash = buildDependencyHash(corePkg);
+        const savedHash = fs.existsSync(hashFile) ? fs.readFileSync(hashFile, 'utf8').trim() : '';
+
+        if (dependencyHash && dependencyHash !== savedHash) {
+            return {
+                corePath,
+                corePkg,
+                coreModules,
+                hashFile,
+                needsInstall: true,
+                reason: 'dependency-hash-changed',
+                dependencyHash
+            };
+        }
+    } catch {
+        const pkgMtime = fs.statSync(corePkg).mtimeMs;
+        const nmMtime = fs.statSync(coreModules).mtimeMs;
+        if (pkgMtime > nmMtime) {
+            return {
+                corePath,
+                corePkg,
+                coreModules,
+                hashFile,
+                needsInstall: true,
+                reason: 'package-newer-than-node_modules'
+            };
+        }
+    }
+
+    return {
+        corePath,
+        corePkg,
+        coreModules,
+        hashFile,
+        needsInstall: false,
+        reason: 'up-to-date'
+    };
+}
+
+async function preflight() {
+    const dependencyState = resolveCoreDependencyState(PROJECT_ROOT);
+    const { corePath, corePkg, hashFile, dependencyHash, needsInstall } = dependencyState;
     const wranglerState = path.join(PROJECT_ROOT, '.wrangler/state/v3/d1');
 
     // 1. Core 코드 존재 확인 — 없으면 안내 후 중단
@@ -23,10 +104,14 @@ async function preflight() {
     }
 
     // 2. 의존성 확인 — 없으면 자동 설치
-    if (!fs.existsSync(coreModules)) {
+    if (needsInstall) {
         console.log("📦 의존성 설치 중...");
         try {
             execSync(buildNpmCommand('install'), { stdio: 'inherit', cwd: corePath });
+            if (dependencyHash) {
+                fs.ensureDirSync(path.dirname(hashFile));
+                fs.writeFileSync(hashFile, dependencyHash);
+            }
         } catch (e) {
             console.error("❌ npm install 실패:", e.message);
             process.exit(1);
@@ -50,7 +135,9 @@ async function preflight() {
     }
 }
 
-preflight().catch(err => {
-    console.error("❌ Preflight error:", err.message);
-    process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+    preflight().catch(err => {
+        console.error("❌ Preflight error:", err.message);
+        process.exit(1);
+    });
+}
