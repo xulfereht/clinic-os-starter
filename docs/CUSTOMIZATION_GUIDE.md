@@ -1117,6 +1117,20 @@ rm -rf node_modules
 npm install
 ```
 
+### 5.9 _local/ 오버라이드 제한사항 (Override Limitations)
+
+#### `_local/`에서 prerender 설정 변경 불가
+
+`clinicLocalOverrides` Vite 플러그인은 파일 콘텐츠만 교체합니다. Astro의 `prerender` 감지는 원본 파일 경로 기준으로 별도 실행되므로, `_local/` 오버라이드 파일에서 `export const prerender = false`를 설정해도 적용되지 않습니다.
+
+**영향 받는 시나리오:**
+- 원본이 `prerender = true`인 페이지를 `_local/`에서 SSR로 전환하려는 경우
+- DB 데이터를 사용하는 오버라이드 페이지가 빌드 시점 데이터로 고정되는 경우
+
+**대안:**
+1. prerender 변경이 필요한 경우 코어 릴리즈를 통해 원본 파일을 수정
+2. 새 경로가 필요한 경우 `src/plugins/local/`에 플러그인으로 생성 (prerender 자유롭게 설정 가능)
+
 ---
 
 ## 6. 커스텀 페이지 추가 (Adding Custom Pages)
