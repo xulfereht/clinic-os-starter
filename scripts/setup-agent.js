@@ -114,6 +114,13 @@ function getSystemProfile() {
   };
 }
 
+function assertSupportedInstallPlatform() {
+  const profile = getSystemProfile();
+  if (!profile.isWindows) return;
+
+  throw new Error('네이티브 Windows 설치는 지원하지 않습니다. macOS 또는 WSL Ubuntu에서 setup:agent를 실행하세요.');
+}
+
 function readSignedClinicConfig() {
   const clinicPath = path.join(PROJECT_ROOT, 'clinic.json');
   if (!fs.existsSync(clinicPath)) return null;
@@ -176,7 +183,7 @@ async function refreshRuntimeContext() {
 
 async function runFastSetup() {
   log.step('고성능 빠른 설치 실행');
-  log.info('setup:agent가 현재 환경을 고성능 fresh install로 판별했습니다.');
+  log.info('setup:agent가 현재 환경을 고성능 fresh install로 판별했습니다. (macOS / WSL Ubuntu 기준)');
   log.info('setup:fast 실패 시 자동으로 단계별 설치로 폴백합니다.\n');
 
   const result = await new Promise((resolve) => {
@@ -310,6 +317,8 @@ async function main() {
   console.log(`${C.cyan}${C.bold}║${C.reset}     자동화 설치를 시작합니다...              ${C.cyan}${C.bold}║${C.reset}`);
   console.log(`${C.cyan}${C.bold}╚════════════════════════════════════════════════╝${C.reset}\n`);
 
+  assertSupportedInstallPlatform();
+
   // 🔍 스타터킷 초기 상태 감지
   const isStarterKitFresh = fs.existsSync(path.join(PROJECT_ROOT, '.agent', 'AGENT_INSTALLER.md'));
   const hasNodeModules = fs.existsSync(path.join(PROJECT_ROOT, 'node_modules'));
@@ -425,7 +434,7 @@ async function main() {
     
     if (skipAuth) {
       log.info('또는 로컬 모드로 설치:');
-      console.log(`  ${C.cyan}npm run setup:fast${C.reset} (고성능 환경용 빠른 일괄 설치)`);
+      console.log(`  ${C.cyan}npm run setup:fast${C.reset} (고성능 macOS/WSL Ubuntu 환경용 빠른 일괄 설치)`);
       console.log(`  ${C.cyan}npm run setup:step -- --reset && npm run setup:step -- --next${C.reset} (권장, 단계별)`);
       console.log(`  ${C.cyan}npm run setup${C.reset} (레거시 대화형)\n`);
     }

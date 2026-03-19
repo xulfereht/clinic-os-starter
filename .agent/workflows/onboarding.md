@@ -11,15 +11,32 @@ description: npm run setup 이후 병원 개별화 셋업을 에이전트가 안
 
 ## 사전 조건
 
-- `npm run setup` 완료
+- `npm run setup` 완료 (cf-login 단계 포함)
 - `npm run dev`로 로컬 서버 실행 중
 - `/admin`에 로그인 가능
+
+> Cloudflare 관련 문제 발생 시 [Cloudflare 셋업 가이드](https://clinic-os-hq.pages.dev/guide/cloudflare-setup) 참조
 
 구형 설치본/재설치 마이그레이션 여부가 의심되면 먼저:
 
 ```bash
 npm run agent:lifecycle -- --json
 ```
+
+설치가 완료된 것으로 보여도 실제 로컬 DB bootstrap이 덜 끝났을 수 있으므로, 온보딩 시작 전 아래도 함께 확인합니다.
+
+```bash
+npm run agent:doctor -- --json
+```
+
+판단 기준:
+
+- `/admin` 로그인 가능 + 로컬 DB 스키마/기본 데이터 정상
+  - 온보딩 진행
+- setup은 끝났지만 DB 연결/마이그레이션/필수 시드가 비정상
+  - 온보딩으로 바로 넘기지 말고 `npm run db:migrate`, `npm run db:seed`, `npm run setup:step -- --next` 중 맞는 복구 경로를 먼저 제안
+- setup 자체가 미완료
+  - 설치 재개를 우선 제안
 
 ---
 
@@ -63,6 +80,39 @@ pending → in_progress → done
 
 ## 진행 흐름
 
+### 0. 시작 브리핑
+
+에이전트는 첫 feature 질문 전, 전체 셋업 범위를 먼저 짧게 브리핑합니다.
+
+```
+"지금부터 병원 셋업 전체를 빠르게 브리핑하겠습니다.
+
+1. Tier 1: 배포 필수
+   - 관리자 보안, 병원 정보, 연락처, 진료시간, 최소 브랜딩, 약관
+
+2. Tier 2: 핵심 콘텐츠
+   - 의료진, 진료 프로그램, 홈페이지, 메뉴, 위치/OG
+
+3. Tier 3: 환자 서비스
+   - 접수, 예약, 블로그, 공지, 샘플 데이터 정리
+
+4. Tier 4: 마케팅/확장
+   - SEO, SMS, 다국어, 이벤트 폼, 설문도구
+
+5. Tier 5: 운영 고도화/커스터마이징
+   - 커스텀 페이지, 플러그인, 스킨, 스타일 오버라이드
+
+추천 순서는 Tier 1 → Tier 2입니다.
+원하시면 추천 순서대로 진행하거나, 원하는 항목부터 바로 시작할 수 있습니다."
+```
+
+브리핑 후에는 아래 중 하나를 제안합니다.
+
+- 추천 순서대로 진행
+- 특정 Tier부터 진행
+- 특정 기능만 먼저 진행
+- 커스터마이징 항목(플러그인/스킨/스타일)부터 검토
+
 ### 1. 현황 파악
 
 에이전트가 먼저 상태를 읽고 요약합니다:
@@ -83,6 +133,8 @@ pending → in_progress → done
 계속 진행할까요?"
 ```
 
+아직 시작 브리핑을 하지 않았다면, 현황 요약 전에 브리핑부터 먼저 수행합니다.
+
 ### 2. 티어별 안내
 
 ```
@@ -91,6 +143,15 @@ Tier 2 완료 → "환자가 봤을 때 운영 중인 병원으로 보입니다.
 Tier 3 완료 → "환자 접수가 가능합니다. Tier 4는 운영이 안정된 후 하나씩 해도 됩니다."
 Tier 4~5    → "필요한 기능만 선택적으로 세팅하면 됩니다. 뭐부터 할까요?"
 ```
+
+사용자가 처음부터 특정 항목을 지정하면 추천 순서를 강제하지 않습니다.
+
+예:
+
+- "병원 정보만 먼저"
+- "홈페이지부터"
+- "스킨 먼저 보고 싶어요"
+- "플러그인 계획도 같이 잡아줘"
 
 ### 3. 기능 실행 패턴
 
@@ -387,10 +448,83 @@ Tier 4~5    → "필요한 기능만 선택적으로 세팅하면 됩니다. 뭐
 1. **intake-setup** — 접수 폼 활성화 + 필드 구성
 2. **reservation-setup** — 예약 시스템 (의료진+프로그램 기반 자동 활성화)
 3. **clinic-schedule** — 요일별 상세 운영시간 + 휴무일
-4. **blog-management** — 샘플 삭제 + 최소 2~3개 실제 글 작성
+4. **blog-management** — 샘플 삭제 + 최소 2~3개 실제 글 작성 (AEO는 권장사항, 없어도 발행 가능)
 5. **notice-management** — 개원 안내 등 초기 공지
 6. **tag-management** — 환자 분류 태그 커스터마이징
 7. **sample-data-cleanup** — 남은 시드 데이터 최종 정리
+
+### blog-management — 블로그 글 작성
+
+에이전트가 블로그 글 작성을 안내합니다. AEO(Article Enhancement Optimization) 메타데이터는 **권장사항**이며, 없어도 발행은 가능합니다.
+
+```
+에이전트: "블로그에 실제 글을 작성합니다.
+          샘플 글을 삭제하고, 2~3개의 실제 글을 작성해주세요.
+          
+          글 작성 시 참고사항:
+          - 제목과 내용만으로도 발행 가능합니다.
+          - AEO 메타데이터(요약, 인용, 감수자 등)는 나중에 보완할 수 있습니다.
+          - AEO를 완성하면 검색엔진 최적화에 도움이 됩니다."
+
+사람:     [글 작성]
+
+에이전트: → /admin/posts에서 직접 작성하거나 API로 생성
+        → state 업데이트: blog-management = done (2개 이상 작성 시)
+```
+
+**API로 블로그 글 생성 (AEO 없이 빠른 발행):**
+
+```bash
+curl -X POST /api/admin/posts \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "blog",
+    "title": "한방 다이어트의 효과",
+    "content": "<p>본문 내용...</p>",
+    "status": "published"
+  }'
+```
+
+**응답:**
+
+```json
+{
+  "success": true,
+  "id": 123,
+  "aeo": {
+    "publish_ready": true,
+    "normalized_status": "published",
+    "errors": ["summary_min_40", "citations_required"],
+    "strict": false
+  }
+}
+```
+
+> `errors` 배열에 AEO 권장사항이 표시되지만, 발행은 정상 완료됩니다.
+
+**AEO 완성 후 발행하려면:**
+
+```bash
+curl -X POST /api/admin/posts \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "blog",
+    "title": "한방 다이어트의 효과",
+    "content": "<p>본문 내용...</p>",
+    "status": "published",
+    "strict": true,
+    "aeo": {
+      "summary": "40자 이상의 요약문...",
+      "answer_short": "40자 이상의 답변...",
+      "supervisor_id": "doctor-uuid",
+      "last_reviewed_at": 1710000000,
+      "key_claims": ["핵심 주장 1"],
+      "citations": [{"label": "출처", "url": "https://..."}]
+    }
+  }'
+```
+
+자세한 내용은 `docs/internal/AEO_VALIDATION_GUIDE.md`를 참조하세요.
 
 ### Tier 3 완료 시점
 
@@ -420,6 +554,13 @@ Tier 4~5    → "필요한 기능만 선택적으로 세팅하면 됩니다. 뭐
 
 Tier 4 이상은 사용자가 선택한 순서대로 진행합니다.
 
+여기에는 운영 기능뿐 아니라 커스터마이징 트랙도 포함됩니다.
+
+- 커스텀 페이지 제작
+- 플러그인 확장 계획
+- 스킨 커스터마이징
+- 스타일 오버라이드 계획
+
 ### 선택 안내 패턴
 
 ```
@@ -446,6 +587,10 @@ Tier 4 이상은 사용자가 선택한 순서대로 진행합니다.
           ○ 외부 연동 (Slack 등)
           ○ EMR 데이터 이관
           ○ 채팅 위젯
+          ○ 커스텀 페이지 제작
+          ○ 플러그인 확장
+          ○ 스킨 커스터마이징
+          ○ 스타일 오버라이드 계획
           ... (외 10개)
 
           어떤 것을 설정할까요?"
@@ -543,6 +688,97 @@ npm run deploy
           - 샘플 데이터 정리
 
           블로그부터 이어서 할까요?"
+```
+
+---
+
+## 이미지 생성 패턴
+
+프로그램 페이지, 히어로 배너, 블로그 썸네일, OG 이미지 등에 이미지가 필요할 때:
+
+> **프롬프트 가이드:** `scripts/lib/image-prompt-guide.js` — 골드 스탠다드 프롬프트, 스타일 시스템, 컬러 팔레트 정의
+
+```
+1. node scripts/generate-image.js --template {type} --category {category} --save-path "..."
+   - type: program, hero, og, blog, staff, mechanism, solution, process
+   - category: digestive, skin, pain, neuro, head, women, pediatric, wellness
+   - BYOK(GEMINI_API_KEY) 있으면 직접 호출, 없으면 HQ 프록시 (30회 무료)
+
+2. 성공 → 생성된 URL/경로를 데이터에 반영
+   - public/local/ 아래에 저장됨
+
+3. 실패 또는 쿼터 소진 시:
+   - BYOK 가이드 안내: "GEMINI_API_KEY를 설정하면 무제한 생성 가능합니다"
+   - 가이드 URL: /guide/image-generation
+   - placeholder 이미지로 계속 진행
+
+4. ⚠️ 온보딩을 이미지 실패로 중단하지 않음 — 항상 fallback으로 진행
+```
+
+**프롬프트 품질 규칙 (반드시 준수):**
+
+- `negativePrompt` 자동 적용됨 — 텍스트/워터마크/저품질 자동 필터링
+- 진료과목이 있으면 반드시 `--category`로 지정 → 검증된 골드 스탠다드 프롬프트 사용
+- aspect ratio는 템플릿이 자동 설정 (hero=16:9, staff=3:4, mechanism=1:1 등)
+- 같은 프로그램의 히어로/메커니즘/솔루션은 `--seed` 값을 통일하여 톤 일관성 유지
+
+**에이전트가 커스텀 프롬프트를 직접 작성할 때 (템플릿에 없는 경우):**
+
+DO:
+- 구조: `[주요 피사체] + [배경/환경] + [조명] + [색감/분위기] + [스타일] + [제약조건]`
+- 조명을 구체적으로: "soft natural daylight through sheer curtains" > "good lighting"
+- 카메라 앵글 명시: "close-up", "overhead flat-lay", "wide-angle"
+- 소재 질감 포함: "ceramic", "wooden", "linen", "marble"
+- 사진 스타일 명명: "editorial", "lifestyle", "product photography"
+- 분위기 키워드: "warm", "serene", "clinical-clean", "cozy"
+- 프롬프트 길이: 30-75 단어 (Imagen 최적)
+- 가장 중요한 피사체를 프롬프트 맨 앞에 배치
+
+DON'T:
+- 얼굴/눈/입 등 식별 가능한 인물 특징 묘사 (반드시 faceless)
+- 텍스트/타이포그래피 요청 (Imagen은 텍스트 렌더링이 부정확)
+- 폭력적/그래픽한 의료 이미지 (수술, 상처, 피)
+- Before/After 비교 레이아웃
+- 특정 약품명이나 브랜드 로고
+- 막연한 프롬프트 ("a doctor", "medicine") — 항상 구체적으로
+
+**사용 예시:**
+
+```bash
+# 프로그램 히어로 (진료과목 지정 → 골드 스탠다드 사용)
+node scripts/generate-image.js --template program --name "소화기 치료" --category digestive --save-path "images/programs/digestive/hero.png"
+
+# 프로그램 히어로 (과목 미지정 → 자동 빌드)
+node scripts/generate-image.js --template program --name "추나요법" --save-path "images/programs/chuna/hero.png"
+
+# 블로그 썸네일
+node scripts/generate-image.js --template blog --title "봄철 알레르기 관리법" --category skin --save-path "images/blog/allergy.png"
+
+# 히어로 배너 (변형 지정)
+node scripts/generate-image.js --template hero --variant zen --save-path "images/hero/main.png"
+
+# 메커니즘 다이어그램
+node scripts/generate-image.js --template mechanism --name "피부 치료" --category skin --save-path "images/programs/skin/mechanism.png"
+
+# 같은 프로그램의 이미지들을 같은 seed로 통일 (톤 일관성)
+node scripts/generate-image.js --template program --category digestive --seed 42 --save-path "images/programs/digestive/hero.png"
+node scripts/generate-image.js --template mechanism --category digestive --seed 42 --save-path "images/programs/digestive/mechanism.png"
+node scripts/generate-image.js --template solution --category digestive --seed 42 --save-path "images/programs/digestive/solution.png"
+
+# 스타일 변경 (기본=사진, 대안: inkWash, watercolor, cinematic, flatLay 등)
+node scripts/generate-image.js --template hero --style inkWash --save-path "images/hero/main.png"
+
+# 사용 가능한 스타일 목록 보기
+node scripts/generate-image.js --list-styles
+
+# 커스텀 프롬프트 (가이드라인 구조 준수)
+node scripts/generate-image.js --prompt "Close-up of dried Korean herbs and roots on warm wooden surface. Overhead flat-lay. Soft natural lighting. Editorial food photography. No text." --save-path "images/custom/herbs.png"
+```
+
+**스타일 안내 시점:** 온보딩에서 히어로 이미지나 프로그램 이미지 생성 시, 기본 결과를 보여준 후:
+```
+"기본 스타일로 생성했습니다. 다른 분위기를 원하시면 수묵화, 수채화, 시네마틱 등
+다양한 스타일로 변경할 수 있습니다. --list-styles로 전체 목록을 확인하세요."
 ```
 
 ---
