@@ -115,7 +115,7 @@ if (ctx && ctx.stage !== 'complete') {
 npm run setup:agent
 ```
 
-고성능 fresh install + signed `clinic.json`이면 `setup:agent`가 내부적으로 `setup:fast -- --auto`를 먼저 시도하고,
+고성능 fresh install + signed `clinic.json`이며 플랫폼이 macOS 또는 WSL Ubuntu면 `setup:agent`가 내부적으로 `setup:fast -- --auto`를 먼저 시도하고,
 실패하면 `setup:step`으로 자동 전환합니다. 강제로 fast 우선이면:
 
 ```bash
