@@ -96,7 +96,7 @@ npm run setup:agent -- --onboarding
 |------|--------|
 | 인증 실패 | `npm run setup:agent -- --reauth` |
 | 중간에 멈춤 | 그대로 `npm run setup:agent` 재실행 |
-| 수동 모드 | `npm run setup:step -- --next` (권장), 고성능 환경의 비대화형 설치는 `npm run setup:fast -- --auto`, `npm run setup`은 최후 수단 |
+| 수동 모드 | `npm run setup:step -- --next` (권장), 고성능 macOS/WSL Ubuntu 환경의 비대화형 설치는 `npm run setup:fast -- --auto`, `npm run setup`은 최후 수단 |
 
 ## 📝 상세 가이드
 

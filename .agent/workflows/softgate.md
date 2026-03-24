@@ -368,10 +368,15 @@ wrangler d1 export clinic-db --local --output .backups/d1-snapshot-latest.sql
 
 > **목적**: 이미지, 파일 등 에셋을 클라우드에 보관하여 유실 방지
 > **시점**: 에셋 업로드 시점, Cloudflare 미설정 시
+>
+> **CF-First (v1.29+)**: `setup-step.js`의 `cf-login` 단계(Phase 1)에서
+> Cloudflare 로그인 + D1 생성 + R2 버킷 생성이 자동으로 완료됩니다.
+> 셋업을 정상적으로 완료한 경우 Gate 3는 이미 통과된 상태입니다.
+> 📖 [Cloudflare 셋업 가이드](https://clinic-os-hq.pages.dev/guide/cloudflare-setup) (`docs/CLOUDFLARE_SETUP_GUIDE.md`)
 
 ### Cloudflare 설정 확인
 
-`setup-clinic.js`의 Step 9에서 Cloudflare 설정이 이미 진행되지만,
+`setup-step.js`의 `cf-login` 단계에서 Cloudflare 설정이 이미 진행되지만,
 사용자가 건너뛸 수 있습니다. 에이전트는 이를 추적합니다.
 
 ```
@@ -382,16 +387,21 @@ wrangler d1 export clinic-db --local --output .backups/d1-snapshot-latest.sql
 
 ### R2 미설정 시 안내
 
+> 📖 CF 계정이 없는 경우: [Cloudflare 셋업 가이드](https://clinic-os-hq.pages.dev/guide/cloudflare-setup) (`docs/CLOUDFLARE_SETUP_GUIDE.md`)
+
 ```
 에이전트: "이미지를 업로드하려면 Cloudflare 스토리지(R2) 설정이 필요합니다.
-          
+
           Cloudflare 계정이 이미 있으신가요?
-          [A] 있어요 → R2 버킷 생성 안내
-          [B] 없어요 → 가입부터 안내
+          [A] 있어요 → npx wrangler login 후 R2 버킷 자동 생성
+          [B] 없어요 → Cloudflare 셋업 가이드로 안내 (계정 가입 → 로그인 → 자동 설정)
           [C] 나중에 → 로컬 저장만 (유실 위험 안내)"
 ```
 
 #### Cloudflare 설정 원스텝
+
+계정이 있으면 `npx wrangler login` 후, D1/R2가 자동 생성됩니다.
+계정이 없으면 먼저 [Cloudflare 셋업 가이드](https://clinic-os-hq.pages.dev/guide/cloudflare-setup)의 계정 가입 절차를 안내합니다.
 
 ```
 에이전트: "Cloudflare에 로그인합니다."
@@ -400,17 +410,17 @@ wrangler d1 export clinic-db --local --output .backups/d1-snapshot-latest.sql
 
 에이전트: "브라우저에서 로그인을 완료해주세요...
           ✅ 로그인 성공!
-          
+
           이제 자동으로 설정합니다:"
 
 → npx wrangler d1 create {clinic-name}-db
 → npx wrangler r2 bucket create {clinic-name}-uploads
 
 에이전트: "✅ 데이터베이스와 파일 저장소가 생성되었습니다!
-          
+
           📦 DB: {clinic-name}-db (ID: xxxx)
           🗂️ 저장소: {clinic-name}-uploads
-          
+
           wrangler.toml에 자동 반영했습니다."
 ```
 
@@ -446,7 +456,7 @@ wrangler d1 export clinic-db --local --output .backups/d1-snapshot-latest.sql
 [새 컴퓨터]
 
 1. 기본 환경 설치 (Node.js, Git)
-   → Windows: WSL 먼저 설치 (windows-guide 참조)
+   → Windows 호스트: WSL Ubuntu 먼저 설치 (windows-guide 참조)
    → macOS: 바로 진행 가능
 
 2. GitHub에서 코드 가져오기
