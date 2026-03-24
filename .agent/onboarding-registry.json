@@ -188,6 +188,30 @@
 
 
     {
+      "id": "naver-content-import",
+      "name": "네이버 콘텐츠 임포트",
+      "description": "네이버 블로그/플레이스에 기존 콘텐츠가 있으면 자동 추출하여 Clinic-OS에 임포트. 플레이스 정보(주소, 전화, 영업시간, 소개, 이미지)는 병원 기본 정보를 보강하고, 블로그 글은 draft 상태로 임포트되어 콘텐츠를 빠르게 채울 수 있음. 생략 가능하며, 추후 /extract-content로 언제든 실행 가능.",
+      "tier": 2,
+      "category": "content",
+      "requires_human": true,
+      "human_inputs": [
+        { "key": "blog_ids", "label": "네이버 블로그 ID", "type": "array", "required": false, "example": "blog.naver.com/my_clinic → my_clinic", "fields": [
+          { "key": "id", "label": "블로그 ID", "type": "text" }
+        ]},
+        { "key": "place_url", "label": "네이버 플레이스 URL", "type": "url", "required": false, "example": "https://naver.me/xxxxx 또는 place.naver.com URL" },
+        { "key": "limit", "label": "블로그 추출 수", "type": "number", "required": false, "default": 50 }
+      ],
+      "admin_path": "/admin/posts",
+      "doc_ref": "CONTENT_EXTRACT_GUIDE.md",
+      "depends_on": ["clinic-info"],
+      "db_tables": ["posts", "site_settings"],
+      "source_paths": ["scripts/extract-naver.js", "scripts/lib/naver-blog-extractor.js", "scripts/lib/naver-place-extractor.js"],
+      "skippable": true,
+      "skip_message": "네이버 콘텐츠가 없거나 나중에 하시겠다면 건너뛰기 가능합니다. 추후 /extract-content로 언제든 실행할 수 있습니다.",
+      "setup_notes": "1) 블로그 ID 또는 플레이스 URL 중 하나만 있어도 실행 가능. 2) 먼저 --dry-run으로 추출 결과 확인 후 사용자 승인 받아 임포트. 3) 플레이스 정보는 clinic-info(주소/전화/영업시간)를 자동 보강. 4) 블로그 분석 결과는 프로그램 기획 참고자료로 활용."
+    },
+
+    {
       "id": "staff-management",
       "name": "의료진 등록",
       "description": "/admin/staff에서 의료진(의사/간호사/직원) 등록. 이름, 직함, 프로필 사진, 전문분야, 약력 입력. 등록된 의료진은 프로그램·예약·블로그에 자동 연결.",
@@ -992,6 +1016,64 @@
       "depends_on": [],
       "db_tables": ["plugin_status", "plugin_storage"],
       "source_paths": ["src/pages/admin/plugins/index.astro", "src/pages/admin/plugins/installed.astro", "src/lib/plugin-loader.ts", "src/lib/plugin-sdk.ts"]
+    },
+
+    {
+      "id": "skin-customization",
+      "name": "스킨 커스터마이징",
+      "description": "병원 톤앤매너에 맞게 디자인 스킨을 선택하거나 로컬 스킨 팩을 생성/조정합니다.",
+      "tier": 5,
+      "category": "advanced",
+      "requires_human": true,
+      "human_inputs": [
+        { "key": "design_goal", "label": "원하는 분위기", "type": "text", "required": false, "example": "차분하고 신뢰감 있는 한방 클리닉" },
+        { "key": "use_existing_skin", "label": "기존 스킨 활용 여부", "type": "boolean", "required": false },
+        { "key": "custom_skin_needed", "label": "로컬 스킨 생성 여부", "type": "boolean", "required": false }
+      ],
+      "admin_path": "/admin/design",
+      "doc_ref": "SKIN_SYSTEM_GUIDE.md",
+      "depends_on": ["branding-minimal"],
+      "db_tables": ["site_settings", "clinics"],
+      "source_paths": ["src/pages/admin/design.astro", "src/lib/design-system/themes.ts", "src/skins/local"],
+      "setup_notes": "기본 테마 선택만으로 끝낼지, src/skins/local 기반의 병원 전용 스킨 팩까지 만들지 먼저 결정한다."
+    },
+
+    {
+      "id": "style-override-planning",
+      "name": "스타일 오버라이드 계획",
+      "description": "공용 코어를 직접 수정하지 않고, 병원별 스타일 오버라이드가 필요한 영역을 _local/skin/plugin 경로로 설계합니다.",
+      "tier": 5,
+      "category": "advanced",
+      "requires_human": true,
+      "human_inputs": [
+        { "key": "target_pages", "label": "우선 수정할 페이지/섹션", "type": "text", "required": false, "example": "홈페이지 히어로, 프로그램 상세, 푸터" },
+        { "key": "override_scope", "label": "오버라이드 범위", "type": "text", "required": false, "example": "색상만, 레이아웃 포함, 전체 섹션 교체" }
+      ],
+      "admin_path": null,
+      "doc_ref": "CUSTOMIZATION_GUIDE.md",
+      "depends_on": ["skin-customization"],
+      "db_tables": [],
+      "source_paths": ["src/pages/_local", "src/lib/local", "src/skins/local", "src/plugins/local", "public/local"],
+      "setup_notes": "global.css나 core 경로 직접 수정이 아니라 _local/local 기반 우회 경로를 먼저 설계한다."
+    },
+
+    {
+      "id": "local-plugin-extension",
+      "name": "로컬 플러그인 확장",
+      "description": "병원 전용 기능, 관리자 탭, 새 라우트를 코어 수정 없이 src/plugins/local 기반 플러그인으로 설계/생성합니다.",
+      "tier": 5,
+      "category": "system",
+      "requires_human": true,
+      "human_inputs": [
+        { "key": "plugin_goal", "label": "플러그인 목적", "type": "text", "required": false, "example": "VIP 고객 관리, 상담 전용 입력 폼, 예약 후속 안내" },
+        { "key": "plugin_surface", "label": "필요한 화면", "type": "text", "required": false, "example": "관리자 페이지, 새 퍼블릭 라우트, API" }
+      ],
+      "admin_path": null,
+      "doc_ref": "PLUGIN_DEVELOPMENT_GUIDE.md",
+      "depends_on": [],
+      "db_tables": [],
+      "source_paths": ["scripts/plugin-create.js", "src/plugins/local"],
+      "setup_notes": "기능이 공유 코어 패치가 아니라 병원 전용 확장이라면 local plugin으로 우선 분류한다."
     }
   ],
 
