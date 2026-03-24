@@ -39,7 +39,7 @@ npm run agent:sync -- --dry-run
 
 ## 요구사항
 
-- **Node.js 18+** (Windows, macOS, Linux, WSL 모두 지원)
+- **Node.js 18+** (공식 설치 기준: macOS 또는 WSL Ubuntu)
 - **Git** (코드 동기화를 위해 필수)
 - **Antigravity** 솔루션
 - Cloudflare 계정 (배포 시에만 필요)
