@@ -1,7 +1,7 @@
 ---
 hq_slug: r2-storage-guide
 hq_title: "R2 스토리지 관리"
-hq_category: "09. 시스템 설정"
+hq_category: "10. 시스템 설정"
 hq_sort: 5
 hq_active: true
 ---
@@ -36,13 +36,10 @@ git으로 관리                    클라우드에 자동 보관
 
 ### Cloudflare 계정이 없는 경우
 
-```
-에이전트에게: "Cloudflare 계정 만들고 R2 설정해줘"
-```
-
-1. [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up) 접속
-2. 이메일, 비밀번호 입력
-3. 무료 플랜 선택 — R2는 월 10GB까지 무료
+> 📖 **[Cloudflare 셋업 가이드](https://clinic-os-hq.pages.dev/guide/cloudflare-setup)** (`docs/CLOUDFLARE_SETUP_GUIDE.md`)를 참조하세요.
+> 계정 가입부터 Wrangler 로그인까지 단계별로 안내합니다.
+>
+> **CF-First (v1.29+)**: `npm run setup:step`의 `cf-login` 단계에서 R2 버킷이 자동 생성됩니다.
 
 ### Cloudflare 로그인
 
