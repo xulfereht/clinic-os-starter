@@ -1,7 +1,7 @@
 ---
 hq_slug: local-workspaces
 hq_title: "로컬 작업 공간 선택 가이드"
-hq_category: "03. 에이전트 워크플로"
+hq_category: "02. 에이전트와 대화하기"
 hq_sort: 14
 hq_active: true
 ---

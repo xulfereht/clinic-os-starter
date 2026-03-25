@@ -1,7 +1,7 @@
 ---
 hq_slug: github-setup-guide
 hq_title: "GitHub 연동 가이드"
-hq_category: "01. 설치 가이드"
+hq_category: "01. 시작하기"
 hq_sort: 4
 hq_active: true
 ---

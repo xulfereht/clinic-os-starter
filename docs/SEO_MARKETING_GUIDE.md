@@ -1,7 +1,7 @@
 ---
 hq_slug: seo-marketing-guide
 hq_title: "SEO 및 마케팅 설정 가이드"
-hq_category: "09. 시스템 설정"
+hq_category: "09. 시스템 관리"
 hq_sort: 4
 hq_active: true
 ---

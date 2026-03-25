@@ -1,33 +1,36 @@
-감사 보고서를 자동 생성합니다.
+# /audit — Audit Report Generator
 
-## 절차
+> **Role**: Security & Quality Auditor
+> **Cognitive mode**: Systematic sweep for privacy leaks, protection rule drift, and code quality regressions. Trust data over assumptions.
 
-1. `docs/audits/` 디렉토리의 기존 감사 이력을 읽어 현재 상태를 파악하세요.
-2. `docs/audits/IMPROVEMENT-TRACKER.md`에서 미완료 항목을 확인하세요.
+## Procedure
 
-3. 다음 패턴으로 개인정보 잔존 여부를 스캔하세요:
-   - `최연승`, `김지혜`, `BRD`, `yeonseung`, `moai` (대소문자 무시)
-   - 검색 대상: `src/`, `seeds/`, `public/`, `docs/`
-   - 제외: `node_modules/`, `.git/`, `dist/`
+1. Read existing audit history from `docs/audits/` to understand the current state.
+2. Check `docs/audits/IMPROVEMENT-TRACKER.md` for incomplete items.
 
-4. `.docking/engine/fetch.js`에서 CORE_PATHS, PROTECTED_EXACT, LOCAL_PREFIXES를 추출하고,
-   `.claude/rules/clinic-os-safety.md` 및 `GEMINI.md`의 보호 목록과 비교하세요.
-   불일치가 있으면 발견사항으로 기록하세요.
+3. Scan for residual personal information using the following patterns:
+   - `최연승`, `김지혜`, `BRD`, `yeonseung`, `moai` (case-insensitive)
+   - Search targets: `src/`, `seeds/`, `public/`, `docs/`
+   - Exclude: `node_modules/`, `.git/`, `dist/`
 
-5. 새 감사 보고서를 `docs/audits/YYYY-MM-DD-{topic}-audit.md` 형식으로 생성하세요:
+4. Extract CORE_PATHS, PROTECTED_EXACT, LOCAL_PREFIXES from `.docking/engine/fetch.js`,
+   and compare against the protection lists in `.claude/rules/clinic-os-safety.md` and `GEMINI.md`.
+   Record any discrepancies as findings.
+
+5. Create a new audit report as `docs/audits/YYYY-MM-DD-{topic}-audit.md`:
    - YAML frontmatter: date, auditor, scope, status
-   - 발견사항을 CRITICAL/HIGH/MEDIUM/LOW로 분류
-   - 각 항목에 해결 상태 표시
+   - Classify findings as CRITICAL/HIGH/MEDIUM/LOW
+   - Mark resolution status for each item
 
-6. `docs/audits/README.md` 인덱스 테이블에 새 보고서 링크를 추가하세요.
+6. Add a link to the new report in the `docs/audits/README.md` index table.
 
-7. `docs/audits/IMPROVEMENT-TRACKER.md`를 업데이트하세요:
-   - 해결된 항목은 `[x]`로 변경
-   - 새로 발견된 항목 추가
+7. Update `docs/audits/IMPROVEMENT-TRACKER.md`:
+   - Mark resolved items as `[x]`
+   - Add newly discovered items
 
-## 출력
+## Output
 
-감사 결과 요약을 한국어로 출력하세요:
-- 발견 항목 수 (심각도별)
-- 이전 감사 대비 개선/악화 현황
-- 다음 조치 권고
+Present the audit results summary in Korean:
+- Number of findings (by severity)
+- Improvements/regressions compared to the previous audit
+- Recommended next actions

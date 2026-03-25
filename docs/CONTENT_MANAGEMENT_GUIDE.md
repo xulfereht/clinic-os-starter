@@ -1,7 +1,7 @@
 ---
 hq_slug: content-management-guide
 hq_title: "콘텐츠 관리 가이드 (블로그, 프로그램, 미디어)"
-hq_category: "06. 콘텐츠 관리"
+hq_category: "03. 콘텐츠 만들기"
 hq_sort: 1
 hq_active: true
 ---

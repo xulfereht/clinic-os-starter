@@ -1,7 +1,7 @@
 ---
 hq_slug: clinic-info-setup
 hq_title: "병원 기본 정보 설정 가이드"
-hq_category: "09. 시스템 설정"
+hq_category: "09. 시스템 관리"
 hq_sort: 1
 hq_active: true
 ---

@@ -1,7 +1,7 @@
 ---
 hq_slug: admin-guide
 hq_title: "관리자 사용 가이드"
-hq_category: "02. 시작 가이드"
+hq_category: "01. 시작하기"
 hq_sort: 2
 hq_active: true
 ---
