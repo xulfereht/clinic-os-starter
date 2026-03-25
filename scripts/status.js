@@ -76,6 +76,11 @@ async function getOnboardingStatus() {
   return {
     status: done === total ? 'COMPLETED' : currentFeature ? 'IN_PROGRESS' : 'PARTIAL',
     currentTier,
+    chosenTrack: state.chosen_track || null,
+    currentFocus: state.current_focus || null,
+    lastSessionNote: Array.isArray(state.session_notes) && state.session_notes.length > 0
+      ? state.session_notes[state.session_notes.length - 1]
+      : null,
     progress: { done, total, pending, skipped, percentage: Math.round((done / total) * 100) },
     currentFeature: currentFeature?.[0] || null,
     nextFeature: nextFeature?.id || null
@@ -237,8 +242,17 @@ async function main() {
   } else {
     console.log(`   Tier ${onboarding.currentTier}/5`);
     console.log(`   진행: ${onboarding.progress.done}/${onboarding.progress.total} 기능 (${onboarding.progress.percentage}%)`);
+    if (onboarding.chosenTrack?.mode) {
+      console.log(`   트랙: ${onboarding.chosenTrack.mode}${onboarding.chosenTrack.feature_id ? ` (${onboarding.chosenTrack.feature_id})` : ''}`);
+    }
+    if (onboarding.currentFocus?.feature_id) {
+      console.log(`   현재 포커스: ${onboarding.currentFocus.feature_id}${onboarding.currentFocus.checkpoint ? ` / ${onboarding.currentFocus.checkpoint}` : ''}`);
+    }
     if (onboarding.nextFeature) {
       console.log(`   다음: ${onboarding.nextFeature}`);
+    }
+    if (onboarding.lastSessionNote?.summary) {
+      console.log(`   최근 메모: ${onboarding.lastSessionNote.summary}`);
     }
   }
   

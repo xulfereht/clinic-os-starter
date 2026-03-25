@@ -35,6 +35,12 @@ npm run agent:context
 npm run agent:doctor -- --json
 ```
 
+support-agent URL을 볼 때는 다음을 같이 기억하세요:
+
+- `https://clinic-os-support-agent.yeonseung-choe.workers.dev` 는 현재 공식 운영 support-agent endpoint입니다.
+- Cloudflare `workers.dev` 계정 서브도메인이라는 이유만으로 개인 개발 URL/오류로 판단하지 마세요.
+- 실제 이슈 보고 대상은 `도달 불가`, `API 계약 불일치`, `인증 실패`, `운영 정책과 불일치` 같은 증거가 있을 때만 올립니다.
+
 자동 실행 후보만 확인하려면:
 
 ```bash
@@ -92,6 +98,16 @@ curl -fsSL https://clinic-os-hq.pages.dev/cos-setup.sh | bash
 ```
 프로젝트 열기
     ↓
+[체크] .agent/delegated-setup.json 존재?
+    ↓
+    ├── 있음 + handoff_status ≠ 'claimed'
+    │   → Phase D: 위임 인수 (.agent/workflows/delegated-handoff.md)
+    │
+    ├── 있음 + handoff_status = 'claimed'
+    │   → 일반 판별 플로우로 계속 (아래)
+    │
+    └── 없음 → 일반 판별 플로우
+        ↓
 [체크] .agent/setup-progress.json 존재?
     ↓
     ├── 있음 → Phase S (단계별 설치 진행/완료 확인)
@@ -113,12 +129,39 @@ curl -fsSL https://clinic-os-hq.pages.dev/cos-setup.sh | bash
     Phase 4 (운영 모드)
 ```
 
+### Phase D: 위임 인수 (Delegated Handoff)
+
+위임 셋업으로 생성된 프로젝트를 고객이 인수하는 단계입니다.
+
+1. `.agent/delegated-setup.json` 읽기
+2. `handoff_status` 확인:
+   - `setup_in_progress` / `packaged` → "아직 셋업이 진행 중입니다. 완료 후 다시 시도하세요."
+   - `ready_to_claim` → cos-handoff.sh에서 claim이 실패한 경우. 수동 진행:
+     ```
+     이 프로젝트는 위임 셋업이 완료되어 다운로드된 상태입니다.
+     인수를 완료하려면:
+     1. npx wrangler login  (본인 Cloudflare 계정으로 로그인)
+     2. npm run handoff:claim
+     ```
+   - `claimed` → 인수 완료 상태. 온보딩 이어서 진행:
+     ```
+     위임 셋업이 완료된 프로젝트입니다.
+     남은 설정 항목을 안내해 드리겠습니다.
+     ```
+     → `.agent/onboarding-state.json` 읽기
+     → 도메인 연결, 비밀번호 변경 등 미완료 항목 안내
+     → 도메인 가이드: `docs/CUSTOM_DOMAIN_GUIDE.md`
+   - `handed_off` → 일반 판별 플로우로 계속
+3. 상세 플로우: `.agent/workflows/delegated-handoff.md`
+
 ---
 
 ## Phase S: 단계별 설치 (신규 - 우선)
 
 ### 진입 조건
 - `.agent/setup-progress.json` 파일 존재
+
+> **전제**: Cloudflare 계정이 필요합니다. 없으면 [Cloudflare 셋업 가이드](https://clinic-os-hq.pages.dev/guide/cloudflare-setup)로 가입을 먼저 안내하세요.
 
 ### 즉시 판별
 ```javascript
@@ -144,7 +187,7 @@ npm run setup:step -- --next
 **완료될 때까지 반복**
 
 ### 완료 조건
-- `setup-progress.json`의 16개 단계 모두 `status: "done"`
+- `setup-progress.json`의 17개 단계 모두 `status: "done"`
 
 ---
 
@@ -172,6 +215,8 @@ npm run setup:step -- --next
 npm install
 ```
 
+> **CF-First**: Cloudflare 계정이 없는 경우 먼저 [Cloudflare 셋업 가이드](https://clinic-os-hq.pages.dev/guide/cloudflare-setup) (`docs/CLOUDFLARE_SETUP_GUIDE.md`)를 안내하세요. 셋업 Phase 1의 `cf-login` 단계에서 로그인이 필요합니다.
+
 ---
 
 ## Phase 1: 시스템 초기화 (레거시 → setup:step으로 통일)
@@ -185,7 +230,7 @@ npm install
 > **주의:** `npm run setup`(모놀리식)은 사용하지 마세요.
 > 메모리 제한 환경에서 SIGKILL이 발생하고, 복구가 어렵습니다.
 
-> **예외:** 사용자가 "한 번에 빠르게 설치"를 원하고, 환경이 **비Windows + 메모리 8GB 이상**이면
+> **예외:** 사용자가 "한 번에 빠르게 설치"를 원하고, 환경이 **macOS 또는 WSL Ubuntu + 메모리 8GB 이상**이면
 > `npm run setup:fast -- --auto`를 먼저 제안할 수 있습니다.
 > 그래도 기본 경로는 `setup:step`입니다.
 

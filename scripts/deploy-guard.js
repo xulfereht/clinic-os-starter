@@ -147,11 +147,16 @@ async function deployGuard() {
     console.log("👤 Step 1: Cloudflare 로그인 확인...");
     const whoami = await runCommand('npx wrangler whoami', true);
     if (!whoami.success) {
-        console.error("❌ Cloudflare에 로그인되어 있지 않습니다.");
-        console.log("   명령어를 실행하세요: npx wrangler login\n");
-        process.exit(1);
+        if (process.env.CLOUDFLARE_API_TOKEN) {
+            console.log("   ✅ CLOUDFLARE_API_TOKEN 토큰 인증 모드로 진행합니다.\n");
+        } else {
+            console.error("❌ Cloudflare에 로그인되어 있지 않습니다.");
+            console.log("   명령어를 실행하세요: npx wrangler login\n");
+            process.exit(1);
+        }
+    } else {
+        console.log("   ✅ 로그인 확인됨.\n");
     }
-    console.log("   ✅ 로그인 확인됨.\n");
 
     // 2. Parse wrangler.toml
     console.log("📂 Step 2: 설정 파일 분석...");
@@ -317,9 +322,45 @@ async function deployGuard() {
                         console.log("      💡 npx wrangler d1 migrations apply <DB_NAME> --remote 를 실행하세요.");
                         blockers++;
                     } else if (remoteMigCount < localMigrations) {
-                        console.log(`   ⚠️  리모트 마이그레이션 ${remoteMigCount}개 / 로컬 ${localMigrations}개 — 미적용 마이그레이션 존재`);
-                        console.log("      💡 배포 후 npx wrangler d1 migrations apply <DB_NAME> --remote 를 실행하세요.");
-                        warnings++;
+                        const gap = localMigrations - remoteMigCount;
+                        console.log(`   ⚠️  리모트 마이그레이션 ${remoteMigCount}개 / 로컬 ${localMigrations}개 — ${gap}개 미적용`);
+
+                        // 배포 전 리모트 마이그레이션 자동 적용
+                        let applyRemote = AUTO_YES;
+                        if (!applyRemote && !IS_NON_INTERACTIVE) {
+                            const answer = await ask(`   🗃️  리모트 DB에 마이그레이션을 적용할까요? (Y/n): `);
+                            applyRemote = !answer || answer.toLowerCase() !== 'n';
+                        }
+
+                        if (applyRemote) {
+                            console.log(`   🚀 리모트 마이그레이션 적용 중...`);
+                            try {
+                                const migrateEngine = await import('../.docking/engine/migrate.js');
+                                const result = await migrateEngine.runMigrations({
+                                    local: false,
+                                    verbose: true,
+                                    verify: true,
+                                    dbName: dbIdentifier
+                                });
+                                if (result.success) {
+                                    console.log(`   ✅ 리모트 마이그레이션 ${result.applied}개 적용 완료`);
+                                } else {
+                                    console.error(`   ❌ 리모트 마이그레이션 실패: ${result.failed}개 오류`);
+                                    if (result.errors) {
+                                        for (const err of result.errors) {
+                                            console.log(`      - ${err.file}: ${err.error}`);
+                                        }
+                                    }
+                                    blockers++;
+                                }
+                            } catch (e) {
+                                console.error(`   ❌ 리모트 마이그레이션 엔진 오류: ${e.message}`);
+                                blockers++;
+                            }
+                        } else {
+                            console.log("   ⏭️  리모트 마이그레이션 건너뜀 (수동 적용 필요)");
+                            warnings++;
+                        }
                     } else {
                         console.log(`   ✅ 리모트 마이그레이션 ${remoteMigCount}개 적용됨.`);
                     }
@@ -328,6 +369,37 @@ async function deployGuard() {
                 console.log("   ⚠️  리모트 마이그레이션 상태를 확인할 수 없습니다 (d1_migrations 테이블 미존재 가능).");
                 warnings++;
             }
+
+            // DG15: 콘텐츠 비어있음 경고 (프로그램/게시글)
+            try {
+                const progCheck = await runCommand(
+                    `npx wrangler d1 execute ${dbIdentifier} --remote --command "SELECT COUNT(*) as cnt FROM programs WHERE deleted_at IS NULL"`,
+                    true
+                );
+                if (progCheck.success) {
+                    const progMatch = progCheck.stdout.match(/(\d+)/);
+                    const progCount = progMatch ? parseInt(progMatch[1]) : 0;
+                    if (progCount === 0) {
+                        console.log("   ⚠️  프로그램이 0개입니다. 사이트가 비어보일 수 있습니다.");
+                        warnings++;
+                    }
+                }
+            } catch { /* programs 테이블 미존재 시 무시 */ }
+
+            try {
+                const postCheck = await runCommand(
+                    `npx wrangler d1 execute ${dbIdentifier} --remote --command "SELECT COUNT(*) as cnt FROM posts WHERE deleted_at IS NULL"`,
+                    true
+                );
+                if (postCheck.success) {
+                    const postMatch = postCheck.stdout.match(/(\d+)/);
+                    const postCount = postMatch ? parseInt(postMatch[1]) : 0;
+                    if (postCount === 0) {
+                        console.log("   ⚠️  게시글이 0개입니다.");
+                        warnings++;
+                    }
+                }
+            } catch { /* posts 테이블 미존재 시 무시 */ }
         }
     }
 
@@ -433,6 +505,41 @@ async function deployGuard() {
         }
     }
     console.log(`   ✅ 빌드 산출물 검증 완료 (${buildOutput.relative}/_routes.json, _worker.js)\n`);
+
+    // DG14: E2E 테스트 (배포 전 회귀 검증)
+    const SKIP_E2E = CLI_ARGS.has('--skip-e2e');
+    if (!SKIP_E2E) {
+        console.log("🎭 Step 6.5: E2E 테스트 (배포 전 회귀 검증)...");
+        const playwrightConfig = path.join(PROJECT_ROOT, 'playwright.config.ts');
+        if (fs.existsSync(playwrightConfig)) {
+            try {
+                // DB 시드 (E2E용)
+                await runCommand('npm run db:init && npm run db:seed', true);
+                const e2eSeedScript = path.join(PROJECT_ROOT, 'scripts', 'e2e-admin-seed.js');
+                if (fs.existsSync(e2eSeedScript)) {
+                    await runCommand('node scripts/e2e-admin-seed.js', true);
+                }
+
+                // Playwright 실행
+                const e2eResult = await runCommand('npx playwright test --project=public');
+                if (!e2eResult.success) {
+                    console.error('   ❌ E2E 테스트 실패 — 배포를 중단합니다.');
+                    console.log('   💡 npx playwright test --project=public --headed 로 디버깅하세요.\n');
+                    blockers++;
+                } else {
+                    console.log('   ✅ E2E 테스트 통과\n');
+                }
+            } catch (e) {
+                console.warn(`   ⚠️  E2E 테스트 실행 중 오류: ${e.message}`);
+                console.log('   💡 npx playwright install chromium 으로 브라우저를 설치하세요.\n');
+                warnings++;
+            }
+        } else {
+            console.log('   ℹ️  playwright.config.ts 없음 — E2E 테스트 건너뜀\n');
+        }
+    } else {
+        console.log("⏭️  E2E 테스트 건너뜀 (--skip-e2e)\n");
+    }
 
     // 7. Deploy
     console.log("🚀 Step 7: 최종 배포...");
