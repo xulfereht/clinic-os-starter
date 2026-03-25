@@ -1,7 +1,7 @@
 ---
 hq_slug: clinic-json-reference
 hq_title: "clinic.json 레퍼런스"
-hq_category: "09. 시스템 설정"
+hq_category: "09. 시스템 관리"
 hq_sort: 6
 hq_active: true
 ---

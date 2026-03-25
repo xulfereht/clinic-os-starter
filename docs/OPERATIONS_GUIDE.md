@@ -1,7 +1,7 @@
 ---
 hq_slug: operations-guide
 hq_title: "운용 핵심 개념 (워크샵)"
-hq_category: "02. 시작 가이드"
+hq_category: "01. 시작하기"
 hq_sort: 3
 hq_active: true
 ---
@@ -164,9 +164,6 @@ hq_active: true
 스타터킷을 bash로 설치해 프로젝트 폴더를 준비한 뒤, 권장 에이전트로 프로젝트를 엽니다.
 
 - 기본 권장: **Claude Code**
-- 대안: **Codex 계열 에이전트 (GPT-5.4 이상)**
-- 운영형 대안: **OpenClaw 계열**
-- 모델 백엔드 대안: **Kimi 2.5+ 등 프론티어 모델**
 
 첫 요청은 이렇게 시작하는 것이 좋습니다:
 

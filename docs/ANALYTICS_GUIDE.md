@@ -1,7 +1,7 @@
 ---
 hq_slug: analytics-guide
 hq_title: "분석 및 통계 가이드"
-hq_category: "08. 분석 & 리포트"
+hq_category: "06. 경영 분석"
 hq_sort: 1
 hq_active: true
 ---

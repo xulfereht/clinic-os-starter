@@ -100,28 +100,24 @@ npm run upgrade
 
 ## Phase 5: DB 마이그레이션
 
-새 버전에 DB 변경이 있는지 확인합니다.
+core:pull이 **로컬 DB에 DDL 마이그레이션을 자동 적용**합니다 (v1.29.7~).
 
 ```bash
-ls migrations/    # 마스터 구조
-ls core/migrations/  # 스타터킷 구조
+npm run db:migrate   # 수동 실행 시 (로컬)
 ```
 
-새 마이그레이션이 있으면:
-// turbo
-```bash
-npm run db:migrate
-```
-
+> **v1.29.7 — DDL/DML 분리:**
+> - `migrations/` = DDL만 (스키마). 로컬 + 리모트 자동 적용 대상.
+> - `seeds/` = DML만 (데이터). 초기 설치 시 1회만 실행. 프로덕션 데이터 보호.
+> - **리모트(프로덕션) DB**: 배포 시 `deploy-guard`가 갭을 감지하고 자동 적용.
+>   core:pull 단계에서는 리모트를 건드리지 않음.
+>
 > v1.24.3부터:
 > - `db:migrate`는 root의 `.docking/engine/migrate.js`를 직접 실행 (core:pull로 항상 최신 유지)
 > - wrangler.toml 존재를 먼저 확인하며, 없으면 `npm run setup` 안내
 > - `findProjectRoot()`가 `core/package.json`도 감지하여 스타터킷 구조 자동 지원
 > - 마이그레이션 실패 시 seeds 실행을 자동으로 건너뜀
 > - 에러 발생 시 `.agent/last-error.json`에 구조화된 보고서 저장
->
-> v1.24.4부터:
-> - DB 바인딩 기본 이름 통일 (`clinic-os-db`, wrangler.toml 있으면 그곳에서 읽음)
 >
 > ⚠️ fetch.js 수정사항은 **다음** core:pull부터 적용됩니다.
 > 긴급 수정: `npm run update:starter && npm run core:pull`

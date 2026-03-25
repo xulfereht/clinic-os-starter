@@ -1,7 +1,7 @@
 ---
 hq_slug: device-migration-guide
 hq_title: "디바이스 마이그레이션"
-hq_category: "01. 설치 가이드"
+hq_category: "01. 시작하기"
 hq_sort: 5
 hq_active: true
 ---
