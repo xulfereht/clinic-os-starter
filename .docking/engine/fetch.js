@@ -288,7 +288,7 @@ try {
     // Fallback: bootstrap 또는 manifest 미존재 시 (하드코딩 값 유지)
     CORE_PATHS = [
         'src/pages/', 'src/components/', 'src/layouts/', 'src/styles/',
-        'src/lib/', 'src/plugins/custom-homepage/', 'src/plugins/survey-tools/',
+        'src/lib/', 'src/skins/', 'src/plugins/survey-tools/',
         'src/survey-tools/stress-check/', 'src/content/aeo/',
         'migrations/', 'seeds/', 'docs/',
         '.agent/README.md', '.agent/manifests/',
@@ -298,7 +298,7 @@ try {
         'tsconfig.json', '.cursorrules', '.windsurfrules', '.clinerules',
     ];
     LOCAL_PREFIXES = [
-        'src/lib/local/', 'src/plugins/local/', 'src/pages/_local/',
+        'src/lib/local/', 'src/skins/local/', 'src/plugins/local/', 'src/pages/_local/',
         'src/survey-tools/local/', 'public/local/', 'docs/internal/',
     ];
     PROTECTED_EXACT = new Set([
@@ -306,7 +306,7 @@ try {
         'src/config.ts', 'src/styles/global.css',
         '.agent/onboarding-state.json',
     ]);
-    PROTECTED_PREFIXES = ['.env', '.core/', 'src/plugins/local/'];
+    PROTECTED_PREFIXES = ['.env', '.core/', 'src/plugins/local/', 'src/plugins/custom-homepage/'];
     SPECIAL_MERGE_FILES = new Set(['package.json']);
 }
 
@@ -1966,7 +1966,7 @@ async function corePull(targetVersion = 'latest', options = {}) {
                 const { runHealthAudit } = await import(healthPath);
                 const health = await runHealthAudit({ quiet: true, fix: true });
                 if (health.score < 30 && !force) {
-                    throw new Error(`건강 점수 ${health.score}/100 — npm run health:fix 후 재시도`);
+                    throw new Error(`건강 점수 ${health.score}/100 — npm run health:fix 후 재시도 (또는 --force로 강제 진행)`);
                 }
                 if (health.score < 70) {
                     console.log(`   ⚠️  건강 점수 ${health.score}/100 — 계속 진행합니다`);
@@ -3235,6 +3235,7 @@ async function main() {
     let dryRun = false;
     let skipConfirm = false;
     let checkOnly = false;
+    let force = false;
     let forceBootstrap = false;
     let autoMode = false;
 
@@ -3253,6 +3254,8 @@ async function main() {
             skipConfirm = true;
         } else if (arg === '--check') {
             checkOnly = true;
+        } else if (arg === '--force') {
+            force = true;
         } else if (arg === '--force-bootstrap') {
             forceBootstrap = true;
         } else if (arg === '--auto') {
@@ -3266,7 +3269,7 @@ async function main() {
     try {
         // --dry-run: 기존 동작 (상세 분석 후 종료)
         if (dryRun) {
-            await corePull(targetVersion, { dryRun: true, forceBootstrap });
+            await corePull(targetVersion, { dryRun: true, force, forceBootstrap });
             return;
         }
 
@@ -3309,7 +3312,7 @@ async function main() {
 
         // 실제 업데이트 진행
         console.log('\n');
-        await corePull(result.target, { dryRun: false, forceBootstrap, autoMode });
+        await corePull(result.target, { dryRun: false, force, forceBootstrap, autoMode });
 
         // 스키마 자동복구는 corePull 내부에서 이미 완료
         // 추가 Doctor 실행 불필요 (중복 실행 방지)
@@ -3341,6 +3344,7 @@ async function main() {
 // npm run core:pull -- --beta         → latest-beta 채널
 // npm run core:pull -- --dry-run      → 상세 변경 사항 미리보기 (기존 동작)
 // npm run core:pull -- v1.0.93        → 특정 버전 직접 지정
+// npm run core:pull -- --force           → 건강 점수 미달 시 강제 진행
 // npm run core:pull -- --force-bootstrap → 마이그레이션 bootstrap 모드 강제 실행
 //
 // 환경 변수:

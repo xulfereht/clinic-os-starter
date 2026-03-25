@@ -23,6 +23,7 @@ import { exec, execSync, spawn } from 'child_process';
 import { promisify } from 'util';
 import yaml from 'js-yaml';
 import { buildNpmCommand } from './lib/npm-cli.js';
+import { buildLocalDbBootstrapReport } from './lib/setup-db-bootstrap.js';
 
 const execAsync = promisify(exec);
 const __filename = fileURLToPath(import.meta.url);
@@ -38,7 +39,8 @@ const SETUP_STEPS = [
   // Phase 1: 환경 (Light)
   { id: 'check-system', name: '시스템 환경 확인', phase: 1, weight: 'light' },
   { id: 'init-config', name: '초기 설정 파일 생성', phase: 1, weight: 'light' },
-  
+  { id: 'cf-login', name: 'Cloudflare 로그인 및 리소스 생성', phase: 1, weight: 'light' },
+
   // Phase 2: 디바이스 (Light)
   { id: 'device-register', name: '디바이스 등록', phase: 2, weight: 'light' },
   
@@ -115,6 +117,10 @@ function getNextStep(progress) {
 
 async function runCheckSystem(progress) {
   console.log('🔍 시스템 환경을 확인합니다...\n');
+
+  if (process.platform === 'win32') {
+    throw new Error('네이티브 Windows 설치는 지원하지 않습니다. macOS 또는 WSL Ubuntu에서 다시 실행하세요.');
+  }
   
   const checks = [
     { name: 'Node.js', cmd: 'node --version', minVersion: '18.0.0' },
@@ -157,7 +163,7 @@ async function runInitConfig(progress) {
     progress.context.clinicName = 'My Clinic';
     console.log('   ℹ️  clinic.json 없음, 기본값 사용');
   }
-  
+
   // wrangler.toml 템플릿 생성 (없을 경우)
   const wranglerPath = path.join(PROJECT_ROOT, 'wrangler.toml');
   if (!fs.existsSync(wranglerPath)) {
@@ -208,16 +214,176 @@ database_id = "local-db-placeholder"
   return { success: true };
 }
 
+async function runCfLogin(progress) {
+  console.log('☁️  Cloudflare 로그인 및 리소스를 확인합니다...\n');
+
+  const wranglerPath = path.join(PROJECT_ROOT, 'wrangler.toml');
+  const wranglerCmd = getWranglerCmd();
+
+  // 1. CF 인증 확인 + Account ID 해석
+  const hasToken = !!process.env.CLOUDFLARE_API_TOKEN;
+  let cfAccountId = process.env.CLOUDFLARE_ACCOUNT_ID || null;
+
+  if (hasToken) {
+    console.log('   🔑 CLOUDFLARE_API_TOKEN 감지 — 토큰 모드로 진행합니다.');
+    progress.context.cfTokenMode = true;
+  } else {
+    console.log('   🔍 Wrangler 로그인 상태를 확인합니다...');
+    try {
+      const { stdout } = await execAsync(`${wranglerCmd} whoami`, { timeout: 30000 });
+      console.log(`   ✅ Cloudflare 로그인 확인됨`);
+      // account_id 추출 시도
+      const accountMatch = stdout.match(/Account ID[:\s]+([a-f0-9]{32})/i) || stdout.match(/([a-f0-9]{32})/);
+      if (accountMatch) {
+        cfAccountId = cfAccountId || accountMatch[1];
+      }
+    } catch (e) {
+      console.error('\n   ❌ Cloudflare에 로그인되어 있지 않습니다.\n');
+      console.log('   Cloudflare 계정이 없으면 먼저 가입하세요:');
+      console.log('   👉 https://dash.cloudflare.com/sign-up (무료)\n');
+      console.log('   계정이 있으면 로그인하세요:');
+      console.log('   npx wrangler login\n');
+      console.log('   📖 상세 가이드: https://clinic-os-hq.pages.dev/guide/cloudflare-setup');
+      console.log('   📖 로컬: docs/CLOUDFLARE_SETUP_GUIDE.md\n');
+      throw new Error('Cloudflare 로그인 필요. 계정 가입 후 npx wrangler login 실행하세요.');
+    }
+  }
+
+  // Account ID가 없으면 API로 조회 시도
+  if (!cfAccountId && hasToken) {
+    try {
+      const resp = await fetch('https://api.cloudflare.com/client/v4/accounts', {
+        headers: { 'Authorization': `Bearer ${process.env.CLOUDFLARE_API_TOKEN}` }
+      });
+      const data = await resp.json();
+      if (data.success && data.result?.length > 0) {
+        cfAccountId = data.result[0].id;
+      }
+    } catch { /* fallback: wrangler가 자체 해결 시도 */ }
+  }
+
+  if (cfAccountId) {
+    progress.context.cfAccountId = cfAccountId;
+    process.env.CLOUDFLARE_ACCOUNT_ID = cfAccountId;
+    console.log(`   📋 Account ID: ${cfAccountId}`);
+  }
+
+  // 2. wrangler.toml 로드
+  if (!fs.existsSync(wranglerPath)) {
+    console.log('   ⏭️  wrangler.toml 없음 — init-config 단계를 먼저 실행하세요.');
+    throw new Error('wrangler.toml이 없습니다. init-config 단계를 먼저 실행하세요.');
+  }
+
+  let tomlContent = fs.readFileSync(wranglerPath, 'utf8');
+
+  // 3. D1 database 생성 (placeholder인 경우)
+  const dbIdMatch = tomlContent.match(/database_id\s*=\s*"([^"]+)"/);
+  const dbNameMatch = tomlContent.match(/database_name\s*=\s*"([^"]+)"/);
+  const dbName = dbNameMatch ? dbNameMatch[1] : progress.context.dbName || 'my-clinic-db';
+
+  if (dbIdMatch && dbIdMatch[1] === 'local-db-placeholder') {
+    console.log(`   📦 D1 데이터베이스 생성: ${dbName}...`);
+    try {
+      const { stdout } = await execAsync(`${wranglerCmd} d1 create ${dbName}`, { timeout: 30000 });
+      const newIdMatch = stdout.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/);
+      if (newIdMatch) {
+        tomlContent = tomlContent.replace('local-db-placeholder', newIdMatch[1]);
+        fs.writeFileSync(wranglerPath, tomlContent);
+        console.log(`   ✅ D1 생성 완료: ${newIdMatch[1]}`);
+        progress.context.dbId = newIdMatch[1];
+      } else {
+        console.log('   ⚠️  D1 생성 출력에서 database_id를 추출할 수 없습니다.');
+        console.log('      wrangler.toml의 database_id를 수동으로 설정하세요.');
+      }
+    } catch (e) {
+      if (e.message && e.message.includes('already exists')) {
+        console.log(`   ℹ️  D1 "${dbName}" 이미 존재합니다. database_id를 수동으로 설정하세요.`);
+      } else {
+        console.log(`   ⚠️  D1 생성 실패: ${e.message}`);
+        console.log('      배포 전에 npx wrangler d1 create 으로 수동 생성하세요.');
+      }
+    }
+  } else {
+    console.log('   ⏭️  D1 database_id 이미 설정됨');
+  }
+
+  // 4. R2 버킷 생성
+  const bucketMatch = tomlContent.match(/bucket_name\s*=\s*"([^"]+)"/);
+  const bucketName = bucketMatch ? bucketMatch[1] : null;
+
+  if (bucketName) {
+    console.log(`   📦 R2 버킷 확인: ${bucketName}...`);
+    try {
+      await execAsync(`${wranglerCmd} r2 bucket create ${bucketName}`, { timeout: 30000 });
+      console.log(`   ✅ R2 버킷 생성 완료: ${bucketName}`);
+    } catch (e) {
+      if (e.message && (e.message.includes('already exists') || e.message.includes('already owned'))) {
+        console.log(`   ⏭️  R2 버킷 "${bucketName}" 이미 존재`);
+      } else {
+        console.log(`   ⚠️  R2 버킷 생성 실패: ${e.message}`);
+        console.log('      배포 전에 npx wrangler r2 bucket create 으로 수동 생성하세요.');
+      }
+    }
+  }
+
+  // 5. Pages 프로젝트 생성 (없으면)
+  const pagesNameMatch = tomlContent.match(/^name\s*=\s*"([^"]+)"/m);
+  const pagesProjectName = pagesNameMatch ? pagesNameMatch[1] : null;
+
+  if (pagesProjectName) {
+    console.log(`   📦 Pages 프로젝트 확인: ${pagesProjectName}...`);
+    try {
+      await execAsync(`${wranglerCmd} pages project create ${pagesProjectName} --production-branch main`, { timeout: 30000 });
+      console.log(`   ✅ Pages 프로젝트 생성 완료: ${pagesProjectName}`);
+    } catch (e) {
+      if (e.message && (e.message.includes('already exists') || e.message.includes('A project with this name already exists'))) {
+        console.log(`   ⏭️  Pages 프로젝트 "${pagesProjectName}" 이미 존재`);
+      } else {
+        console.log(`   ⚠️  Pages 프로젝트 생성 실패: ${e.message}`);
+        console.log('      배포 시 자동 생성될 수 있습니다.');
+      }
+    }
+  }
+
+  // 6. softgate-state 업데이트 (있으면)
+  const softgatePath = path.join(PROJECT_ROOT, '.agent', 'softgate-state.json');
+  if (fs.existsSync(softgatePath)) {
+    try {
+      const state = fs.readJsonSync(softgatePath);
+      if (state.cloudflare) state.cloudflare.logged_in = true;
+      if (state.r2 && bucketName) {
+        state.r2.configured = true;
+        state.r2.bucket_name = bucketName;
+      }
+      fs.writeJsonSync(softgatePath, state, { spaces: 2 });
+      console.log('   ✅ softgate-state 업데이트 완료');
+    } catch (e) {
+      // 무시 — softgate-state가 없거나 구조가 다를 수 있음
+    }
+  }
+
+  console.log('\n   ✅ Cloudflare 설정 완료');
+  return { success: true };
+}
+
 async function runDeviceRegister(progress) {
   console.log('🔐 디바이스를 등록합니다...\n');
-  
+
+  // Demo mode: 디바이스 등록 스킵 (license_key 없음)
+  if (progress.context.demoMode) {
+    console.log('   📺 Demo Mode — 디바이스 등록을 스킵합니다.');
+    console.log('   (핸드오프 인수 시 등록됩니다)\n');
+    progress.context.hqUrl = DEFAULT_HQ_URL;
+    return { success: true };
+  }
+
   const machineId = crypto.createHash('sha256')
     .update(`${os.hostname()}-${os.platform()}-${os.userInfo().username}`)
     .digest('hex').substring(0, 32);
-  
+
   progress.context.machineId = machineId;
   progress.context.hqUrl = DEFAULT_HQ_URL;
-  
+
   // 이미 토큰이 있으면 skip
   if (progress.context.deviceToken) {
     console.log('   ⏭️  이미 디바이스 토큰이 있습니다.');
@@ -338,7 +504,7 @@ async function runGitInit(progress) {
     return { success: true };
   }
   
-  await execAsync('git init', { cwd: PROJECT_ROOT });
+  await execAsync('git init -b main', { cwd: PROJECT_ROOT });
   await execAsync('git config user.name "ClinicOS Local"', { cwd: PROJECT_ROOT });
   await execAsync('git config user.email "local@clinic-os.local"', { cwd: PROJECT_ROOT });
   
@@ -361,7 +527,7 @@ async function runGitInit(progress) {
 async function runCorePull(progress) {
   console.log('📥 코어 파일을 다운로드합니다...\n');
   
-  if (!progress.context.deviceToken) {
+  if (!progress.context.deviceToken && !progress.context.demoMode) {
     throw new Error('deviceToken 없음. device-register 단계 먼저 실행');
   }
   
@@ -383,23 +549,27 @@ async function runCorePull(progress) {
   }
   
   // HQ에서 Git URL 획득
-  console.log('   🔑 HQ에서 Git URL 획득...');
   let gitUrl = 'https://github.com/xulfereht/clinic-os-core.git';
-  try {
-    const response = await fetch(`${progress.context.hqUrl}/api/v1/update/git-url`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        device_token: progress.context.deviceToken,
-        channel: progress.context.channel || 'stable'
-      })
-    });
-    if (response.ok) {
-      const data = await response.json();
-      gitUrl = data.git_url || gitUrl;
+  if (progress.context.demoMode) {
+    console.log('   📺 Demo Mode — 기본 Git URL 사용');
+  } else {
+    console.log('   🔑 HQ에서 Git URL 획득...');
+    try {
+      const response = await fetch(`${progress.context.hqUrl}/api/v1/update/git-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          device_token: progress.context.deviceToken,
+          channel: progress.context.channel || 'stable'
+        })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        gitUrl = data.git_url || gitUrl;
+      }
+    } catch (e) {
+      console.log('   ⚠️  HQ 연결 실패, 기본 URL 사용');
     }
-  } catch (e) {
-    console.log('   ⚠️  HQ 연결 실패, 기본 URL 사용');
   }
   
   // Shallow clone (메모리 절약)
@@ -434,8 +604,7 @@ async function runDbMigrate(progress) {
   }
   
   if (!fs.existsSync(migrationsDir)) {
-    console.log('   ⏭️  마이그레이션 디렉토리 없음');
-    return { success: true };
+    throw new Error('로컬 DB 마이그레이션 디렉토리가 없습니다.');
   }
   
   // wrangler/workerd 프로세스 정리 (DB 잠금 방지)
@@ -448,17 +617,52 @@ async function runDbMigrate(progress) {
   
   // 통합 마이그레이션 엔진 사용
   const migratePath = path.join(PROJECT_ROOT, '.docking', 'engine', 'migrate.js');
+  const isRemoteMode = !!progress.context.cfTokenMode;
+
   if (fs.existsSync(migratePath)) {
+    // 로컬 마이그레이션
     const { runMigrations } = await import(migratePath);
     const result = await runMigrations({ local: true, verbose: false, verify: false });
-    
+    let schemaResult = null;
+
     if (result.success) {
-      console.log(`   ✅ ${result.applied}개 마이그레이션 적용`);
-    } else {
-      console.log(`   ⚠️  일부 마이그레이션 실패: ${result.failed}개`);
+      const { runSchemaDoctor } = await import('./doctor.js');
+      schemaResult = await runSchemaDoctor(dbName, { fix: false, verbose: false });
+    }
+
+    const report = buildLocalDbBootstrapReport({
+      hasMigrationFiles: true,
+      migrationResult: result,
+      schemaResult,
+      seedResults: [],
+    });
+
+    if (!report.ok) {
+      throw new Error(report.issues.join(' / '));
+    }
+
+    console.log(`   ✅ ${result.applied}개 마이그레이션 적용 (로컬)`);
+
+    // 리모트 D1에도 마이그레이션 적용 (위임 셋업 등 CF Token 모드)
+    if (isRemoteMode) {
+      console.log('   🌐 리모트 D1에도 마이그레이션 적용 중...');
+      try {
+        const wranglerCmd = getWranglerCmd();
+        // migrations 심볼릭 링크 확인/생성
+        const migrationsLink = path.join(PROJECT_ROOT, 'migrations');
+        const coreMigrations = path.join(PROJECT_ROOT, 'core', 'migrations');
+        if (!fs.existsSync(migrationsLink) && fs.existsSync(coreMigrations)) {
+          fs.symlinkSync(coreMigrations, migrationsLink);
+        }
+        await execAsync(`${wranglerCmd} d1 migrations apply ${dbName} --remote`, { timeout: 120000 });
+        console.log('   ✅ 리모트 마이그레이션 완료');
+      } catch (e) {
+        console.log(`   ⚠️  리모트 마이그레이션 실패: ${e.message}`);
+        console.log('      배포 후 수동으로 적용하세요: npx wrangler d1 migrations apply <db-name> --remote');
+      }
     }
   } else {
-    console.log('   ⚠️  마이그레이션 엔진 없음, skip');
+    throw new Error('로컬 DB 마이그레이션 엔진을 찾을 수 없습니다.');
   }
   
   return { success: true };
@@ -496,14 +700,24 @@ async function runDbSeed(progress, seedType) {
   }
   
   // wrangler d1 execute
+  const isRemoteMode = !!progress.context.cfTokenMode;
   try {
     const wranglerCmd = getWranglerCmd();
+    // 로컬 시드
     await execAsync(`${wranglerCmd} d1 execute ${dbName} --local --file=${seedPath} --yes`, {
-      timeout: 60000 // 60초 타임아웃
+      timeout: 60000
     });
-    console.log(`   ✅ ${config.name} 시드 완료`);
+    console.log(`   ✅ ${config.name} 시드 완료 (로컬)`);
+
+    // 리모트에도 시드 적용 (위임 셋업 등 CF Token 모드)
+    if (isRemoteMode) {
+      await execAsync(`${wranglerCmd} d1 execute ${dbName} --remote --file=${seedPath} --yes`, {
+        timeout: 60000
+      });
+      console.log(`   ✅ ${config.name} 시드 완료 (리모트)`);
+    }
   } catch (e) {
-    console.log(`   ⚠️  ${config.name} 시드 실패 (무시하고 계속): ${e.message}`);
+    throw new Error(`${config.name} 시드 실패: ${e.message}`);
   }
   
   return { success: true };
@@ -559,6 +773,21 @@ async function runOnboardingInit(progress) {
     last_updated: new Date().toISOString(),
     current_tier: 1,
     deployment_count: 0,
+    briefing_completed_at: null,
+    chosen_track: {
+      mode: 'recommended',
+      tier: 1,
+      feature_id: null,
+      updated_at: null,
+      notes: null
+    },
+    current_focus: {
+      feature_id: null,
+      checkpoint: null,
+      updated_at: null
+    },
+    session_notes: [],
+    deferred_items: [],
     clinic_name: progress.context.clinicName,
     features: featureStates
   };
@@ -620,14 +849,17 @@ async function printStatus(progress) {
 
 async function main() {
   const args = process.argv.slice(2);
-  
+
+  // --demo-mode: 데모 모드 (operator CF 계정, device-register 스킵)
+  const isDemoMode = args.includes('--demo-mode') || process.env.CLINIC_DEMO_MODE === 'true';
+
   // --status: 상태만 출력
   if (args.includes('--status')) {
     const progress = loadProgress();
     await printStatus(progress);
     process.exit(0);
   }
-  
+
   // --reset: 상태 초기화
   if (args.includes('--reset')) {
     console.log('🗑️  설치 상태를 초기화합니다...');
@@ -644,6 +876,7 @@ async function main() {
   if (stepArg) {
     const stepId = stepArg.split('=')[1];
     const progress = loadProgress();
+    if (isDemoMode) progress.context.demoMode = true;
     const stepIndex = progress.steps.findIndex(s => s.id === stepId);
     
     if (stepIndex === -1) {
@@ -699,6 +932,7 @@ async function main() {
   
   // --next: 다음 pending 단계 실행 (기본)
   const progress = loadProgress();
+  if (isDemoMode) progress.context.demoMode = true;
   const next = getNextStep(progress);
   
   if (!next) {
@@ -785,6 +1019,8 @@ async function executeStep(stepId, progress) {
       return runCheckSystem(progress);
     case 'init-config':
       return runInitConfig(progress);
+    case 'cf-login':
+      return runCfLogin(progress);
     case 'device-register':
       return runDeviceRegister(progress);
     case 'npm-install-root':
