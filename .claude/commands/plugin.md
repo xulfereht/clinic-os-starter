@@ -38,7 +38,7 @@ If unclear, ask:
 
 ## Mode: create
 
-### Step 1 — Discovery (대화)
+### Step 1 — Discovery (conversation)
 
 DO NOT immediately generate files. First, understand what the user needs:
 
@@ -343,7 +343,7 @@ Submit a local plugin to HQ marketplace.
 ```
 
 4. Dev server must be running (`npm run dev`)
-5. Submit via admin UI: `/admin/hub/` → 해당 플러그인 → "HQ에 제출"
+5. Submit via admin UI: `/admin/hub/` → select the plugin → "HQ에 제출"
 
 ---
 
