@@ -13,7 +13,6 @@
   - `src/styles/` (except `src/styles/global.css — PROTECTED_EXACT`)
   - `src/lib/` (except `src/lib/local/`)
   - `src/skins/` (except `src/skins/local/`)
-  - `src/plugins/custom-homepage/`
   - `src/plugins/survey-tools/`
   - `src/survey-tools/stress-check/`
   - `src/content/aeo/`
@@ -42,13 +41,28 @@
   ```
   The `clinicLocalOverrides` Vite plugin makes `_local/` take priority at build/dev.
 
+  **⚠️ 스타터킷 구조 (core/ 폴더 사용) 주의사항:**
+  스타터킷에서는 빌드가 `core/` 안에서 실행됩니다 (`npm run build --prefix core`).
+  따라서 모든 `_local/` 경로가 `core/` 접두사를 가져야 합니다:
+  ```
+  core/src/pages/_local/{path}.astro   (NOT src/pages/_local/)
+  core/public/local/                    (NOT public/local/)
+  ```
+  **Import 경로**: 상대 경로(`../../components/`) 대신 alias를 사용해야 합니다:
+  ```astro
+  import BaseLayout from "@components/layout/BaseLayout.astro";  ✅
+  import { getClinicSettings } from "@lib/clinic";               ✅
+  import BaseLayout from "../../components/layout/BaseLayout.astro";  ❌ resolve 실패
+  ```
+  사용 가능한 alias: `@/` → `src/`, `@components/`, `@lib/`, `@layouts/`
+
 - **[HARD] Use `local/` directories for client code:**
-  - `src/lib/local/`
-  - `src/skins/local/`
-  - `src/plugins/local/`
-  - `src/pages/_local/`
-  - `src/survey-tools/local/`
-  - `public/local/`
+  - `src/lib/local/` (스타터킷: `core/src/lib/local/`)
+  - `src/skins/local/` (스타터킷: `core/src/skins/local/`)
+  - `src/plugins/local/` (스타터킷: `core/src/plugins/local/`)
+  - `src/pages/_local/` (스타터킷: `core/src/pages/_local/`)
+  - `src/survey-tools/local/` (스타터킷: `core/src/survey-tools/local/`)
+  - `public/local/` (스타터킷: `core/public/local/`)
   - `docs/internal/`
 
 - **[HARD] NEVER modify protected config files:**
@@ -70,7 +84,6 @@
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/styles/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/lib/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/skins/ |
-| `CORE_PATHS` | 코어 → 덮어쓰기 | src/plugins/custom-homepage/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/plugins/survey-tools/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/survey-tools/stress-check/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/content/aeo/ |
@@ -107,6 +120,7 @@
 | `PROTECTED_PREFIXES` | 접두사 매칭 보호 | .env |
 | `PROTECTED_PREFIXES` | 접두사 매칭 보호 | .core/ |
 | `PROTECTED_PREFIXES` | 접두사 매칭 보호 | src/plugins/local/ |
+| `PROTECTED_PREFIXES` | 접두사 매칭 보호 | src/plugins/custom-homepage/ |
 | `SPECIAL_MERGE_FILES` | 스마트 병합 | package.json |
 
 ## Why These Rules Exist
@@ -121,21 +135,36 @@ If you modify a core file directly, the change **will be lost** on next core:pul
 ## Safe Patterns
 
 ### Customize an existing page
+
+**마스터 레포:**
 ```bash
 mkdir -p src/pages/_local/doctors
 cp src/pages/doctors/index.astro src/pages/_local/doctors/index.astro
 # Edit _local/ copy — it takes priority at build time
 ```
 
+**스타터킷 (core/ 구조):**
+```bash
+mkdir -p core/src/pages/_local/doctors
+cp core/src/pages/doctors/index.astro core/src/pages/_local/doctors/index.astro
+# ⚠️ import는 반드시 alias 사용:
+#   import X from "@components/..."   ✅
+#   import X from "../../components/"  ❌ (resolve 실패)
+# ⚠️ 정적 에셋은 core/public/local/에 배치
+```
+
 ### Add a new feature
 ```bash
+# 마스터: src/plugins/local/my-feature
+# 스타터킷: core/src/plugins/local/my-feature
 mkdir -p src/plugins/local/my-feature
 # Create manifest.json + pages/ in the local plugin
 ```
 
 ### Add client utilities
 ```bash
-# src/lib/local/my-helper.ts — safe from core:pull
+# 마스터: src/lib/local/my-helper.ts
+# 스타터킷: core/src/lib/local/my-helper.ts
 ```
 
 ### Modify DB schema
@@ -144,6 +173,19 @@ mkdir -p src/plugins/local/my-feature
 CREATE TABLE custom_my_data (...);
 -- NEVER ALTER existing core tables
 ```
+
+## Migration Rules (HARD)
+
+- **[HARD] `migrations/` = DDL만** (CREATE TABLE, ALTER TABLE, CREATE INDEX, DROP)
+  - core:pull 시 로컬 DB에 자동 적용
+  - deploy-guard 시 리모트(프로덕션) DB에 자동 적용
+  - 프로덕션 데이터를 건드리는 INSERT/UPDATE/DELETE 절대 금지
+- **[HARD] `seeds/` = DML만** (INSERT, UPDATE, DELETE)
+  - 초기 설치(`setup-clinic.js`) 시 1회만 실행
+  - d1_seeds 테이블로 재실행 방지
+  - 운영 중인 프로덕션에는 자동 실행되지 않음
+- **[HARD] 하나의 파일에 DDL + DML 혼합 금지**
+- **[HARD] DML 시드는 멱등 패턴 사용** (INSERT OR IGNORE, INSERT OR REPLACE, WHERE 조건)
 
 ## Reference Docs
 
