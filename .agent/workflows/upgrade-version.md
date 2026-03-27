@@ -100,28 +100,24 @@ npm run upgrade
 
 ## Phase 5: DB 마이그레이션
 
-새 버전에 DB 변경이 있는지 확인합니다.
+core:pull이 **로컬 DB에 DDL 마이그레이션을 자동 적용**합니다 (v1.29.7~).
 
 ```bash
-ls migrations/    # 마스터 구조
-ls core/migrations/  # 스타터킷 구조
+npm run db:migrate   # 수동 실행 시 (로컬)
 ```
 
-새 마이그레이션이 있으면:
-// turbo
-```bash
-npm run db:migrate
-```
-
+> **v1.29.7 — DDL/DML 분리:**
+> - `migrations/` = DDL만 (스키마). 로컬 + 리모트 자동 적용 대상.
+> - `seeds/` = DML만 (데이터). 초기 설치 시 1회만 실행. 프로덕션 데이터 보호.
+> - **리모트(프로덕션) DB**: 배포 시 `deploy-guard`가 갭을 감지하고 자동 적용.
+>   core:pull 단계에서는 리모트를 건드리지 않음.
+>
 > v1.24.3부터:
 > - `db:migrate`는 root의 `.docking/engine/migrate.js`를 직접 실행 (core:pull로 항상 최신 유지)
 > - wrangler.toml 존재를 먼저 확인하며, 없으면 `npm run setup` 안내
 > - `findProjectRoot()`가 `core/package.json`도 감지하여 스타터킷 구조 자동 지원
 > - 마이그레이션 실패 시 seeds 실행을 자동으로 건너뜀
 > - 에러 발생 시 `.agent/last-error.json`에 구조화된 보고서 저장
->
-> v1.24.4부터:
-> - DB 바인딩 기본 이름 통일 (`clinic-os-db`, wrangler.toml 있으면 그곳에서 읽음)
 >
 > ⚠️ fetch.js 수정사항은 **다음** core:pull부터 적용됩니다.
 > 긴급 수정: `npm run update:starter && npm run core:pull`
@@ -140,6 +136,55 @@ npm run dev
 - [ ] 관리자 로그인
 - [ ] 기존 커스터마이징 유지 확인
 - [ ] 새 기능 작동 확인
+
+---
+
+## Phase 6.5: 업그레이드 후 자동 점검
+
+core:pull 완료 후 아래 항목을 자동으로 점검합니다.
+
+### 커스텀 홈페이지 데이터 오염 복구 (v1.31.4)
+
+v1.31.3 이전 버전에서 core:pull 시 마스터의 바로한의원 전용 데이터가 커스텀 홈페이지에 혼입된 사례가 보고되었습니다.
+`PROTECTED_PREFIXES`로 보호되기 때문에 core:pull만으로는 자동 교체되지 않으므로, 로컬에서 직접 확인하고 복구해야 합니다.
+
+**감지 방법:**
+```bash
+# 커스텀 홈페이지에 바로한의원 데이터가 있는지 확인
+grep -l "안태석\|문지현\|RDMS\|RMSK\|lystKvO0_q8\|국가대표 진료" \
+  src/plugins/custom-homepage/pages/index.astro \
+  src/plugins/local/custom-homepage/pages/index.astro 2>/dev/null
+```
+
+결과가 출력되면 오염된 것입니다.
+
+**복구 방법:**
+
+1. **프리셋 기반 초기화** (커스터마이징 전이라면):
+```bash
+cp src/plugins/custom-homepage/presets/editorial.astro \
+   src/plugins/custom-homepage/pages/index.astro
+```
+
+2. **이미 커스터마이징한 경우** (원장님이 직접 수정한 내용이 있다면):
+파일을 열어서 아래 바로한의원 전용 데이터만 제거하거나 해당 한의원 정보로 교체:
+- `안태석`, `문지현` → 해당 한의원 원장 이름
+- `RDMS`, `RMSK`, `ARDMS` 자격증 → 해당 한의원 자격증 또는 빈 배열 `[]`
+- 논문 3편 (초음파 유도 약침 등) → 해당 한의원 논문 또는 빈 배열 `[]`
+- YouTube URL `lystKvO0_q8` → 해당 한의원 영상 또는 빈 문자열 `""`
+- 강점 배지 "국가대표 진료", "학술대회 강연" → 해당 한의원 강점
+
+3. **local/ 경로 권장**: 복구 후 커스터마이징 내용은 `src/plugins/local/custom-homepage/`로 이동하면 향후 core:pull에서 완전히 보호됩니다:
+```bash
+mkdir -p src/plugins/local/custom-homepage/pages
+cp src/plugins/custom-homepage/pages/index.astro \
+   src/plugins/local/custom-homepage/pages/index.astro
+cp src/plugins/custom-homepage/manifest.json \
+   src/plugins/local/custom-homepage/manifest.json
+# 이후 local/ 쪽을 수정
+```
+
+> **원칙**: 코어 custom-homepage에는 범용 템플릿만 존재. 클리닉별 데이터는 반드시 `local/custom-homepage/`에 배치.
 
 ---
 

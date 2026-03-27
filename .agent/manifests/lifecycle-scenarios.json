@@ -31,7 +31,7 @@
       "strategy": "update_in_place_with_snapshot",
       "default_commands": [
         "npm run agent:snapshot -- --reason=pre-update",
-        "npm run core:pull -- --auto"
+        "node scripts/update-starter-core.js --stable"
       ]
     },
     {

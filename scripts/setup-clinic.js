@@ -8,6 +8,7 @@ import readline from 'readline';
 import { exec, execSync, spawn } from 'child_process';
 import { promisify } from 'util';
 import { buildNpmCommand } from './lib/npm-cli.js';
+import { buildLocalDbBootstrapReport } from './lib/setup-db-bootstrap.js';
 
 const execAsync = promisify(exec);
 const __filename = fileURLToPath(import.meta.url);
@@ -68,6 +69,28 @@ async function executeWithRetry(fn, config = RETRY_CONFIG) {
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function execCommandChecked(cmd, options = {}) {
+    const cwd = options.cwd || PROJECT_ROOT;
+    const timeout = options.timeout;
+
+    try {
+        await execAsync(cmd, {
+            cwd,
+            timeout,
+            maxBuffer: 10 * 1024 * 1024,
+        });
+        return true;
+    } catch (error) {
+        const message = [
+            typeof error.stderr === 'string' ? error.stderr.trim() : error.stderr?.toString?.('utf8')?.trim?.(),
+            typeof error.stdout === 'string' ? error.stdout.trim() : error.stdout?.toString?.('utf8')?.trim?.(),
+            error.message,
+        ].filter(Boolean).join('\n');
+
+        throw new Error(message || `Command failed: ${cmd}`);
+    }
 }
 
 // ... Configuration ...
@@ -289,7 +312,7 @@ async function installDependenciesForSetup() {
     if (useParallelInstall) {
         console.log('   🚀 병렬 설치 모드 사용');
         console.log('   - 루트 의존성과 core 의존성을 동시에 설치합니다.');
-        console.log('   - 저사양/Windows 환경은 --sequential-install 로 순차 실행 가능합니다.');
+        console.log('   - 저사양 환경은 --sequential-install 로 순차 실행 가능합니다.');
 
         const rootRuntime = createInstallRuntime('root');
         const coreRuntime = createInstallRuntime('core');
@@ -548,10 +571,16 @@ export async function setupClinic() {
     console.log("   🏥  Clinic-OS 초기 설정 마법사 v3.0  🏥");
     console.log("═══════════════════════════════════════════════════════════\n");
 
+    // CF-First 안내: setup:step 권장
+    console.log("💡 권장: 단계별 설치(npm run setup:step -- --next)를 사용하면");
+    console.log("   Cloudflare 로그인이 Phase 1에서 자동으로 처리됩니다.");
+    console.log("   📖 Cloudflare 셋업 가이드: docs/CLOUDFLARE_SETUP_GUIDE.md\n");
+
     // 0. System Health Check
     const isReady = await runCheck();
     if (!isReady) {
         console.log("\n❌ 환경 설정이 완료되지 않았습니다. 위 안내에 따라 필수 도구를 설치해주세요.");
+        console.log("   공식 설치 기준은 macOS 또는 WSL Ubuntu 입니다.");
         console.log("   도움이 필요하시면 가이드를 확인하세요: https://clinic-os-hq.pages.dev/guide/setup\n");
         process.exit(1);
     }
@@ -768,6 +797,7 @@ ALIGO_TESTMODE = "Y"
 binding = "DB"
 database_name = "${dbName}"
 database_id = "${dId}"
+migrations_dir = "core/migrations"
 `;
         await fs.writeFile(wranglerPath, content);
     };
@@ -775,6 +805,70 @@ database_id = "${dId}"
     if (!fs.existsSync(wranglerPath)) {
         await writeWrangler(dbId);
         console.log("   ✅ 로컬용 wrangler.toml 생성 완료");
+    }
+
+    // 6.5 Cloudflare 로그인 + D1/R2 생성 (CF-First: 필수)
+    console.log("\n☁️  Step 6.5: Cloudflare 로그인 및 리소스 생성\n");
+    console.log("   📖 Cloudflare 셋업 가이드: docs/CLOUDFLARE_SETUP_GUIDE.md");
+    console.log("   📖 온라인: https://clinic-os-hq.pages.dev/guide/cloudflare-setup\n");
+
+    let cfLoggedIn = false;
+    if (process.env.CLOUDFLARE_API_TOKEN) {
+        console.log("   🔑 CLOUDFLARE_API_TOKEN 감지 — 토큰 모드로 진행합니다.");
+        cfLoggedIn = true;
+    } else {
+        const whoamiResult = await runCommand('npx wrangler whoami', true);
+        if (whoamiResult.success) {
+            console.log("   ✅ Cloudflare 로그인 확인됨.");
+            cfLoggedIn = true;
+        } else {
+            console.log("   Cloudflare에 로그인되어 있지 않습니다.");
+            console.log("   배포와 프로덕션 DB를 사용하려면 Cloudflare 로그인이 필요합니다.");
+            console.log("   계정이 없으면: https://dash.cloudflare.com/sign-up (무료)\n");
+
+            if (IS_AUTO) {
+                console.log("   ⚠️  [Auto Mode] Cloudflare 미로그인 — 로컬 전용 모드로 계속합니다.");
+            } else {
+                const doLogin = await ask("   지금 Cloudflare에 로그인하시겠습니까? (y/n, default: y): ", "y");
+                if (doLogin.toLowerCase() !== 'n') {
+                    const loginResult = await runCommand('npx wrangler login');
+                    if (loginResult.success) {
+                        console.log("   ✅ Cloudflare 로그인 성공!");
+                        cfLoggedIn = true;
+                    } else {
+                        console.log("   ⚠️  로그인 실패. 나중에 npx wrangler login으로 다시 시도하세요.");
+                    }
+                }
+            }
+        }
+    }
+
+    // CF 로그인 성공 시 D1 + R2 자동 생성
+    if (cfLoggedIn && dbId === 'local-db-placeholder') {
+        console.log(`\n   📦 D1 데이터베이스 생성: ${dbName}`);
+        try {
+            const { stdout } = await execAsync(`npx wrangler d1 create ${dbName}`, { cwd: PROJECT_ROOT });
+            const match = stdout.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/);
+            if (match) {
+                dbId = match[1];
+                await writeWrangler(dbId);
+                console.log(`   ✅ D1 생성 완료: ${dbId}`);
+                console.log("   ✅ wrangler.toml 업데이트 완료");
+            }
+        } catch (error) {
+            console.log(`   ⚠️  D1 생성 실패 또는 이미 존재 (기존 설정 유지).`);
+        }
+
+        console.log(`   📦 R2 버킷 생성: ${bucketName}`);
+        try {
+            await runCommand(`npx wrangler r2 bucket create ${bucketName}`, true);
+            console.log(`   ✅ R2 버킷 생성 완료: ${bucketName}`);
+        } catch (e) {
+            console.log(`   ⏭️  R2 버킷 이미 존재하거나 생성 실패 (무시)`);
+        }
+    } else if (!cfLoggedIn) {
+        console.log("\n   ⚠️  Cloudflare 미연결 — 로컬 개발은 가능하지만 배포 전 반드시 설정하세요.");
+        console.log("   npx wrangler login → npm run setup:step -- --step=cf-login\n");
     }
 
     // 7. Install Dependencies (moved up)
@@ -982,25 +1076,37 @@ exit 0
     // 8. Initialize Local Database
     console.log("\n🗃️  Step 8: 로컬 데이터베이스 초기화\n");
 
-    // Windows (WSL 없이)에서는 wrangler/workerd 기반 local D1 런타임이 환경에 따라
-    // access violation(0xc0000005)로 크래시하는 사례가 확인됨.
-    // 목표가 WSL 없는 Windows 지원이라면 "설치 과정이 무탈"해야 하므로, 기본값으로
-    // local D1 마이그레이션/시드는 스킵하고 dev는 DB 없이도 시작 가능하게 둔다.
-    // 필요 시 사용자가 CLINIC_OS_FORCE_LOCAL_D1=true 로 강제 가능.
-    const FORCE_LOCAL_D1 = process.env.CLINIC_OS_FORCE_LOCAL_D1 === 'true';
-    if (process.platform === 'win32' && !FORCE_LOCAL_D1) {
-        console.log('   ⚠️  Windows 환경: local D1 초기화를 기본값으로 건너뜁니다.');
-        console.log('   이유: wrangler/workerd local 런타임이 Windows에서 크래시할 수 있음 (0xc0000005).');
-        console.log('   ✅ 계속 진행합니다. (개발 서버는 DB 없이도 실행 가능)');
-        console.log('   💡 local D1을 꼭 쓰려면 환경변수 CLINIC_OS_FORCE_LOCAL_D1=true 로 다시 실행하세요.');
-    } else {
-
     // 마이그레이션 파일 탐색: core/migrations/ 또는 migrations/ (구조에 따라)
     let migrationPath = path.join(PROJECT_ROOT, 'core/migrations/0000_initial_schema.sql');
     if (!fs.existsSync(migrationPath)) {
         migrationPath = path.join(PROJECT_ROOT, 'migrations/0000_initial_schema.sql');
     }
     const localD1StatePath = path.join(PROJECT_ROOT, '.wrangler/state/v3/d1');
+    const bootstrapState = {
+        skipped: false,
+        hasMigrationFiles: fs.existsSync(migrationPath),
+        migrationResult: null,
+        schemaResult: null,
+        seedResults: [],
+    };
+
+    const verifyLocalSchema = async () => {
+        try {
+            const { runSchemaDoctor } = await import('./doctor.js');
+            const schemaResult = await runSchemaDoctor(dbName, { fix: false, verbose: false });
+            if (schemaResult.ok) {
+                console.log('   ✅ 로컬 DB 스키마 검증 완료');
+            } else {
+                const missingTables = schemaResult.missing?.tables?.length || 0;
+                const missingColumns = schemaResult.missing?.columns?.length || 0;
+                console.log(`   ❌ 로컬 DB 스키마 검증 실패: 테이블 ${missingTables}개, 컬럼 ${missingColumns}개 누락`);
+            }
+            return schemaResult;
+        } catch (error) {
+            console.log(`   ❌ 로컬 DB 스키마 검증 실패: ${error.message}`);
+            return { ok: false, error: error.message };
+        }
+    };
 
     if (fs.existsSync(migrationPath)) {
         // Cleanup processes and state to avoid locks
@@ -1037,144 +1143,179 @@ exit 0
         // - ALTER TABLE ADD COLUMN: 컬럼 존재 여부 확인 후 실행/스킵
         // - CREATE TABLE IF NOT EXISTS: 그대로 실행 (멱등)
         // - 기존 데이터 보존 보장
-        let migrationFailed = false;
         if (fs.existsSync(migrationsDir)) {
             console.log(`   🚀 통합 마이그레이션 엔진으로 실행 중... (PRAGMA 안전 모드)`);
-            const migResult = await runMigrations({ local: true, verbose: true, verify: false });
-            if (migResult.success) {
-                console.log(`   ✅ ${migResult.applied}개 마이그레이션 적용 완료`);
+            bootstrapState.migrationResult = await runMigrations({ local: true, verbose: true, verify: false });
+            if (bootstrapState.migrationResult.success) {
+                console.log(`   ✅ ${bootstrapState.migrationResult.applied}개 마이그레이션 적용 완료`);
+                bootstrapState.schemaResult = await verifyLocalSchema();
             } else {
-                migrationFailed = true;
-                console.log(`   ⚠️  마이그레이션 완료: ${migResult.applied}개 성공, ${migResult.failed}개 실패`);
-                if (migResult.errors?.length > 0) {
-                    for (const err of migResult.errors) {
+                console.log(`   ⚠️  마이그레이션 완료: ${bootstrapState.migrationResult.applied}개 성공, ${bootstrapState.migrationResult.failed}개 실패`);
+                if (bootstrapState.migrationResult.errors?.length > 0) {
+                    for (const err of bootstrapState.migrationResult.errors) {
                         console.log(`      - ${err.file}: ${err.error}`);
                     }
                 }
-                console.log('   ⚠️  마이그레이션 실패로 Seeds를 건너뜁니다.');
-                console.log('   💡 npm run doctor로 진단하거나 npm run db:seed로 나중에 실행하세요.');
             }
         }
 
         // Additional Local Seeds (Restoration) — 마이그레이션 성공 시에만 실행
-        if (!migrationFailed) {
-        const additionalSeeds = [
-            'seeds/terms_definitions.sql',
-            'seeds/terms_versions.sql',
-            'seeds/default_pages.sql',
-            'seeds/prepare_samples.sql',
-            'seeds/program_translations_sample.sql',
-            'seeds/seed_manuals.sql',
-            'seeds/seed_system_manuals.sql',
-            'seeds/seed_templates.sql',
-            'seeds/sample_ops_data.sql',
-            'seeds/sample_patients.sql',
-            'seeds/sample_faqs.sql',
-            'seeds/dummy_posts.sql',
-            'seeds/dummy_reviews.sql',
-            'seeds/sample_notices.sql',
-            'seeds/knowledge_seed.sql'
-        ];
+        if (bootstrapState.migrationResult?.success && bootstrapState.schemaResult?.ok !== false) {
+            const additionalSeeds = [
+                'seeds/terms_definitions.sql',
+                'seeds/terms_versions.sql',
+                'seeds/default_pages.sql',
+                'seeds/prepare_samples.sql',
+                'seeds/program_translations_sample.sql',
+                'seeds/seed_manuals.sql',
+                'seeds/seed_system_manuals.sql',
+                'seeds/seed_templates.sql',
+                'seeds/sample_ops_data.sql',
+                'seeds/sample_patients.sql',
+                'seeds/sample_faqs.sql',
+                'seeds/dummy_posts.sql',
+                'seeds/dummy_reviews.sql',
+                'seeds/sample_notices.sql',
+                'seeds/knowledge_seed.sql'
+            ];
 
-        console.log(`   🚀 샘플 데이터 삽입 중... (${additionalSeeds.length + 1}개 파일, ~${(additionalSeeds.length + 1) * 2}초 예상)`);
-        // 시드 경로: core/seeds/ 또는 seeds/ (구조에 따라 다름)
-        let sampleClinicPath = 'core/seeds/sample_clinic.sql';
-        if (!fs.existsSync(path.join(PROJECT_ROOT, sampleClinicPath))) {
-            sampleClinicPath = 'seeds/sample_clinic.sql';
-        }
-        const seedOk = await executeWithRetry(() => runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file=${sampleClinicPath} --yes`));
-
-        const seedStartTime = Date.now();
-        for (let i = 0; i < additionalSeeds.length; i++) {
-            const seedFile = additionalSeeds[i];
-            // 1. Try finding in PROJECT_ROOT (local override)
-            let finalPath = path.join(PROJECT_ROOT, seedFile);
-            let displayPath = seedFile;
-
-            if (!fs.existsSync(finalPath)) {
-                // 2. Try finding in core directory (standard distribution)
-                finalPath = path.join(PROJECT_ROOT, 'core', seedFile);
-                displayPath = path.join('core', seedFile);
+            console.log(`   🚀 샘플 데이터 삽입 중... (${additionalSeeds.length + 1}개 파일, ~${(additionalSeeds.length + 1) * 2}초 예상)`);
+            // 시드 경로: core/seeds/ 또는 seeds/ (구조에 따라 다름)
+            let sampleClinicPath = 'core/seeds/sample_clinic.sql';
+            if (!fs.existsSync(path.join(PROJECT_ROOT, sampleClinicPath))) {
+                sampleClinicPath = 'seeds/sample_clinic.sql';
+            }
+            if (!fs.existsSync(path.join(PROJECT_ROOT, sampleClinicPath))) {
+                bootstrapState.seedResults.push({
+                    name: 'sample_clinic.sql',
+                    ok: false,
+                    required: true,
+                    error: '필수 시드 파일이 없습니다.',
+                });
+            } else {
+                try {
+                    await executeWithRetry(() => execCommandChecked(`${wranglerCmd} d1 execute ${dbName} --local --file=${sampleClinicPath} --yes`, { cwd: PROJECT_ROOT, timeout: 60000 }));
+                    bootstrapState.seedResults.push({ name: 'sample_clinic.sql', ok: true, required: true });
+                } catch (error) {
+                    bootstrapState.seedResults.push({
+                        name: 'sample_clinic.sql',
+                        ok: false,
+                        required: true,
+                        error: error.message,
+                    });
+                }
             }
 
-            if (fs.existsSync(finalPath)) {
-                const elapsed = (Date.now() - seedStartTime) / 1000;
-                const rate = i > 0 ? elapsed / i : 2;
-                const remaining = Math.ceil(rate * (additionalSeeds.length - i));
-                console.log(`   🌱 [${i + 1}/${additionalSeeds.length}] ${path.basename(seedFile)} (~${remaining}s 남음)`);
-                await executeWithRetry(() => runCommand(`${wranglerCmd} d1 execute ${dbName} --local --file=${displayPath} --yes`));
+            const seedStartTime = Date.now();
+            for (let i = 0; i < additionalSeeds.length; i++) {
+                if (bootstrapState.seedResults.some((entry) => entry.required !== false && !entry.ok)) {
+                    break;
+                }
+                const seedFile = additionalSeeds[i];
+                // 1. Try finding in PROJECT_ROOT (local override)
+                let finalPath = path.join(PROJECT_ROOT, seedFile);
+                let displayPath = seedFile;
+
+                if (!fs.existsSync(finalPath)) {
+                    // 2. Try finding in core directory (standard distribution)
+                    finalPath = path.join(PROJECT_ROOT, 'core', seedFile);
+                    displayPath = path.join('core', seedFile);
+                }
+
+                if (fs.existsSync(finalPath)) {
+                    const elapsed = (Date.now() - seedStartTime) / 1000;
+                    const rate = i > 0 ? elapsed / i : 2;
+                    const remaining = Math.ceil(rate * (additionalSeeds.length - i));
+                    console.log(`   🌱 [${i + 1}/${additionalSeeds.length}] ${path.basename(seedFile)} (~${remaining}s 남음)`);
+                    try {
+                        await executeWithRetry(() => execCommandChecked(`${wranglerCmd} d1 execute ${dbName} --local --file=${displayPath} --yes`, { cwd: PROJECT_ROOT, timeout: 60000 }));
+                        bootstrapState.seedResults.push({ name: path.basename(seedFile), ok: true, required: true });
+                    } catch (error) {
+                        bootstrapState.seedResults.push({
+                            name: path.basename(seedFile),
+                            ok: false,
+                            required: true,
+                            error: error.message,
+                        });
+                    }
+                }
+            }
+
+            // d1_seeds 테이블 생성 및 실행된 seeds 기록 (core:pull 시 재실행 방지)
+            if (!bootstrapState.seedResults.some((entry) => entry.required !== false && !entry.ok)) {
+                console.log("   📝 Seeds 기록 초기화 중...");
+                await executeWithRetry(() => execCommandChecked(`${wranglerCmd} d1 execute ${dbName} --local --command "CREATE TABLE IF NOT EXISTS d1_seeds (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, applied_at TEXT DEFAULT (datetime('now')))" --yes`, { cwd: PROJECT_ROOT, timeout: 60000 }));
+
+                // seeds 폴더의 모든 파일을 기록
+                let seedsDir = path.join(PROJECT_ROOT, 'core/seeds');
+                if (!fs.existsSync(seedsDir)) {
+                    seedsDir = path.join(PROJECT_ROOT, 'seeds');
+                }
+
+                if (fs.existsSync(seedsDir)) {
+                    const seedFiles = fs.readdirSync(seedsDir)
+                        .filter(f => f.endsWith('.sql'))
+                        .sort();
+
+                    for (const seedFile of seedFiles) {
+                        await executeWithRetry(() => execCommandChecked(`${wranglerCmd} d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_seeds (name) VALUES ('${seedFile}')" --yes`, { cwd: PROJECT_ROOT, timeout: 60000 }));
+                    }
+                    console.log(`   ✅ ${seedFiles.length}개 seeds 기록 완료 (초기 설치)`);
+                }
+
+                // API 키 자동 프로비저닝 — 위임 셋업 및 extract-content에서 사용
+                const crypto = await import('crypto');
+                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+                let apiKey = 'cos_';
+                const randomBytes = crypto.randomBytes(32);
+                for (let i = 0; i < 32; i++) {
+                    apiKey += chars[randomBytes[i] % chars.length];
+                }
+                try {
+                    await executeWithRetry(() => execCommandChecked(
+                        `${wranglerCmd} d1 execute ${dbName} --local --command "INSERT OR REPLACE INTO site_settings (category, key, value, updated_at) VALUES ('api', 'admin_api_key', '${apiKey}', strftime('%s', 'now'))" --yes`,
+                        { cwd: PROJECT_ROOT, timeout: 60000 }
+                    ));
+                    console.log(`   🔑 API 키 자동 생성 완료: ${apiKey.slice(0, 8)}****`);
+                } catch (error) {
+                    console.log(`   ⚠️  API 키 생성 실패 (수동 생성 필요): ${error.message}`);
+                }
+
+                // 필수 site_settings 자동 설정 (clinic-info 온보딩 기반)
+                try {
+                    const essentialSettings = [
+                        // clinics 테이블에 이름 설정
+                        `INSERT OR REPLACE INTO clinics (id, name, updated_at) VALUES ('1', '${clinicName.replace(/'/g, "''")}', strftime('%s', 'now'))`,
+                    ];
+                    for (const sql of essentialSettings) {
+                        await executeWithRetry(() => execCommandChecked(
+                            `${wranglerCmd} d1 execute ${dbName} --local --command "${sql}" --yes`,
+                            { cwd: PROJECT_ROOT, timeout: 60000 }
+                        ));
+                    }
+                    console.log(`   📝 클리닉 기본 정보 설정 완료`);
+                } catch (error) {
+                    console.log(`   ⚠️  클리닉 기본 정보 설정 실패: ${error.message}`);
+                }
             }
         }
-
-        // d1_seeds 테이블 생성 및 실행된 seeds 기록 (core:pull 시 재실행 방지)
-        console.log("   📝 Seeds 기록 초기화 중...");
-        await executeWithRetry(() => runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "CREATE TABLE IF NOT EXISTS d1_seeds (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, applied_at TEXT DEFAULT (datetime('now')))" --yes`));
-
-        // seeds 폴더의 모든 파일을 기록
-        let seedsDir = path.join(PROJECT_ROOT, 'core/seeds');
-        if (!fs.existsSync(seedsDir)) {
-            seedsDir = path.join(PROJECT_ROOT, 'seeds');
-        }
-
-        if (fs.existsSync(seedsDir)) {
-            const seedFiles = fs.readdirSync(seedsDir)
-                .filter(f => f.endsWith('.sql'))
-                .sort();
-
-            for (const seedFile of seedFiles) {
-                await executeWithRetry(() => runCommand(`${wranglerCmd} d1 execute ${dbName} --local --command "INSERT OR IGNORE INTO d1_seeds (name) VALUES ('${seedFile}')" --yes`));
-            }
-            console.log(`   ✅ ${seedFiles.length}개 seeds 기록 완료 (초기 설치)`);
-        }
-
-        if (seedOk) {
-            console.log("   ✅ 데이터베이스 초기화 및 전체 시딩 완료");
-        } else {
-            console.log("   ❌ 데이터베이스 시딩 실패. 위 오류를 확인해 주세요.");
-        }
-        } // end if (!migrationFailed)
     } else {
         console.log("   ⚠️  마이그레이션 파일을 찾을 수 없습니다.");
     }
+    const bootstrapReport = buildLocalDbBootstrapReport(bootstrapState);
+    if (!bootstrapReport.ok) {
+        throw new Error(`로컬 데이터베이스 초기화 실패: ${bootstrapReport.issues.join(' / ')}`);
+    }
+    console.log("   ✅ 데이터베이스 초기화 및 전체 시딩 완료");
 
-    } // end Step 8 (local D1 init block)
-
-    // 9. Cloudflare Setup (Optional / Advanced)
-    console.log("\n☁️  Step 9: Cloudflare 프로덕션 설정 (선택사항)\n");
-    console.log("   실제 서버에 배포하려면 Cloudflare 연결이 필요합니다.");
-    console.log("   로컬 개발만 진행하려면 건너뛰셔도 됩니다.\n");
-
-    const doCloudflare = await ask("   지금 프로덕션 설정을 진행하시겠습니까? (y/n, default: n): ", "n");
-
-    if (!IS_AUTO && doCloudflare.toLowerCase() === 'y') {
-        const doLogin = await ask("   Cloudflare 로그인을 진행하시겠습니까? (y/n): ");
-        if (doLogin.toLowerCase() === 'y') {
-            await runCommand('npx wrangler login');
-        }
-
-        console.log(`\n   데이터베이스 생성: ${dbName}`);
-        try {
-            const { stdout } = await execAsync(`npx wrangler d1 create ${dbName}`, { cwd: PROJECT_ROOT });
-            console.log(stdout);
-            const match = stdout.match(/database_id\s*=\s*"([^"]+)"/);
-            if (match) {
-                dbId = match[1];
-                console.log(`   ✅ DB ID 획득: ${dbId}`);
-                await writeWrangler(dbId); // Update with real ID
-                console.log("   ✅ wrangler.toml 업데이트 완료");
-            }
-        } catch (error) {
-            console.log(`   ⚠️  DB 생성 실패 또는 이미 존재 (기존 ID 유지).`);
-        }
-
-        console.log(`\n   R2 버킷 생성: ${bucketName}`);
-        try {
-            await runCommand(`npx wrangler r2 bucket create ${bucketName}`);
-        } catch (e) {
-            // Ignore if exists
-        }
+    // 9. Cloudflare 설정 확인 (Step 6.5에서 이미 처리됨)
+    if (cfLoggedIn) {
+        console.log("\n☁️  Step 9: Cloudflare 설정 ✅ (Step 6.5에서 완료됨)\n");
     } else {
-        console.log("   ⏭️  프로덕션 설정을 건너뜁니다.");
+        console.log("\n☁️  Step 9: Cloudflare 미연결 상태\n");
+        console.log("   배포 전에 다음 명령어를 실행하세요:");
+        console.log("   npx wrangler login");
+        console.log("   npm run setup:step -- --step=cf-login\n");
     }
 
     // 10. Generate Claude Code protection settings
@@ -1271,6 +1412,21 @@ exit 0
             last_updated: new Date().toISOString(),
             current_tier: 1,
             deployment_count: 0,
+            briefing_completed_at: null,
+            chosen_track: {
+                mode: 'recommended',
+                tier: 1,
+                feature_id: null,
+                updated_at: null,
+                notes: null
+            },
+            current_focus: {
+                feature_id: null,
+                checkpoint: null,
+                updated_at: null
+            },
+            session_notes: [],
+            deferred_items: [],
             clinic_name: clinicName,
             features: featureStates
         };

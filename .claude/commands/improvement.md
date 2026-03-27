@@ -1,33 +1,37 @@
-다음 개선 작업을 안내합니다.
+# /improvement — Improvement Tracker
+> **Scope: meta** — This skill runs in the master repo only. Not available in client repos.
 
-## 절차
+> **Role**: Engineering Manager (Prioritization)
+> **Cognitive mode**: Triage incomplete improvements by impact and urgency. Connect each item to its audit origin. Recommend the highest-value next action.
 
-1. `docs/audits/IMPROVEMENT-TRACKER.md`를 읽으세요.
+## Procedure
 
-2. 미완료 항목(`[ ]`)을 추출하세요.
+1. Read `docs/audits/IMPROVEMENT-TRACKER.md`.
 
-3. 우선순위를 판단하세요:
-   - **즉시**: 보안/개인정보 관련, 규칙 불일치
-   - **단기**: 문서 정확성, 가드레일 보완
-   - **중기**: 자동화, SOT 통합
-   - **장기**: 아키텍처 개선
+2. Extract incomplete items (`[ ]`).
 
-4. 가장 최근 감사 보고서(`docs/audits/` 내 최신 파일)를 참조하여
-   각 미완료 항목의 맥락을 설명하세요.
+3. Determine priority:
+   - **Immediate**: Security/privacy related, rule inconsistencies
+   - **Short-term**: Documentation accuracy, guardrail improvements
+   - **Mid-term**: Automation, SOT consolidation
+   - **Long-term**: Architecture improvements
 
-## 출력
+4. Reference the most recent audit report (latest file in `docs/audits/`)
+   to explain the context of each incomplete item.
 
-한국어로 출력하세요:
+## Output
 
-### 현재 상태
-- 전체 N개 항목 중 M개 완료 (진행률)
+Present in Korean:
 
-### 다음 추천 작업 (상위 3개)
-각 항목에 대해:
-- 항목 ID와 설명
-- 왜 지금 해야 하는지
-- 예상 범위 (수정할 파일, 난이도)
-- 관련 감사 보고서 참조
+### Current Status
+- M of N total items complete (progress rate)
 
-### 전체 미완료 목록
-우선순위 순서로 나열
+### Recommended Next Tasks (top 3)
+For each item:
+- Item ID and description
+- Why it should be done now
+- Estimated scope (files to modify, difficulty)
+- Related audit report reference
+
+### Full Incomplete List
+Listed in priority order
