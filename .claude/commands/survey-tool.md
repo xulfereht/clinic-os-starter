@@ -37,7 +37,7 @@ If unclear, ask:
 
 ## Mode: create
 
-### Step 1 — Discovery (대화)
+### Step 1 — Discovery (conversation)
 
 DO NOT immediately generate files. First, have a conversation:
 
@@ -275,7 +275,7 @@ HQ에 공개하면 다른 Clinic-OS 사용자가 설치할 수 있습니다.
 
 If yes:
 - Ensure `npm run dev` is running (HQ submit requires dev mode for filesystem access)
-- Guide through the admin UI: `/admin/surveys/tools` → 해당 도구 → "HQ에 공개"
+- Guide through the admin UI: `/admin/surveys/tools` → select the tool → "HQ에 공개"
 - Or if API is available, use direct submission
 
 ---
