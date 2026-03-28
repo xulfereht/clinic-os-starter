@@ -1,8 +1,8 @@
 ---
 hq_slug: admin-guide
 hq_title: "관리자 사용 가이드"
-hq_category: "02. 시작 가이드"
-hq_sort: 2
+hq_category: "06. 설치와 환경"
+hq_sort: 16
 hq_active: true
 ---
 # Clinic-OS 사용자 가이드

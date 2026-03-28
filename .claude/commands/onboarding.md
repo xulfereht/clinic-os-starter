@@ -23,7 +23,7 @@ Read all state files in parallel:
 .agent/softgate-state.json    — gate pass status
 .agent/onboarding-state.json  — feature completion status
 .agent/clinic-profile.json    — clinic data (Gate 0 result)
-.agent/onboarding-registry.json — feature specs (48 features × 5 tiers)
+.agent/onboarding-registry.json — feature specs (33 features × 5 tiers)
 ```
 
 If state files don't exist, initialize with defaults.
