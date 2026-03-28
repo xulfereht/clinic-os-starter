@@ -8,11 +8,10 @@
 - 사람: 스타터킷 설치, 에이전트 CLI 실행, 필요한 정보 제공, 결과 승인
 - 에이전트: 레포 읽기, 상태 진단, 설치/복구/이관/배포 진행
 - 기본 권장 에이전트: `Claude Code`
-- 사용 가능 대안: `Codex 계열 (GPT-5.4+)`, `OpenClaw 계열`, `Kimi 2.5+ 등 프론티어 모델을 연결한 에이전트`
 
 ## 시작 전 준비
 
-### macOS / Linux
+### macOS / WSL Ubuntu
 
 1. Node.js 20 이상 설치
 2. Git 설치
@@ -21,7 +20,7 @@
 
 ### Windows
 
-Windows는 반드시 WSL 안에서 작업하세요.
+네이티브 Windows 설치는 지원하지 않습니다. Windows에서는 반드시 **WSL Ubuntu** 안에서 작업하세요.
 
 - 먼저 [Windows 가이드](./WINDOWS_GUIDE.md)를 따르세요.
 - 프로젝트는 `C:\...`가 아니라 `~/clinic-os` 같은 WSL 경로에 두는 것이 안전합니다.

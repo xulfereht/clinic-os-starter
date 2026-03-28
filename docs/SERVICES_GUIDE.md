@@ -1,8 +1,8 @@
 ---
 hq_slug: integrations
 hq_title: "외부 서비스 연동 가이드"
-hq_category: "09. 시스템 설정"
-hq_sort: 3
+hq_category: "06. 설치와 환경"
+hq_sort: 27
 hq_active: true
 ---
 # 외부 서비스 연동 가이드
