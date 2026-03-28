@@ -13,7 +13,6 @@
   - `src/styles/` (except `src/styles/global.css — PROTECTED_EXACT`)
   - `src/lib/` (except `src/lib/local/`)
   - `src/skins/` (except `src/skins/local/`)
-  - `src/plugins/custom-homepage/`
   - `src/plugins/survey-tools/`
   - `src/survey-tools/stress-check/`
   - `src/content/aeo/`
@@ -26,7 +25,7 @@
   - `.claude/rules/`
   - `scripts/`
   - `.docking/engine/`
-  - Core single files: `.agent/README.md`, `.agent/onboarding-registry.json`, `package.json`, `astro.config.mjs`, `tsconfig.json`, `.cursorrules`, `.windsurfrules`, `.clinerules`
+  - Core single files: `CLAUDE.local.md`, `SOUL.local.md`, `MANIFEST.local.md`, `.agent/README.md`, `.agent/onboarding-registry.json`, `package.json`, `astro.config.mjs`, `tsconfig.json`
 
 - **[HARD] NEVER modify protected single files:**
   - `wrangler.toml`
@@ -70,13 +69,15 @@
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/styles/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/lib/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/skins/ |
-| `CORE_PATHS` | 코어 → 덮어쓰기 | src/plugins/custom-homepage/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/plugins/survey-tools/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/survey-tools/stress-check/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | src/content/aeo/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | migrations/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | seeds/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | docs/ |
+| `CORE_PATHS` | 코어 → 덮어쓰기 | CLAUDE.local.md |
+| `CORE_PATHS` | 코어 → 덮어쓰기 | SOUL.local.md |
+| `CORE_PATHS` | 코어 → 덮어쓰기 | MANIFEST.local.md |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | .agent/README.md |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | .agent/manifests/ |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | .agent/onboarding-registry.json |
@@ -88,9 +89,6 @@
 | `CORE_PATHS` | 코어 → 덮어쓰기 | package.json |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | astro.config.mjs |
 | `CORE_PATHS` | 코어 → 덮어쓰기 | tsconfig.json |
-| `CORE_PATHS` | 코어 → 덮어쓰기 | .cursorrules |
-| `CORE_PATHS` | 코어 → 덮어쓰기 | .windsurfrules |
-| `CORE_PATHS` | 코어 → 덮어쓰기 | .clinerules |
 | `LOCAL_PREFIXES` | 절대 건드리지 않음 | src/lib/local/ |
 | `LOCAL_PREFIXES` | 절대 건드리지 않음 | src/skins/local/ |
 | `LOCAL_PREFIXES` | 절대 건드리지 않음 | src/plugins/local/ |
@@ -107,6 +105,7 @@
 | `PROTECTED_PREFIXES` | 접두사 매칭 보호 | .env |
 | `PROTECTED_PREFIXES` | 접두사 매칭 보호 | .core/ |
 | `PROTECTED_PREFIXES` | 접두사 매칭 보호 | src/plugins/local/ |
+| `PROTECTED_PREFIXES` | 접두사 매칭 보호 | src/plugins/custom-homepage/ |
 | `SPECIAL_MERGE_FILES` | 스마트 병합 | package.json |
 
 ## Why These Rules Exist

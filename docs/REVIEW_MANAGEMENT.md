@@ -1,8 +1,8 @@
 ---
 hq_slug: review-management
 hq_title: "리뷰 관리 가이드"
-hq_category: "06. 콘텐츠 관리"
-hq_sort: 3
+hq_category: "03. 콘텐츠와 마케팅"
+hq_sort: 6
 hq_active: true
 ---
 # 리뷰 관리 가이드
