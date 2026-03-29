@@ -1,8 +1,8 @@
 ---
 hq_slug: survey-tools
 hq_title: "검사도구 만들기"
-hq_category: "04. 플러그인 시스템"
-hq_sort: 2
+hq_category: "05. 확장하기"
+hq_sort: 6
 hq_active: true
 ---
 # 검사도구 만들기

@@ -723,8 +723,8 @@ async function runDoctor() {
 
         if (!nodeCheck.installed || (nodeCheck.version && parseInt(nodeCheck.version.match(/v(\d+)/)[1]) < 18)) {
             if (platform === 'win32') {
-                console.log('\n🔹 Node.js 설치 (Windows):');
-                console.log('   가이드: https://nodejs.org 에서 18.x 또는 20.x(LTS) 버전을 다운로드하여 설치하세요.');
+                console.log('\n🔹 지원 플랫폼 안내:');
+                console.log('   네이티브 Windows 설치는 지원하지 않습니다. WSL Ubuntu에서 Node.js를 설치하세요.');
             } else if (platform === 'darwin') {
                 console.log('\n🔹 Node.js 설치 (macOS):');
                 console.log('   명령어: brew install node@20');
@@ -733,8 +733,8 @@ async function runDoctor() {
 
         if (!gitCheck.installed) {
             if (platform === 'win32') {
-                console.log('\n🔹 Git 설치 (Windows):');
-                console.log('   가이드: https://git-scm.com/download/win 에서 설치하세요.');
+                console.log('\n🔹 지원 플랫폼 안내:');
+                console.log('   네이티브 Windows 설치는 지원하지 않습니다. WSL Ubuntu에서 Git을 설치하세요.');
             } else if (platform === 'darwin') {
                 console.log('\n🔹 Git 설치 (macOS):');
                 console.log('   명령어: brew install git');

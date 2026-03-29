@@ -1,0 +1,309 @@
+# /analyze-content — Content Analysis + Planning Materials + Writer Persona Extraction
+
+> **Role**: Content Analyst
+> **Cognitive mode**: Extract patterns from existing content — keywords, tone, visual identity, AND the writer's voice. Everything downstream (copy, blog, homepage) uses this output.
+
+Runs after /extract-content + /curate-images. Performs blog keyword analysis, card text extraction, tone & manner analysis, and writer persona extraction.
+
+## Prerequisites
+
+- `/extract-content` completed (blog posts in DB)
+- `/curate-images` completed (image classification + asset-metadata.json) — skip Step 2 if not available
+
+## Procedure
+
+### Step 0 — Data sufficiency check & reference collection
+
+Before analysis, assess available data and collect references if needed.
+
+```bash
+# Count blog posts with actual content
+npx wrangler d1 execute DB --local --command \
+  "SELECT COUNT(*) as total, SUM(CASE WHEN length(COALESCE(content,'')) > 200 THEN 1 ELSE 0 END) as with_content FROM posts WHERE type='blog' AND is_sample=0;"
+
+# Check clinic profile
+cat .agent/clinic-profile.json 2>/dev/null | head -c 500
+
+# Check if references already collected
+cat .agent/references.yaml 2>/dev/null | head -c 200
+
+# Check place data
+npx wrangler d1 execute DB --local --command \
+  "SELECT key, value FROM site_settings WHERE key IN ('clinic_name', 'clinic_phone', 'clinic_address', 'business_hours');"
+```
+
+**Sufficiency assessment:**
+
+| Data | Sufficient | Thin | Missing |
+|------|-----------|------|---------|
+| Blog posts (with content) | 10+ | 5-9 | <5 |
+| Place data (name+addr+phone) | All present | Partial | None |
+| Specialties (distinct keywords) | 5+ | 3-4 | <3 |
+
+**If data is thin or missing, ask the user:**
+
+```
+📊 데이터 현황 점검
+
+블로그: {N}건 (내용 있는 글: {M}건)
+플레이스: {있음/부분/없음}
+{if thin}
+
+데이터가 부족하여 분석 정확도가 낮을 수 있습니다.
+다음 중 보충할 수 있는 것이 있나요?
+
+1. 추가 블로그 ID (네이버 블로그가 더 있다면)
+2. 기존 홈페이지 URL (이전 중인 사이트)
+3. 경쟁 한의원 사이트 (벤치마크 대상)
+4. 주요 진료 분야 직접 입력
+5. 이대로 진행
+```
+
+If user provides reference URLs → invoke /collect-references logic:
+- For each URL, WebFetch and extract relevant data
+- Save to `.agent/references.yaml`
+
+If user provides specialties directly → note them for Step 1 keyword analysis.
+
+### Step 1 — Blog keyword analysis
+
+```bash
+# Extract blog titles + categories
+npx wrangler d1 execute DB --local --command \
+  "SELECT title, category FROM posts WHERE type='blog' AND is_sample=0;"
+
+# Content samples (top 10, for persona analysis)
+npx wrangler d1 execute DB --local --command \
+  "SELECT title, content FROM posts WHERE type='blog' AND is_sample=0 ORDER BY created_at DESC LIMIT 10;"
+```
+
+Analyze keyword frequency for treatments/symptoms from titles and content:
+
+```
+키워드 분석 결과:
+  추나/교정: 15건 → 프로그램 후보
+  통증/허리/목: 12건 → 프로그램 후보
+  비염/호흡기: 8건 → 프로그램 후보
+  소화/위장: 6건 → 프로그램 후보
+  일상/건강정보: 20건 → 블로그 카테고리
+```
+
+**Reference cross-check** (if `.agent/references.yaml` exists):
+
+```bash
+cat .agent/references.yaml 2>/dev/null
+```
+
+- If existing site has programs not found in blog keywords, add as candidates with `source: reference_site`
+- If competitors emphasize services we don't cover, note as `competitive_gap`
+- Compare our keyword distribution vs competitors
+
+### Step 2 — Card image text extraction
+
+Read `design_card` category images from asset-metadata.json and extract text from images:
+
+- Headlines/headcopy → clinic USP (unique selling point) candidates
+- Subcopy → program description materials
+- Credentials/career listings → Credentials section materials
+- Treatment processes → Process section materials
+
+### Step 3 — Writer persona extraction
+
+**Read 10~20 blog posts and analyze the writer's unique voice.**
+
+Analysis dimensions:
+
+| Dimension | Method |
+|-----------|--------|
+| **Voice** | ~합니다/~해요/~다 style. Honorific level. Reader address ("환자분", "여러분") |
+| **Sentence style** | Average sentence length. Short choppy vs. long flowing |
+| **Structure** | Intro (empathy/question/case) → Body (explanation) → Closing (summary/visit CTA) pattern |
+| **Vocabulary level** | Technical term frequency. Simplification degree. Use of metaphors/examples |
+| **Emotional tone** | Educational/friendly/authoritative/empathetic/humorous |
+| **Signature patterns** | Frequently used conjunctions, closing phrases, emphasis patterns |
+| **Medical depth** | Shallow (lifestyle tips) / Medium (TCM concept explanation) / Deep (paper citations) |
+
+**Representative sentence extraction:** Select 5~7 sentences that best represent the writer's voice.
+
+**Reference tone comparison** (if references exist):
+- Compare extracted blog tone with existing site tone
+- Note differences: "기존 사이트: {formal/warm}, 블로그: {detected}"
+- Recommend direction for new site: "새 사이트는 블로그 톤(더 친근한)을 따르는 것을 추천합니다" or ask user
+
+### Step 4 — Generate style-card.yaml
+
+Synthesize all collected data into style-card.yaml:
+
+```yaml
+# .agent/style-card.yaml
+# Generated by /analyze-content
+
+brand:
+  name: ""
+  slogan: ""
+  primary_keywords: []  # Top 5 blog keywords
+  tone: ""  # e.g., "전문적이면서 따뜻한"
+
+space:
+  wall: ""
+  floor: ""
+  accent: ""
+  lighting: ""
+  mood: ""
+
+people:
+  doctor_appearance: ""
+  uniform: ""
+
+programs:
+  suggested: []
+  # Each item: {name, slug, keyword_count, description_from_cards}
+
+credentials:
+  items: []
+
+copy_materials:
+  headlines: []
+  descriptions: []
+  usps: []
+
+# === Writer Persona ===
+writer_persona:
+  voice: ""
+  # e.g., "~합니다체, 환자를 '환자분'으로 호칭, 정중하면서 따뜻한 톤"
+
+  sentence_style: ""
+  # e.g., "짧은 문장 선호 (평균 15-20자), 줄바꿈 자주 사용"
+
+  structure: ""
+  # e.g., "증상 공감 → 원인 설명 → 한의학적 접근 → 치료 소개 → 내원 유도"
+
+  vocabulary: ""
+  # e.g., "전문용어 쓰되 괄호로 쉬운 설명 병기, 비유 자주 활용"
+
+  emotional_tone: ""
+  # e.g., "교육적 + 공감적. 환자의 불편함을 먼저 인정한 뒤 해법 제시"
+
+  medical_depth: ""
+  # e.g., "중간 — 한의학 개념(기혈, 경락) 설명하되 논문 인용은 거의 없음"
+
+  signature_patterns: []
+  # e.g.:
+  #   - "마무리에 항상 '건강한 하루 되세요' 류의 인사"
+  #   - "첫 문장을 질문형으로 시작하는 경향"
+  #   - "'사실은', '그런데' 접속사 자주 사용"
+
+  representative_sentences: []
+  # 5~7 sentences that best represent the writer's voice
+  # e.g.:
+  #   - "허리가 아프면 일상이 무너집니다."
+  #   - "추나 치료는 단순히 뼈를 맞추는 것이 아닙니다."
+  #   - "환자분의 몸은 이미 답을 알고 있습니다."
+
+  do_not:
+  # Anti-patterns the writer never uses
+  # e.g.:
+  #   - "이모티콘이나 ㅎㅎ 같은 인터넷 표현 미사용"
+  #   - "타 병원 비교/비하 절대 안 함"
+  #   - "과장 표현 자제 ('획기적', '놀라운' 등 미사용)"
+
+# === Data Quality ===
+data_quality:
+  blog_count: 0
+  blog_with_substance: 0  # posts with >200 chars content
+  quality_tier: ""  # "thin" | "adequate" | "rich"
+  supplemented_by: []  # ["reference_site", "user_input", "competitor_analysis"]
+
+# === Reference Context (if /collect-references was run) ===
+reference_context:
+  existing_site_tone: ""
+  competitor_gaps: []  # services competitors emphasize that we lack
+  design_direction: ""  # from design refs or competitor analysis
+  programs_from_references: []  # program candidates from existing/competitor sites
+```
+
+### Step 4.5 — Initialize pipeline context
+
+Create/update the pipeline context for downstream skills:
+
+```yaml
+# .agent/pipeline-context.yaml
+# Accumulates through the content pipeline. Each skill reads + updates its section.
+
+extraction:
+  blog_count: {N}
+  blog_with_content: {M}
+  place_data: {true/false}
+  place_reviews_count: {N}
+  clinic_name: ""
+  sufficiency:
+    blog: ""      # thin | adequate | rich
+    place: ""     # missing | partial | ok
+    images: ""    # none | few | adequate
+    overall: ""   # ready | needs-supplement | insufficient
+
+references:
+  has_existing_site: {true/false}
+  competitor_count: {N}
+  design_ref_count: {N}
+
+analysis:
+  specialties: []
+  specialty_count: {N}
+  writer_persona_quality: ""  # none | thin | adequate | rich
+  suggested_programs: {N}
+  completed_at: "{ISO date}"
+```
+
+Save to `.agent/pipeline-context.yaml`.
+
+### Step 5 — Report
+
+```
+📊 콘텐츠 분석 결과
+
+블로그: {N}건 분석
+  주요 키워드: 추나(15), 통증(12), 비염(8), 소화(6)
+  프로그램 후보: 4~5개
+
+카드 텍스트: {N}장 추출
+  헤드카피 {N}건, 자격/경력 {N}건
+
+톤앤매너:
+  전문적이면서 따뜻한 톤. 한방 전통과 현대적 접근 균형.
+
+글쓴이 페르소나:
+  말투: ~합니다체, 정중하면서 친근
+  구조: 증상 공감 → 원인 → 치료 → 내원 유도
+  특징: 질문형 도입, 전문용어+쉬운 설명 병기
+  대표 문장: "허리가 아프면 일상이 무너집니다."
+
+생성된 파일:
+  .agent/style-card.yaml
+
+추천 다음 단계:
+  → /discover-edge (강점 발굴 + 포지셔닝)
+  → /write-blog (이 페르소나로 새 블로그 작성)
+```
+
+## Output
+
+- `.agent/style-card.yaml` — Tone & manner + program candidates + copy materials + **writer persona** + data quality + reference context
+- `.agent/pipeline-context.yaml` — Pipeline context for downstream skills (extraction + references + analysis sections)
+
+## Used By
+
+- `/discover-edge` — references tone, USP
+- `/write-copy` — references tone, headlines, persona
+- `/write-blog` — **reproduces writer's voice via writer_persona**
+- `/plan-content` — references keywords, programs
+- `/setup-homepage` — references credentials, copy_materials
+- `/frontend-code` — references mood, space (design direction)
+
+## Triggers
+
+- "콘텐츠 분석", "블로그 분석", "키워드 분석"
+- "톤앤매너", "스타일카드", "기획 재료"
+- "페르소나 분석", "글쓰기 스타일 분석"
+
+## All user-facing output in Korean.
