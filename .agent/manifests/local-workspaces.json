@@ -3,7 +3,7 @@
   "updated_at": "2026-03-07T00:00:00Z",
   "purpose": "에이전트가 로컬 클라이언트 작업을 수행할 때 safe workspace를 정확히 고르도록 돕는다.",
   "default_read_order": [
-    "AGENTS.md",
+    "CLAUDE.md",
     ".agent/workflows/first-contact.md",
     ".agent/runtime-context.json",
     ".agent/manifests/change-strategy.json",

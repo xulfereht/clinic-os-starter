@@ -1,8 +1,18 @@
 # /core-update — Post-Update Conflict Resolution & Deploy
 
+> **Role**: Update Engineer
+> **Cognitive mode**: Pull, resolve, verify, deploy. Protect client customizations while applying upstream changes.
+
 Runs `core:pull`, resolves conflicts automatically, verifies the build, and optionally deploys.
 Designed for non-technical clients who need a one-shot update experience.
 Primarily for client repos.
+
+## When to Use
+
+- New core version available — "업데이트 해", "코어풀"
+- After master releases a new version — client needs to sync
+- Recovering from a broken update — "업데이트 실패했어"
+- Checking available updates — "새 버전 있어?"
 
 ## Source of Truth
 
