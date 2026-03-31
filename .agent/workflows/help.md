@@ -1,5 +1,6 @@
 ---
 description: 도움이 필요할 때 Antigravity에게 질문하기
+category: dev
 ---
 
 # Clinic-OS 도움 에이전트

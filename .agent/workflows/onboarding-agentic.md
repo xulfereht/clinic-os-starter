@@ -1,3 +1,8 @@
+---
+description: 온볼딩 Agent-First 워크플로우
+category: dev
+---
+
 # 온볼딩 Agent-First 워크플로우
 
 > 에이전트가 주도하고, 사용자는 검토/피드백/정보 제공만 하는 온볼딩 프로세스
@@ -18,6 +23,51 @@ npm run agent:lifecycle -- --json
 - `fresh_install`, `resume_setup`, `onboarding_ready`이면 일반 온보딩 진행
 - `legacy_reinstall_migration`이면 신규 설치 + snapshot 이관을 먼저 제안
 - `production_binding_drift`이면 wrangler 연결 검토 전까지 배포/전환 보류
+
+온보딩을 시작할 때는 바로 첫 feature를 실행하지 말고, 아래 2단계 preflight를 먼저 수행합니다.
+
+1. setup/DB readiness 확인
+2. 전체 브리핑 + 사용자 우선순위 선택
+
+### Preflight A: setup/DB readiness
+
+권장 명령:
+
+```bash
+npm run agent:doctor -- --json
+```
+
+판단 규칙:
+
+- setup 완료 + `/admin` 로그인 가능 + 기본 스키마/시드 정상
+  - 일반 온보딩 진행
+- setup-progress는 완료지만 로컬 DB bootstrap이 누락/실패
+  - onboarding feature 실행 전에 `db:migrate`, `db:seed`, `setup:step -- --next` 중 맞는 복구 경로를 먼저 제안
+- setup 미완료
+  - 온보딩으로 넘기지 않고 설치 재개를 우선 제안
+
+### Preflight B: 전체 브리핑
+
+에이전트는 먼저 전체 온보딩 범위를 짧게 설명하고, 추천 경로와 선택 경로를 같이 제시합니다.
+
+필수 포함 항목:
+
+- Tier 1: 배포 필수
+- Tier 2: 핵심 콘텐츠
+- Tier 3+: 선택 기능
+- Tier 5 커스터마이징 예시
+  - 커스텀 페이지
+  - 플러그인
+  - 스킨
+  - 스타일 오버라이드
+
+기본 제안 문구:
+
+```
+"추천 순서는 Tier 1 → Tier 2입니다.
+다만 원하시면 특정 항목부터 바로 진행할 수 있습니다.
+예: 병원 정보만 먼저, 홈페이지만 먼저, 스킨/플러그인부터 먼저."
+```
 
 ---
 
@@ -281,6 +331,16 @@ npm run agent:lifecycle -- --json
          → clinic-schedule 진행
 ```
 
+또는:
+
+```
+사용자: "스킨부터 보고 싶어"
+에이전트: "가능합니다. 다만 병원명과 기본 브랜딩이 먼저 잡히면 결과가 더 정확합니다."
+
+사용자: "플러그인도 같이 계획해줘"
+에이전트: "가능합니다. 운영 필수 셋업과 분리해서 Tier 5 커스터마이징 트랙으로 잡겠습니다."
+```
+
 ---
 
 ## 세션 관리
@@ -317,7 +377,10 @@ npm run agent:lifecycle -- --json
 
 - [ ] `onboarding-state.json` 읽기/쓰기
 - [ ] `onboarding-registry.json`에서 기능 정의 읽기
+- [ ] onboarding 시작 전 브리핑 수행
+- [ ] setup/DB readiness preflight 수행
 - [ ] Tier 순서대로 기능 순회
+- [ ] 사용자가 특정 feature/tier를 직접 고를 수 있게 처리
 - [ ] 각 게이트 타입별 처리 로직
 - [ ] 사용자 입력 받기 (confirm, input, select)
 - [ ] 미리보기/검증 URL 생성
@@ -344,16 +407,19 @@ async function updateFeatureStatus(featureId, status, notes) {
 ## 명령어 인터페이스
 
 ```bash
+# 온보딩 전체 브리핑
+npm run onboarding:brief
+
 # 온볼딩 상태 확인
 npm run onboarding:status
 
-# 다음 기능 진행
+# 다음 추천 기능 확인
 npm run onboarding:next
 
-# 특정 기능만 진행
+# 특정 기능 상세 보기
 npm run onboarding:step -- --feature=clinic-info
 
-# Tier 전체 진행
+# Tier별 기능 목록 보기
 npm run onboarding:tier -- --tier=1
 
 # 미완료/미룬 기능 목록
