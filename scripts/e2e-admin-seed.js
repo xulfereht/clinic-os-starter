@@ -29,6 +29,54 @@ const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.join(__dirname, '..');
 const DEFAULT_DB_NAME = 'clinic-os-db';
 
+function parseArgs(argv) {
+    const options = {
+        json: false,
+        remote: false,
+        includePublicFixtures: undefined,
+        adminId: process.env.E2E_ADMIN_ID || E2E_ADMIN_ID,
+        adminEmail: process.env.E2E_ADMIN_EMAIL || E2E_ADMIN_EMAIL,
+        adminName: process.env.E2E_ADMIN_NAME || E2E_ADMIN_NAME,
+        adminPassword: process.env.E2E_ADMIN_PASSWORD || E2E_ADMIN_PASSWORD,
+    };
+
+    for (const arg of argv) {
+        if (arg === '--json') {
+            options.json = true;
+            continue;
+        }
+        if (arg === '--remote') {
+            options.remote = true;
+            continue;
+        }
+        if (arg === '--with-public-fixtures') {
+            options.includePublicFixtures = true;
+            continue;
+        }
+        if (arg === '--without-public-fixtures') {
+            options.includePublicFixtures = false;
+            continue;
+        }
+        if (arg.startsWith('--id=')) {
+            options.adminId = arg.slice('--id='.length);
+            continue;
+        }
+        if (arg.startsWith('--email=')) {
+            options.adminEmail = arg.slice('--email='.length);
+            continue;
+        }
+        if (arg.startsWith('--name=')) {
+            options.adminName = arg.slice('--name='.length);
+            continue;
+        }
+        if (arg.startsWith('--password=')) {
+            options.adminPassword = arg.slice('--password='.length);
+        }
+    }
+
+    return options;
+}
+
 function getDbName() {
     const wranglerPath = path.join(PROJECT_ROOT, 'wrangler.toml');
     if (fs.existsSync(wranglerPath)) {
@@ -58,10 +106,14 @@ function runCommand(command) {
 }
 
 async function main() {
-    const args = new Set(process.argv.slice(2));
-    const json = args.has('--json');
+    const options = parseArgs(process.argv.slice(2));
+    const json = options.json;
     const dbName = getDbName();
-    const passwordHash = sha256(E2E_ADMIN_PASSWORD);
+    const passwordHash = sha256(options.adminPassword);
+    const includePublicFixtures =
+        typeof options.includePublicFixtures === 'boolean'
+            ? options.includePublicFixtures
+            : !options.remote;
     const programSections = JSON.stringify([
         {
             type: 'Hero',
@@ -98,28 +150,7 @@ async function main() {
         '',
         '디자인 저장 이후 blogDetail 템플릿이 실제 블로그 상세에도 반영되는지 확인합니다.',
     ].join('\\n').replace(/'/g, "''");
-    const sql = `
-INSERT OR REPLACE INTO super_admins (
-    id, email, password_hash, name, is_active, password_hash_format,
-    failed_login_attempts, locked_until, password_change_required
-) VALUES (
-    '${E2E_ADMIN_ID}', '${E2E_ADMIN_EMAIL}', '${passwordHash}', '${E2E_ADMIN_NAME}', 1, 'legacy_sha256',
-    0, NULL, 0
-);
-
-DELETE FROM sessions WHERE staff_id = '${E2E_ADMIN_ID}';
-
-INSERT OR REPLACE INTO survey_tool_results (
-    id, tool_id, answers, total_score, max_score, created_at
-) VALUES (
-    '${E2E_STRESS_RESULT_ID}',
-    'stress-check',
-    '{"q1":2,"q2":1,"q3":2,"q4":1,"q5":2,"q6":1,"q7":2,"q8":1,"q9":2,"q10":1}',
-    15,
-    40,
-    datetime('now')
-);
-
+    const publicFixturesSql = `
 INSERT OR REPLACE INTO topics (
     id, slug, title, summary, seo_title, thumbnail_url, related_program_id, supervisor_id, created_at, updated_at
 ) VALUES (
@@ -242,13 +273,39 @@ INSERT OR REPLACE INTO programs (
     1,
     999,
     unixepoch()
+);`.trim();
+
+    const baseSql = `
+INSERT OR REPLACE INTO super_admins (
+    id, email, password_hash, name, is_active, password_hash_format,
+    failed_login_attempts, locked_until, password_change_required
+) VALUES (
+    '${options.adminId}', '${options.adminEmail}', '${passwordHash}', '${options.adminName}', 1, 'legacy_sha256',
+    0, NULL, 0
+);
+
+DELETE FROM sessions WHERE staff_id = '${options.adminId}';
+
+INSERT OR REPLACE INTO survey_tool_results (
+    id, tool_id, answers, total_score, max_score, created_at
+) VALUES (
+    '${E2E_STRESS_RESULT_ID}',
+    'stress-check',
+    '{"q1":2,"q2":1,"q3":2,"q4":1,"q5":2,"q6":1,"q7":2,"q8":1,"q9":2,"q10":1}',
+    15,
+    40,
+    datetime('now')
 );
 `.trim();
+    const sql = includePublicFixtures
+        ? `${baseSql}\n\n${publicFixturesSql}`
+        : baseSql;
 
     const tmpFile = path.join(os.tmpdir(), `clinic-os-e2e-seed-${Date.now()}.sql`);
     fs.writeFileSync(tmpFile, sql);
 
-    const result = await runCommand(`npx wrangler d1 execute ${dbName} --local --file="${tmpFile}" --yes`);
+    const targetFlag = options.remote ? '--remote' : '--local';
+    const result = await runCommand(`npx wrangler d1 execute ${dbName} ${targetFlag} --file="${tmpFile}" --yes`);
     fs.rmSync(tmpFile, { force: true });
 
     if (!result.success) {
@@ -265,21 +322,25 @@ INSERT OR REPLACE INTO programs (
         success: true,
         dbName,
         admin: {
-            id: E2E_ADMIN_ID,
-            email: E2E_ADMIN_EMAIL,
-            password: E2E_ADMIN_PASSWORD,
+            id: options.adminId,
+            email: options.adminEmail,
+            password: options.adminPassword,
         },
         surveyResult: {
             id: E2E_STRESS_RESULT_ID,
             toolId: 'stress-check',
         },
         contentFixtures: {
-            topicSlug: E2E_TOPIC_SLUG,
-            conditionSlug: E2E_CONDITION_SLUG,
-            faqSlug: E2E_FAQ_SLUG,
-            noticeId: E2E_NOTICE_ID,
-            blogSlug: E2E_BLOG_SLUG,
-            programId: E2E_PROGRAM_ID,
+            ...(includePublicFixtures
+                ? {
+                      topicSlug: E2E_TOPIC_SLUG,
+                      conditionSlug: E2E_CONDITION_SLUG,
+                      faqSlug: E2E_FAQ_SLUG,
+                      noticeId: E2E_NOTICE_ID,
+                      blogSlug: E2E_BLOG_SLUG,
+                      programId: E2E_PROGRAM_ID,
+                  }
+                : {}),
         },
     };
 
@@ -287,13 +348,17 @@ INSERT OR REPLACE INTO programs (
         console.log(JSON.stringify(payload, null, 2));
     } else {
         console.log('✅ 관리자 E2E 시드 완료');
-        console.log(`   admin: ${E2E_ADMIN_EMAIL}`);
+        console.log(`   target: ${options.remote ? 'remote' : 'local'}`);
+        console.log(`   admin: ${options.adminEmail}`);
         console.log(`   result: ${E2E_STRESS_RESULT_ID} (stress-check)`);
-        console.log(`   topic: /topics/${E2E_TOPIC_SLUG}`);
-        console.log(`   faq: /topics/${E2E_TOPIC_SLUG}/${E2E_CONDITION_SLUG}/${E2E_FAQ_SLUG}`);
-        console.log(`   notice: /notices/${E2E_NOTICE_ID}`);
-        console.log(`   blog: /blog/${E2E_BLOG_SLUG}`);
-        console.log(`   program: /programs/${E2E_PROGRAM_ID}`);
+        console.log(`   public fixtures: ${includePublicFixtures ? 'enabled' : 'disabled'}`);
+        if (includePublicFixtures) {
+            console.log(`   topic: /topics/${E2E_TOPIC_SLUG}`);
+            console.log(`   faq: /topics/${E2E_TOPIC_SLUG}/${E2E_CONDITION_SLUG}/${E2E_FAQ_SLUG}`);
+            console.log(`   notice: /notices/${E2E_NOTICE_ID}`);
+            console.log(`   blog: /blog/${E2E_BLOG_SLUG}`);
+            console.log(`   program: /programs/${E2E_PROGRAM_ID}`);
+        }
     }
 }
 
