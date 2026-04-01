@@ -44,7 +44,7 @@ clinic-os/
 ├── 🟢 seeds/                    # Full Package
 │   └── *.sql                    # ✅ Full Package
 │
-├── 🟢 GEMINI.md                 # Full Package (앱용 가이드)
+├── 🟢 CLAUDE.md                 # Full Package (앱용 가이드)
 ├── 🟢 package.json              # Full Package (앱 의존성)
 ├── 🟢 astro.config.mjs          # ✅ Full Package
 ├── 🟢 tsconfig.json             # ✅ Full Package
@@ -74,7 +74,7 @@ clinic-os/
 | `.docking/*.template` | 설정 템플릿 |
 | `.client/` | 컨텍스트 템플릿 |
 | `.agent/workflows/` | AI 에이전트 워크플로우 |
-| `GEMINI.md` | 스타터용 가이드 |
+| `CLAUDE.md` | 스타터용 가이드 |
 | `package.json` | 루트 명령어 (minimal) |
 | `README.md` | 시작 안내 |
 
@@ -88,7 +88,7 @@ clinic-os/
 | `migrations/` | DB 스키마 |
 | `seeds/` | 초기 데이터 |
 | `scripts/` | 앱 관련 스크립트만 |
-| `GEMINI.md` | 앱용 가이드 |
+| `CLAUDE.md` | 앱용 가이드 |
 | `package.json` | 앱 의존성 |
 | `astro.config.mjs` | Astro 설정 |
 
@@ -109,4 +109,4 @@ clinic-os/
 `scripts/pack-docking.js`에서 위 규칙을 반영해야 합니다:
 - `hq/` 폴더 제외
 - 개발자 전용 스크립트 제외
-- Full Package용 GEMINI.md 사용
+- Full Package용 CLAUDE.md 사용
