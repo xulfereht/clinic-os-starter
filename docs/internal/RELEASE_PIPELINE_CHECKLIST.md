@@ -2,6 +2,10 @@
 
 > 최신 기준 SoT.  
 > 범위: `master -> HQ -> starter artifact -> client update/build/deploy -> stable 승격`
+> 
+> **표준 릴리스 경로:** `npm run publish` (total-release.js) — 원클릭 자동.
+> **정합성 검증:** `npm run release:verify` — 릴리스 전후 필수.
+> **참고:** `release-modular.js`는 디버깅/dry-run 전용 (deprecated).
 
 ## 목적
 
@@ -15,16 +19,21 @@
 
 ```bash
 git status --short
+npm run release:verify              # 정합성 검증 (tag, mirror, state)
 npm run release:pipeline:audit -- --json
 npm run release:ops
-node scripts/release-modular.js status
 ```
 
 확인할 것:
+- `release:verify` 전체 PASS (7개 항목)
 - `.agent/release.lock`가 없어야 한다.
-- `.agent/release-last-run.json`에 진행 중 상태가 없어야 한다.
 - `release:pipeline:audit`에서 기존 PROD drift가 없어야 한다.
 - `npm run release:ops` 요약에서 failed validation이 없어야 한다.
+
+문제 발견 시:
+```bash
+npm run release:verify:fix          # 자동 수복
+```
 
 ### 0-2. 필수 빌드/검증
 
