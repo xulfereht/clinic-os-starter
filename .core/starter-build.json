@@ -1,10 +1,10 @@
 {
-  "version": "1.26.3",
-  "generated_at": "2026-03-09T03:09:37.421Z",
+  "version": "1.33.9",
+  "generated_at": "2026-04-01T10:38:28.541Z",
   "mode": "mirror-push",
-  "source_signature": "23cf9e07c4a00adba061fe02ca06124d8332eefecc35a69fe5bc2f8d76feac5e",
-  "source_file_count": 192,
-  "git_head": "867548dd6118efad6e777052e0ea6fe1b7563bda",
+  "source_signature": "652f3d43b711f8c7d54fc1ee5e9626eb391043d5600ef1160bd0c5e21dc82f6f",
+  "source_file_count": 389,
+  "git_head": "21ae58774ba48e3fbefc410b5e1dbf0323019edf",
   "git_dirty": true,
   "source_files_sample": [
     ".agent/AGENT_INSTALLER.md",
@@ -16,7 +16,11 @@
     ".agent/manifests/local-workspaces.json",
     ".agent/onboarding-registry.json",
     ".agent/onboarding-state.template.json",
+    ".agent/skill-registry.json",
+    ".agent/workflows/content-bootstrap.md",
     ".agent/workflows/core-update-agentic.md",
+    ".agent/workflows/delegated-handoff.md",
+    ".agent/workflows/delegated-setup.md",
     ".agent/workflows/first-contact-v2.md",
     ".agent/workflows/first-contact.md",
     ".agent/workflows/help.md",
@@ -24,13 +28,9 @@
     ".agent/workflows/migration-patterns.md",
     ".agent/workflows/onboarding-agentic.md",
     ".agent/workflows/onboarding.md",
+    ".agent/workflows/operations-runbook.md",
     ".agent/workflows/pack-docking.md",
     ".agent/workflows/plugin-agentic.md",
-    ".agent/workflows/setup-clinic.md",
-    ".agent/workflows/skins-agentic.md",
-    ".agent/workflows/smart-migration.md",
-    ".agent/workflows/softgate.md",
-    ".agent/workflows/survey-tools-agentic.md",
-    ".agent/workflows/transaction-checkpoint.md"
+    ".agent/workflows/setup-clinic.md"
   ]
 }
