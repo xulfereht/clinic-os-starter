@@ -1,3 +1,8 @@
+---
+description: Smart Migration (스마트 업데이트/마이그레이션)
+category: dev
+---
+
 # Smart Migration (스마트 업데이트/마이그레이션)
 
 > 코어/스타터킷 업데이트 시 기존 작업물을 자동 감지, 보존, 마이그레이션하는 지능형 업데이트 시스템

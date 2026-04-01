@@ -150,7 +150,7 @@ This document summarizes the Domain-Driven Development (DDD) implementation of S
 - `src/pages/api/admin/pages/[id].ts` - Refactored to use PageService
 - `src/pages/admin/pages/index.astro` - Added AI badge column
 - `src/pages/admin/pages/[id].astro` - Added AI badge and SEO fields
-- `.moai/specs/SPEC-PAGE-001/spec.md` - Updated status to implemented
+- `docs/internal/specs/SPEC-PAGE-001/spec.md` - Updated status to implemented
 
 ## Behavior Preservation
 
