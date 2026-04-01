@@ -288,17 +288,17 @@ try {
     // Fallback: bootstrap 또는 manifest 미존재 시 (하드코딩 값 유지)
     CORE_PATHS = [
         'src/pages/', 'src/components/', 'src/layouts/', 'src/styles/',
-        'src/lib/', 'src/plugins/custom-homepage/', 'src/plugins/survey-tools/',
+        'src/lib/', 'src/skins/', 'src/plugins/survey-tools/',
         'src/survey-tools/stress-check/', 'src/content/aeo/',
         'migrations/', 'seeds/', 'docs/',
         '.agent/README.md', '.agent/manifests/',
         '.agent/onboarding-registry.json', '.agent/workflows/',
         '.claude/commands/', '.claude/rules/',
         'scripts/', '.docking/engine/', 'package.json', 'astro.config.mjs',
-        'tsconfig.json', '.cursorrules', '.windsurfrules', '.clinerules',
+        'tsconfig.json',
     ];
     LOCAL_PREFIXES = [
-        'src/lib/local/', 'src/plugins/local/', 'src/pages/_local/',
+        'src/lib/local/', 'src/skins/local/', 'src/plugins/local/', 'src/pages/_local/',
         'src/survey-tools/local/', 'public/local/', 'docs/internal/',
     ];
     PROTECTED_EXACT = new Set([
@@ -306,7 +306,7 @@ try {
         'src/config.ts', 'src/styles/global.css',
         '.agent/onboarding-state.json',
     ]);
-    PROTECTED_PREFIXES = ['.env', '.core/', 'src/plugins/local/'];
+    PROTECTED_PREFIXES = ['.env', '.core/', 'src/plugins/local/', 'src/plugins/custom-homepage/'];
     SPECIAL_MERGE_FILES = new Set(['package.json']);
 }
 
@@ -811,7 +811,7 @@ async function detectDriftedFiles(targetTag, alreadyInDiff) {
         if (diffSet.has(f)) return false;
         if (isProtectedPath(f)) return false;
         if (isLocalPath(f)) return false;
-        if (f.startsWith('seeds/')) return false;
+        // seeds/ 파일은 다운로드하되 실행은 d1_seeds 테이블 기반으로 미적용 시드만 실행 (runAllSeeds)
         // CORE_PATHS에 속하는지 확인
         return CORE_PATHS.some(cp => f.startsWith(cp));
     });
@@ -1966,7 +1966,7 @@ async function corePull(targetVersion = 'latest', options = {}) {
                 const { runHealthAudit } = await import(healthPath);
                 const health = await runHealthAudit({ quiet: true, fix: true });
                 if (health.score < 30 && !force) {
-                    throw new Error(`건강 점수 ${health.score}/100 — npm run health:fix 후 재시도`);
+                    throw new Error(`건강 점수 ${health.score}/100 — npm run health:fix 후 재시도 (또는 --force로 강제 진행)`);
                 }
                 if (health.score < 70) {
                     console.log(`   ⚠️  건강 점수 ${health.score}/100 — 계속 진행합니다`);
@@ -2184,19 +2184,27 @@ async function corePull(targetVersion = 'latest', options = {}) {
             console.log(`\n✅ 완료: ${version} 적용됨 (Fresh-with-Migration)`);
         }
 
-        // 완료 메시지
+        // 후처리: npm install + db:migrate
+        console.log('\n🔧 후처리: 배포 준비 완성 중...');
+        try {
+            console.log('   📦 npm install...');
+            const npmRes = await runCommand('npm install', true, 120000);
+            console.log(npmRes.success ? '   ✅ npm install 완료' : '   ⚠️  npm install 실패 — 수동 실행 필요');
+        } catch { /* skip */ }
+        try {
+            const migRes = await runCommand('npm run db:migrate', true, 120000);
+            console.log(migRes.success ? '   ✅ db:migrate 완료' : '   ⚠️  db:migrate 실패 — 수동 실행 필요');
+        } catch { /* skip */ }
+
         console.log('\n════════════════════════════════════════════');
         console.log(`✅ Core Pull 완료: ${current} → ${version} (Fresh-with-Migration)`);
         if (freshResult.backupTag) {
             console.log(`🏷️  복구 태그: ${freshResult.backupTag}`);
         }
-        console.log('');
-        console.log('Next steps:');
-        console.log('  1. npm install (if package.json changed)');
-        console.log('  2. npm run dev (to test locally)');
         if (freshResult.changes?.length > 0) {
-            console.log('  3. .core/client-changes/ 에서 추출된 변경사항 확인');
+            console.log('   .core/client-changes/ 에서 추출된 변경사항 확인');
         }
+        console.log('   npm run dev 로 로컬 테스트하세요.');
         console.log('════════════════════════════════════════════');
         return;
     }
@@ -2716,6 +2724,21 @@ async function corePull(targetVersion = 'latest', options = {}) {
     await writeCoreVersion(version);
 
     // ═══════════════════════════════════════════════
+    // 9.0.1. CLAUDE.local.md → CLAUDE.md 매핑
+    // 마스터 CLAUDE.md는 메타 에이전트용. 클라이언트는 CLAUDE.local.md를 CLAUDE.md로 사용.
+    // ═══════════════════════════════════════════════
+    try {
+        const claudeLocalPath = path.join(PROJECT_ROOT, 'CLAUDE.local.md');
+        const claudeMdPath = path.join(PROJECT_ROOT, 'CLAUDE.md');
+        if (fs.existsSync(claudeLocalPath)) {
+            fs.copyFileSync(claudeLocalPath, claudeMdPath);
+            console.log('   📝 CLAUDE.local.md → CLAUDE.md (agent execution guide updated)');
+        }
+    } catch (e) {
+        console.log(`   ⚠️  CLAUDE.md 매핑 실패: ${e.message}`);
+    }
+
+    // ═══════════════════════════════════════════════
     // 9.1. Content Doctor: prevent recurring build breaks
     // - Some files have historically been corrupted into a single path string
     //   (e.g. "../../../features/.../members.ts") or symlink loops.
@@ -2787,14 +2810,44 @@ async function corePull(targetVersion = 'latest', options = {}) {
     }
 
     // ═══════════════════════════════════════════════
-    // 11. 완료 메시지
+    // 11. 후처리: npm install + db:migrate (배포 준비 완성)
     // ═══════════════════════════════════════════════
+    console.log('\n🔧 후처리: 배포 준비 완성 중...');
+
+    // npm install (package.json이 변경되었거나 node_modules가 오래된 경우)
+    try {
+        const pkgMtime = fs.statSync(path.join(PROJECT_ROOT, 'package.json')).mtimeMs;
+        const nmPath = path.join(PROJECT_ROOT, 'node_modules');
+        const nmExists = fs.existsSync(nmPath);
+        const nmStale = nmExists && fs.statSync(nmPath).mtimeMs < pkgMtime;
+        if (!nmExists || nmStale) {
+            console.log('   📦 npm install (package.json 변경됨)...');
+            const npmResult = await runCommand('npm install', true, 120000);
+            if (npmResult.success) {
+                console.log('   ✅ npm install 완료');
+            } else {
+                console.log('   ⚠️  npm install 실패 — 수동 실행 필요: npm install');
+            }
+        }
+    } catch {
+        // stat 실패 시 건너뜀
+    }
+
+    // db:migrate (로컬 DB 동기화)
+    try {
+        const migrateResult = await runCommand('npm run db:migrate', true, 120000);
+        if (migrateResult.success) {
+            console.log('   ✅ db:migrate 완료');
+        } else {
+            console.log('   ⚠️  db:migrate 실패 — 수동 실행 필요: npm run db:migrate');
+        }
+    } catch {
+        // 건너뜀
+    }
+
     console.log('\n════════════════════════════════════════════');
     console.log(`✅ Core Pull 완료: ${current} → ${version}`);
-    console.log('');
-    console.log('Next steps:');
-    console.log('  1. npm install (if package.json changed)');
-    console.log('  2. npm run dev (to test locally)');
+    console.log('   npm run dev 로 로컬 테스트하세요.');
     console.log('════════════════════════════════════════════');
 
     await refreshAgentRuntimeContext();
@@ -3235,6 +3288,7 @@ async function main() {
     let dryRun = false;
     let skipConfirm = false;
     let checkOnly = false;
+    let force = false;
     let forceBootstrap = false;
     let autoMode = false;
 
@@ -3253,6 +3307,8 @@ async function main() {
             skipConfirm = true;
         } else if (arg === '--check') {
             checkOnly = true;
+        } else if (arg === '--force') {
+            force = true;
         } else if (arg === '--force-bootstrap') {
             forceBootstrap = true;
         } else if (arg === '--auto') {
@@ -3266,7 +3322,7 @@ async function main() {
     try {
         // --dry-run: 기존 동작 (상세 분석 후 종료)
         if (dryRun) {
-            await corePull(targetVersion, { dryRun: true, forceBootstrap });
+            await corePull(targetVersion, { dryRun: true, force, forceBootstrap });
             return;
         }
 
@@ -3309,7 +3365,7 @@ async function main() {
 
         // 실제 업데이트 진행
         console.log('\n');
-        await corePull(result.target, { dryRun: false, forceBootstrap, autoMode });
+        await corePull(result.target, { dryRun: false, force, forceBootstrap, autoMode });
 
         // 스키마 자동복구는 corePull 내부에서 이미 완료
         // 추가 Doctor 실행 불필요 (중복 실행 방지)
@@ -3341,6 +3397,7 @@ async function main() {
 // npm run core:pull -- --beta         → latest-beta 채널
 // npm run core:pull -- --dry-run      → 상세 변경 사항 미리보기 (기존 동작)
 // npm run core:pull -- v1.0.93        → 특정 버전 직접 지정
+// npm run core:pull -- --force           → 건강 점수 미달 시 강제 진행
 // npm run core:pull -- --force-bootstrap → 마이그레이션 bootstrap 모드 강제 실행
 //
 // 환경 변수:
