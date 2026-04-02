@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'fs-extra';
+import yaml from 'js-yaml';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -74,6 +75,23 @@ function detectAppRoot(projectRoot) {
     return '.';
 }
 
+function getPreferredChannel(projectRoot) {
+    const clinicJson = safeReadJson(path.join(projectRoot, 'clinic.json'), {});
+    if (clinicJson?.channel === 'beta') return 'beta';
+
+    const dockingConfigPath = path.join(projectRoot, '.docking', 'config.yaml');
+    if (fs.existsSync(dockingConfigPath)) {
+        try {
+            const config = yaml.load(fs.readFileSync(dockingConfigPath, 'utf8'));
+            if (config?.channel === 'beta') return 'beta';
+        } catch {
+            // ignore
+        }
+    }
+
+    return 'stable';
+}
+
 export async function analyzeLifecycle(options = {}) {
     const projectRoot = options.projectRoot || PROJECT_ROOT;
     const rootPkg = safeReadJson(path.join(projectRoot, 'package.json'), {});
@@ -93,6 +111,10 @@ export async function analyzeLifecycle(options = {}) {
         starter_version: safeReadText(path.join(projectRoot, '.core', 'starter-version')),
         hq_stable: null
     };
+    const preferredChannel = versions.preferred_channel || getPreferredChannel(projectRoot);
+    const starterCoreSyncCommand = fs.existsSync(path.join(projectRoot, 'scripts', 'update-starter-core.js'))
+        ? `node scripts/update-starter-core.js --${preferredChannel}`
+        : `npm run update:starter && npm run core:pull -- --auto --${preferredChannel}`;
 
     const versionTarget = versions.hq_stable || versions.root_package_version;
     const versionLag = getVersionLag(versions.core_version || versions.root_package_version, versionTarget);
@@ -165,7 +187,7 @@ export async function analyzeLifecycle(options = {}) {
         recommendedCommands.push('새 스타터킷에 최신 버전을 설치한 뒤 추출된 복원 계획 기준으로 local/custom config를 이관');
     } else if (scenario === 'safe_update_in_place') {
         recommendedCommands.push('npm run agent:snapshot -- --reason=pre-update');
-        recommendedCommands.push('npm run core:pull -- --auto');
+        recommendedCommands.push(starterCoreSyncCommand);
     } else if (scenario === 'production_binding_drift') {
         recommendedCommands.push('npm run agent:snapshot -- --reason=target-drift');
         recommendedCommands.push('wrangler.toml의 project/database/bucket 변경 의도를 먼저 검토');
