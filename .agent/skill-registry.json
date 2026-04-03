@@ -1,0 +1,747 @@
+{
+  "$comment": "SOT for all Clinic-OS skills. Managed in master, deployed via core:push. /help reads this file and filters by context.",
+  "version": "3.0.0",
+  "skills": [
+    {
+      "id": "help",
+      "name": "Skill Guide",
+      "scope": "universal",
+      "category": "guide",
+      "description": "List available skills + intent-based recommendations",
+      "reusability": "on-demand"
+    },
+    {
+      "id": "handoff",
+      "name": "Session Recorder",
+      "scope": "universal",
+      "category": "operations",
+      "description": "Cross-session work continuity — progress, issues, and next steps",
+      "reusability": "recurring",
+      "state_file": ".agent/handoff.json"
+    },
+    {
+      "id": "onboarding",
+      "name": "Onboarding",
+      "scope": "local",
+      "category": "setup",
+      "description": "Clinic customization setup (33 features, 5-tier progression)",
+      "reusability": "recurring",
+      "state_file": ".agent/onboarding-state.json"
+    },
+    {
+      "id": "setup-clinic-info",
+      "name": "Clinic Basic Info Setup",
+      "scope": "universal",
+      "category": "setup",
+      "description": "Name, contact, address, hours — auto-mapped from Place data + clinics↔site_settings dual-write sync",
+      "reusability": "recurring",
+      "depends_on": [
+        "extract-content"
+      ]
+    },
+    {
+      "id": "extract-content",
+      "name": "Naver Content Extraction",
+      "scope": "universal",
+      "category": "data",
+      "description": "Auto-import content + images from Naver Blog/Place",
+      "reusability": "recurring"
+    },
+    {
+      "id": "curate-images",
+      "name": "Image Curation",
+      "scope": "universal",
+      "category": "data",
+      "description": "Classify collected images by category + generate asset-metadata.json",
+      "reusability": "one-time",
+      "depends_on": [
+        "extract-content"
+      ],
+      "output": ".agent/asset-metadata.json"
+    },
+    {
+      "id": "analyze-content",
+      "name": "Content Analysis + Persona",
+      "scope": "universal",
+      "category": "data",
+      "description": "Extract blog keywords, tone & manner, author persona → style-card.yaml",
+      "reusability": "one-time",
+      "depends_on": [
+        "extract-content"
+      ],
+      "output": ".agent/style-card.yaml"
+    },
+    {
+      "id": "discover-edge",
+      "name": "Strength Discovery + Positioning",
+      "scope": "universal",
+      "category": "strategy",
+      "description": "Identify clinic differentiators, target patients, core messaging → edge-profile.yaml",
+      "reusability": "one-time",
+      "depends_on": [
+        "analyze-content"
+      ],
+      "output": ".agent/edge-profile.yaml"
+    },
+    {
+      "id": "write-copy",
+      "name": "Marketing Copy Writing",
+      "scope": "universal",
+      "category": "content",
+      "description": "Write marketing copy for homepage, programs, and blog",
+      "reusability": "recurring",
+      "depends_on": [
+        "discover-edge",
+        "analyze-content"
+      ]
+    },
+    {
+      "id": "write-blog",
+      "name": "Blog Post Writing",
+      "scope": "universal",
+      "category": "content",
+      "description": "Persona-based blog writing — in the doctor's voice",
+      "reusability": "recurring",
+      "depends_on": [
+        "analyze-content",
+        "discover-edge"
+      ]
+    },
+    {
+      "id": "review-compliance",
+      "name": "Medical Advertising Compliance Review",
+      "scope": "universal",
+      "category": "content",
+      "description": "Review copy/blog against medical advertising regulations (BLOCK/WARN/PASS). Auto-triggered by write-copy, setup-programs, write-blog.",
+      "reusability": "recurring"
+    },
+    {
+      "id": "review-ux",
+      "name": "UI/UX Quality Review",
+      "scope": "universal",
+      "category": "quality",
+      "description": "Visual quality audit — btn--primary consistency, TW4 variable resolution, contrast ratio, broken images, clinics↔site_settings sync, mobile layout. Playwright-based.",
+      "reusability": "recurring",
+      "depends_on": [
+        "setup-programs",
+        "setup-skin"
+      ]
+    },
+    {
+      "id": "collect-references",
+      "name": "Reference Site Collection",
+      "scope": "universal",
+      "category": "content",
+      "description": "Fetch and analyze external reference websites (competitors, existing site, design inspiration) for pipeline enrichment",
+      "skill_ref": "collect-references",
+      "outputs": [
+        ".agent/references.yaml"
+      ],
+      "depends_on": [],
+      "priority": "optional"
+    },
+    {
+      "id": "plan-content",
+      "name": "Web Content Planning",
+      "scope": "universal",
+      "category": "strategy",
+      "description": "Plan site/programs/blog/landing content → site-plan.yaml",
+      "reusability": "recurring",
+      "depends_on": [
+        "discover-edge",
+        "analyze-content"
+      ],
+      "output": ".agent/site-plan.yaml"
+    },
+    {
+      "id": "setup-homepage",
+      "name": "Homepage Setup (Data)",
+      "scope": "universal",
+      "category": "build",
+      "description": "Select preset + populate content data",
+      "reusability": "recurring",
+      "depends_on": [
+        "plan-content"
+      ]
+    },
+    {
+      "id": "frontend-code",
+      "name": "Frontend Code Implementation",
+      "scope": "universal",
+      "category": "build",
+      "description": "Reference-based design extraction + Astro/Tailwind coding + custom skins",
+      "reusability": "recurring"
+    },
+    {
+      "id": "setup-programs",
+      "name": "Program Page Setup",
+      "scope": "universal",
+      "category": "build",
+      "description": "Register treatment programs + medical staff in DB",
+      "reusability": "recurring",
+      "depends_on": [
+        "setup-homepage"
+      ]
+    },
+    {
+      "id": "setup-skin",
+      "name": "Skin/Theme Application",
+      "scope": "local",
+      "category": "build",
+      "description": "Choose from 9 built-in skins + configure brand colors",
+      "reusability": "recurring"
+    },
+    {
+      "id": "enhance-portrait",
+      "name": "Doctor Portrait Enhancement",
+      "scope": "local",
+      "category": "image",
+      "description": "Enhance/process doctor profile photos via Nanobanana (Gemini)",
+      "reusability": "on-demand",
+      "depends_on": [
+        "curate-images"
+      ]
+    },
+    {
+      "id": "generate-scenes",
+      "name": "Scene Image Generation",
+      "scope": "local",
+      "category": "image",
+      "description": "Generate treatment/facility scene images via Nanobanana (Gemini)",
+      "reusability": "on-demand",
+      "depends_on": [
+        "curate-images",
+        "analyze-content"
+      ]
+    },
+    {
+      "id": "plugin",
+      "name": "Plugin Management",
+      "scope": "local",
+      "category": "extension",
+      "description": "Create/install/edit/test/deploy plugins",
+      "reusability": "on-demand"
+    },
+    {
+      "id": "survey-tool",
+      "name": "Survey Tool Management",
+      "scope": "local",
+      "category": "extension",
+      "description": "Create/edit/deploy survey and self-assessment tools",
+      "reusability": "on-demand"
+    },
+    {
+      "id": "status",
+      "name": "System Dashboard",
+      "scope": "universal",
+      "category": "system",
+      "description": "At-a-glance view of version, health, git, and DB status",
+      "reusability": "on-demand"
+    },
+    {
+      "id": "infra-check",
+      "name": "Infrastructure Check",
+      "scope": "universal",
+      "category": "system",
+      "description": "Detailed inspection of D1, R2, Workers, and Cloudflare auth",
+      "reusability": "on-demand"
+    },
+    {
+      "id": "navigate",
+      "name": "Codebase Navigator",
+      "scope": "universal",
+      "category": "system",
+      "description": "Find files, understand systems, check safety, discover docs — replaces support bot",
+      "reusability": "on-demand"
+    },
+    {
+      "id": "safety-check",
+      "name": "Protection Rules Check",
+      "scope": "local",
+      "category": "system",
+      "description": "Verify file protection rules sync status",
+      "reusability": "on-demand"
+    },
+    {
+      "id": "core-update",
+      "name": "Core Update",
+      "scope": "local",
+      "category": "system",
+      "description": "Apply latest core version + resolve conflicts + deploy",
+      "reusability": "recurring"
+    },
+    {
+      "id": "migration-test",
+      "name": "Update Simulation",
+      "scope": "local",
+      "category": "system",
+      "description": "Core update dry-run — preview conflicts before applying",
+      "reusability": "on-demand"
+    },
+    {
+      "id": "troubleshoot",
+      "name": "Troubleshooting Assistant",
+      "scope": "universal",
+      "category": "system",
+      "description": "Systematic diagnosis + auto-repair for build/deploy/runtime errors",
+      "reusability": "on-demand"
+    },
+    {
+      "id": "cleanup-samples",
+      "name": "Sample Data Cleanup",
+      "scope": "universal",
+      "category": "setup",
+      "description": "Remove seed/sample data (is_sample=1, sample-* slugs) safely",
+      "reusability": "one-time",
+      "depends_on": [
+        "setup-programs"
+      ]
+    },
+    {
+      "id": "setup-og",
+      "name": "OG Image + Social Meta",
+      "scope": "universal",
+      "category": "build",
+      "description": "Generate/select OG image and configure social sharing meta tags",
+      "reusability": "one-time",
+      "depends_on": [
+        "setup-homepage"
+      ]
+    },
+    {
+      "id": "live-demo",
+      "name": "Live Demo Build",
+      "scope": "meta",
+      "category": "marketing",
+      "description": "Reusable live webinar demo — pre-stage infrastructure, run skill pipeline live, handoff after",
+      "reusability": "recurring"
+    },
+    {
+      "id": "clinic-release",
+      "name": "Release Pipeline",
+      "scope": "meta",
+      "category": "release",
+      "description": "7-stage release — version bump, core push, HQ deploy, client update",
+      "reusability": "recurring"
+    },
+    {
+      "id": "changelog",
+      "name": "Release Notes Generator",
+      "scope": "meta",
+      "category": "release",
+      "description": "Auto-generate release notes from git log",
+      "reusability": "recurring"
+    },
+    {
+      "id": "guide-sync",
+      "name": "HQ Guide Sync",
+      "scope": "meta",
+      "category": "hq",
+      "description": "Build & deploy docs/*.md → HQ D1 guides",
+      "reusability": "recurring"
+    },
+    {
+      "id": "hq-admin",
+      "name": "HQ D1 Management",
+      "scope": "meta",
+      "category": "hq",
+      "description": "Query/modify HQ database (clients, channels, guides)",
+      "reusability": "on-demand"
+    },
+    {
+      "id": "client-debug",
+      "name": "Remote Client Diagnosis",
+      "scope": "meta",
+      "category": "client-ops",
+      "description": "Remote diagnosis of client sites (HQ + cos-ask)",
+      "reusability": "on-demand"
+    },
+    {
+      "id": "content-calendar",
+      "name": "Marketing Dispatch Management",
+      "scope": "meta",
+      "category": "marketing",
+      "description": "Track marketing content dispatch to community/group chat/LiveKlass",
+      "reusability": "recurring",
+      "state_file": "docs/internal/content-calendar.json"
+    },
+    {
+      "id": "issue",
+      "name": "Issue Collection + Core Integration",
+      "scope": "meta",
+      "category": "operations",
+      "description": "Collect client/internal issues → track core integration",
+      "reusability": "recurring",
+      "state_file": "docs/internal/issues.json"
+    },
+    {
+      "id": "audit",
+      "name": "Audit Report",
+      "scope": "meta",
+      "category": "operations",
+      "description": "Auto-generate code/security/performance audit reports",
+      "reusability": "on-demand"
+    },
+    {
+      "id": "improvement",
+      "name": "Improvement Tracker",
+      "scope": "meta",
+      "category": "operations",
+      "description": "Track and prioritize improvements discovered from audits",
+      "reusability": "recurring"
+    },
+    {
+      "id": "clinic-advisor",
+      "name": "Business Advisor",
+      "scope": "universal",
+      "category": "intelligence",
+      "description": "Data-driven business advice — connects dashboard, patients, revenue, reservations",
+      "reusability": "recurring"
+    },
+    {
+      "id": "patient-cohort",
+      "name": "Patient Segmentation",
+      "scope": "universal",
+      "category": "intelligence",
+      "description": "Segment patients by behavior — active, at-risk, high-value, program-specific",
+      "reusability": "recurring"
+    },
+    {
+      "id": "campaign-draft",
+      "name": "Patient Campaign Drafting",
+      "scope": "universal",
+      "category": "intelligence",
+      "description": "Draft segment-targeted campaigns — win-back, follow-up, seasonal, events",
+      "reusability": "recurring",
+      "depends_on": [
+        "patient-cohort"
+      ]
+    },
+    {
+      "id": "business-report",
+      "name": "Monthly Business Report",
+      "scope": "universal",
+      "category": "intelligence",
+      "description": "Auto-generate monthly report — revenue, patients, reservations, trends",
+      "reusability": "recurring"
+    },
+    {
+      "id": "patient-remind",
+      "name": "Patient Reminder",
+      "scope": "universal",
+      "category": "intelligence",
+      "description": "Appointment reminders, follow-ups, recall — via SMS/KakaoTalk",
+      "reusability": "recurring"
+    },
+    {
+      "id": "optimize-aeo",
+      "name": "AEO/SEO Optimization",
+      "scope": "universal",
+      "category": "marketing",
+      "description": "AI search optimization + SEO configuration (master/local routing)",
+      "reusability": "recurring",
+      "depends_on": [
+        "setup-clinic-info"
+      ],
+      "triggers": [
+        "aeo",
+        "seo",
+        "ai 검색",
+        "스키마",
+        "구조화 데이터"
+      ]
+    },
+    {
+      "id": "dev-skin",
+      "name": "Skin Development Partner",
+      "scope": "local",
+      "category": "extension",
+      "description": "Custom skin development with design system + TW4 safe-selector validation + /review-ux auto-gate",
+      "reusability": "on-demand",
+      "output": ".agent/handoff-skin.json",
+      "triggers": [
+        "스킨 만들기",
+        "디자인 시스템",
+        "커스텀 테마"
+      ]
+    },
+    {
+      "id": "dev-survey",
+      "name": "Survey Tool Development Partner",
+      "scope": "local",
+      "category": "extension",
+      "description": "Custom survey/assessment tool design and implementation",
+      "reusability": "on-demand",
+      "triggers": [
+        "검사도구 만들기",
+        "자가진단",
+        "설문"
+      ]
+    },
+    {
+      "id": "dev-plugin",
+      "name": "Plugin Development Partner",
+      "scope": "local",
+      "category": "extension",
+      "description": "Custom plugin design and implementation",
+      "reusability": "on-demand",
+      "triggers": [
+        "플러그인 만들기",
+        "기능 추가",
+        "확장"
+      ]
+    },
+    {
+      "id": "setup-intake",
+      "name": "Intake Form Setup",
+      "scope": "local",
+      "category": "setup",
+      "description": "Patient intake form template configuration and activation",
+      "reusability": "one-time",
+      "depends_on": [
+        "setup-clinic-info"
+      ],
+      "triggers": [
+        "문진표",
+        "초진",
+        "환자 정보"
+      ]
+    },
+    {
+      "id": "setup-notifications",
+      "name": "Notification Channel Setup",
+      "scope": "local",
+      "category": "setup",
+      "description": "SMS/KakaoTalk notification channel and template configuration",
+      "reusability": "one-time",
+      "depends_on": [
+        "setup-clinic-info"
+      ],
+      "triggers": [
+        "문자",
+        "알림톡",
+        "카카오",
+        "sms"
+      ]
+    },
+    {
+      "id": "setup-channels",
+      "name": "External Lead Channel Integration",
+      "scope": "local",
+      "category": "setup",
+      "description": "Connect Kakao Talk, Naver TalkTalk, Naver Reservation email for external lead capture",
+      "reusability": "one-time",
+      "depends_on": [
+        "setup-clinic-info"
+      ],
+      "triggers": [
+        "카카오",
+        "톡톡",
+        "네이버 예약",
+        "외부 채널",
+        "channel"
+      ]
+    },
+    {
+      "id": "setup-i18n",
+      "name": "Multilingual Configuration",
+      "scope": "local",
+      "category": "setup",
+      "description": "Multi-language support and translation configuration",
+      "reusability": "one-time",
+      "depends_on": [
+        "setup-clinic-info"
+      ],
+      "triggers": [
+        "다국어",
+        "영어",
+        "중국어",
+        "번역"
+      ]
+    },
+    {
+      "id": "import-data",
+      "name": "Data Import",
+      "scope": "local",
+      "category": "data",
+      "description": "Legacy system data migration (CSV, Excel, external DB)",
+      "reusability": "one-time",
+      "depends_on": [
+        "setup-clinic-info"
+      ],
+      "triggers": [
+        "데이터 이전",
+        "마이그레이션",
+        "csv",
+        "엑셀"
+      ]
+    },
+    {
+      "id": "faq-generate",
+      "name": "FAQ Generator",
+      "scope": "universal",
+      "category": "content",
+      "description": "Auto-generate FAQs from clinic data, programs, and patient patterns",
+      "reusability": "one-time",
+      "depends_on": [
+        "setup-programs"
+      ]
+    },
+    {
+      "id": "review-curate",
+      "name": "Social Proof Curation",
+      "scope": "universal",
+      "category": "content",
+      "description": "Collect, anonymize, and place patient reviews as social proof",
+      "reusability": "recurring"
+    },
+    {
+      "id": "product-review",
+      "name": "Product Direction Review",
+      "scope": "meta",
+      "category": "product",
+      "description": "Evaluate changes against SOUL.md — purpose alignment, axis check, vanilla test",
+      "reusability": "on-demand"
+    },
+    {
+      "id": "code-review",
+      "name": "Code Review",
+      "scope": "meta",
+      "category": "product",
+      "description": "Security, bugs, logic errors, protection rule compliance — confidence-based",
+      "reusability": "recurring"
+    },
+    {
+      "id": "qa",
+      "name": "Build Verification & QA",
+      "scope": "meta",
+      "category": "product",
+      "description": "Build, test, DB schema, deploy-guard, health — end-to-end verification",
+      "reusability": "recurring"
+    },
+    {
+      "id": "marketing-plan",
+      "name": "Marketing Campaign Planning",
+      "scope": "meta",
+      "category": "marketing",
+      "description": "Funnel design, timeline, channel strategy, messaging hierarchy",
+      "reusability": "recurring"
+    },
+    {
+      "id": "draft-copy",
+      "name": "Marketing Copy Drafting",
+      "scope": "meta",
+      "category": "marketing",
+      "description": "Announcements, reminders, recaps — matched to established workshop tone and voice",
+      "reusability": "recurring"
+    },
+    {
+      "id": "campaign-report",
+      "name": "Campaign Performance Analysis",
+      "scope": "meta",
+      "category": "marketing",
+      "description": "Funnel metrics, channel effectiveness, comparative analysis",
+      "reusability": "recurring"
+    },
+    {
+      "id": "workshop-plan",
+      "name": "Workshop Curriculum Planning",
+      "scope": "meta",
+      "category": "workshop",
+      "description": "Curriculum design, skill-to-session mapping, materials checklist",
+      "reusability": "recurring"
+    },
+    {
+      "id": "retro",
+      "name": "Workshop Retrospective",
+      "scope": "meta",
+      "category": "workshop",
+      "description": "Post-workshop review — Keep/Stop/Start/Improve + skill impact assessment",
+      "reusability": "recurring"
+    },
+    {
+      "id": "setup-favicon",
+      "name": "setup-favicon",
+      "description": "Favicon Generation & Setup",
+      "scope": "universal",
+      "category": "setup",
+      "tier": 1,
+      "file": ".claude/commands/setup-favicon.md"
+    }
+  ],
+  "categories": {
+    "guide": "Guide",
+    "setup": "Initial Setup",
+    "data": "Data Collection & Analysis",
+    "strategy": "Strategy & Planning",
+    "content": "Content Production",
+    "build": "Site Build",
+    "image": "Image Generation & Processing",
+    "extension": "Extensions",
+    "system": "System Management",
+    "release": "Release",
+    "hq": "HQ Management",
+    "client-ops": "Client Operations",
+    "marketing": "Marketing",
+    "operations": "Operations & Tracking",
+    "intelligence": "Business Intelligence",
+    "product": "Product Management",
+    "workshop": "Workshop"
+  },
+  "flows": {
+    "onboarding": {
+      "description": "Full onboarding flow for new clinics",
+      "steps": [
+        "setup-clinic-info",
+        "extract-content",
+        "curate-images",
+        "analyze-content",
+        "discover-edge",
+        "write-copy",
+        "review-compliance",
+        "plan-content",
+        "setup-homepage",
+        "frontend-code",
+        "setup-programs",
+        "setup-skin",
+        "review-ux"
+      ]
+    },
+    "content-production": {
+      "description": "Content production cycle",
+      "steps": [
+        "analyze-content",
+        "discover-edge",
+        "write-blog",
+        "review-compliance"
+      ]
+    },
+    "release": {
+      "description": "Release pipeline",
+      "steps": [
+        "qa",
+        "code-review",
+        "clinic-release",
+        "changelog",
+        "guide-sync"
+      ]
+    },
+    "marketing-campaign": {
+      "description": "Marketing campaign lifecycle",
+      "steps": [
+        "marketing-plan",
+        "draft-copy",
+        "content-calendar",
+        "campaign-report"
+      ]
+    },
+    "workshop-lifecycle": {
+      "description": "Workshop planning → execution → retrospective",
+      "steps": [
+        "workshop-plan",
+        "live-demo",
+        "retro"
+      ]
+    }
+  }
+}

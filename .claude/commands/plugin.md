@@ -3,6 +3,14 @@
 Collaboratively create, test, and publish plugins with the client.
 Designed for extending Clinic-OS with custom features — pages, APIs, widgets, homepage overrides.
 
+## When to Use
+
+- Creating a new custom feature for the clinic (reservation page, events, dashboard)
+- Listing installed plugins and checking their status
+- Editing or modifying an existing local plugin
+- Testing plugin validity before deployment
+- Submitting a local plugin to the HQ marketplace
+
 ## Source of Truth
 
 - Plugin loader: `src/lib/plugin-loader.ts`
@@ -28,33 +36,33 @@ Detect user intent and route to the appropriate mode:
 
 If unclear, ask:
 ```
-어떤 작업을 하시겠어요?
-[A] 새 플러그인 만들기
-[B] 기존 플러그인 보기/수정
-[C] HQ에 제출하기
+What would you like to do?
+[A] Create a new plugin
+[B] View/edit existing plugins
+[C] Submit to HQ
 ```
 
 ---
 
 ## Mode: create
 
-### Step 1 — Discovery (대화)
+### Step 1 — Discovery (conversation)
 
 DO NOT immediately generate files. First, understand what the user needs:
 
 ```
-어떤 기능을 추가하고 싶으신가요?
+What feature would you like to add?
 
-예시:
-• 우리 병원만의 예약 페이지
-• 이벤트/프로모션 관리
-• 환자 설문 결과 대시보드
-• 원장님 블로그/칼럼
-• 멤버십/포인트 시스템
-• 홈페이지 커스터마이징
+Examples:
+• Custom reservation page for your clinic
+• Event/promotion management
+• Patient survey results dashboard
+• Director's blog/column
+• Membership/points system
+• Homepage customization
 
-자유롭게 설명해주세요. 어떤 페이지가 필요하고, 누가 사용하는지 알려주시면
-최적의 구조로 설계합니다.
+Please describe freely. Tell us what pages are needed and who will use them,
+and we'll design the optimal structure.
 ```
 
 Gather:
@@ -70,28 +78,28 @@ Gather:
 Present the design before generating:
 
 ```
-📦 플러그인 설계안
+📦 Plugin Design
 ━━━━━━━━━━━━━━━━━
 
-이름: {name}
+Name: {name}
 ID: {plugin-id}
-타입: {new-route | override}
-경로: /ext/{plugin-id}/
+Type: {new-route | override}
+Path: /ext/{plugin-id}/
 
-📄 페이지:
-  • / — 메인 페이지 (공개)
-  • /admin — 관리 페이지 (관리자 전용)
+📄 Pages:
+  • / — Main page (public)
+  • /admin — Admin page (admin only)
   ...
 
-🗄️ 데이터베이스:
+🗄️ Database:
   • custom_{table} — {description}
   ...
 
-🔐 권한:
-  • read:patients — 환자 정보 조회
+🔐 Permissions:
+  • read:patients — patient data access
   ...
 
-이대로 진행할까요?
+Proceed with this design?
 ```
 
 Iterate until the user approves.
@@ -115,11 +123,11 @@ Create in `src/plugins/local/{plugin-id}/`:
   "routes": {
     "base": "/ext/{plugin-id}",
     "public": [
-      { "path": "/", "file": "pages/index.astro", "title": "메인" }
+      { "path": "/", "file": "pages/index.astro", "title": "Main" }
     ]
   },
   "documentation": {
-    "summary": "{10자 이상 요약}",
+    "summary": "{10+ character summary}",
     "features": ["{feature1}", "{feature2}"]
   }
 }
@@ -196,7 +204,7 @@ CREATE TABLE IF NOT EXISTS custom_{table_name} (
 **Admin page** (accessible via admin hub):
 - Import `AdminLayout` from `../../../layouts/AdminLayout.astro`
 - Follow admin UI patterns (cards, tables, forms)
-- Add to manifest: `"pages": [{"path": "manage", "title": "관리"}]`
+- Add to manifest: `"pages": [{"path": "manage", "title": "Manage"}]`
 
 **Override page** (replaces homepage):
 - Type: `"override"` in manifest
@@ -224,25 +232,25 @@ npm run build
 If build succeeds:
 
 ```
-✅ 플러그인 생성 완료!
+✅ Plugin creation complete!
 
-📂 위치: src/plugins/local/{plugin-id}/
-🔗 공개 URL: /ext/{plugin-id}/
-🔗 관리 허브: /admin/hub/
+📂 Location: src/plugins/local/{plugin-id}/
+🔗 Public URL: /ext/{plugin-id}/
+🔗 Admin Hub: /admin/hub/
 
-다음 단계:
-  1. npm run dev 로 로컬에서 테스트
-  2. /ext/{plugin-id}/ 에서 동작 확인
-  3. 배포하면 프로덕션에서 바로 사용 가능
-  4. 원하시면 HQ에 제출하여 다른 병원에 공유
+Next steps:
+  1. Test locally with npm run dev
+  2. Verify at /ext/{plugin-id}/
+  3. Deploy to make it available in production
+  4. Optionally submit to HQ to share with other clinics
 ```
 
 ### Step 6 — Deploy Offer
 
 ```
-플러그인을 배포하시겠습니까?
-[A] 로컬만 (우리 병원에서만 사용)
-[B] HQ에 제출 (다른 병원도 사용 가능)
+Deploy the plugin?
+[A] Local only (use only at this clinic)
+[B] Submit to HQ (available to other clinics)
 ```
 
 ---
@@ -252,17 +260,17 @@ If build succeeds:
 Scan plugins and present:
 
 ```
-📋 설치된 플러그인
+📋 Installed Plugins
 ━━━━━━━━━━━━━━━━━
 
-🔵 코어 (core:pull로 관리)
-  • survey-tools — 검사도구 플랫폼 [new-route] /ext/survey-tools
-  • custom-homepage — 홈페이지 커스텀 [override] /
+🔵 Core (managed by core:pull)
+  • survey-tools — Survey tool platform [new-route] /ext/survey-tools
+  • custom-homepage — Homepage custom [override] /
 
-🟢 로컬 (우리 병원 전용)
+🟢 Local (this clinic only)
   • {id} — {name} [{type}] {route}
 
-총 {N}개 플러그인
+Total: {N} plugins
 ```
 
 Also check plugin status in DB:
@@ -278,8 +286,8 @@ SELECT plugin_id, status, installed_at FROM installed_plugins
 1. List plugins (same as `list`)
 2. User selects a plugin
 3. Only edit plugins in `local/` — core plugins require override:
-   - "코어 플러그인을 수정하면 core:pull 시 덮어쓰기됩니다."
-   - "local/에 같은 ID로 복사하여 수정할까요?"
+   - "Modifying a core plugin will be overwritten on core:pull."
+   - "Copy to local/ with the same ID and edit there?"
 4. Read manifest and pages, apply changes, rebuild
 
 ---
@@ -293,17 +301,17 @@ SELECT plugin_id, status, installed_at FROM installed_plugins
 5. Report status:
 
 ```
-🧪 플러그인 검증: {name}
+🧪 Plugin Validation: {name}
 ━━━━━━━━━━━━━━━━━━━━━━
 
-✅ manifest.json — 유효
-✅ pages/index.astro — 존재
-✅ migration.sql — SQL 유효
-✅ 빌드 — 성공
-⚠️  HQ 제출 요건:
-  ✅ README.md 존재
-  ✅ documentation.summary (10자+)
-  ✅ documentation.features (1개+)
+✅ manifest.json — valid
+✅ pages/index.astro — exists
+✅ migration.sql — SQL valid
+✅ Build — success
+⚠️  HQ submission requirements:
+  ✅ README.md exists
+  ✅ documentation.summary (10+ chars)
+  ✅ documentation.features (1+ items)
 ```
 
 ---
@@ -330,20 +338,20 @@ Submit a local plugin to HQ marketplace.
 3. Guide user:
 
 ```
-📦 HQ 제출 준비
+📦 HQ Submission Preparation
 ━━━━━━━━━━━━━━
 
-플러그인: {name} v{version}
-타입: {type}
-권한: {permissions count}개
-페이지: {pages count}개
+Plugin: {name} v{version}
+Type: {type}
+Permissions: {permissions count}
+Pages: {pages count}
 
-⚠️  HQ에 제출하면 검토 후 다른 Clinic-OS 사용자에게 공개됩니다.
-제출하시겠습니까? [Y/n]
+⚠️  Once submitted to HQ, it will be reviewed and published to other Clinic-OS users.
+Submit? [Y/n]
 ```
 
 4. Dev server must be running (`npm run dev`)
-5. Submit via admin UI: `/admin/hub/` → 해당 플러그인 → "HQ에 제출"
+5. Submit via admin UI: `/admin/hub/` → select the plugin → "Submit to HQ"
 
 ---
 
@@ -365,14 +373,14 @@ rm -rf src/plugins/local/{plugin-id}
 
 | Category | Korean | Use Case |
 |----------|--------|----------|
-| `marketing` | 마케팅 | 이벤트, 프로모션, SEO |
-| `integration` | 연동 | 외부 서비스 연결 |
-| `customization` | 커스터마이징 | UI/UX 변경, 홈페이지 |
-| `analytics` | 분석 | 데이터 시각화, 리포트 |
-| `utility` | 유틸리티 | 도구, 헬퍼 |
-| `communication` | 소통 | 메시지, 알림, 채팅 |
-| `automation` | 자동화 | 워크플로우, 스케줄 |
-| `ui` | UI | 위젯, 테마, 컴포넌트 |
+| `marketing` | 마케팅 | Events, promotions, SEO |
+| `integration` | 연동 | External service connections |
+| `customization` | 커스터마이징 | UI/UX changes, homepage |
+| `analytics` | 분석 | Data visualization, reports |
+| `utility` | 유틸리티 | Tools, helpers |
+| `communication` | 소통 | Messages, notifications, chat |
+| `automation` | 자동화 | Workflows, schedules |
+| `ui` | UI | Widgets, themes, components |
 
 ## Permission Risk Levels
 
@@ -401,6 +409,6 @@ When generating permissions, use the minimum required. Explain each to the user.
 
 ## Triggers
 
-User says: "플러그인", "기능 추가", "확장", "plugin", "새 페이지", "기능 만들기"
+- "플러그인", "기능 추가", "확장", "plugin", "새 페이지", "기능 만들기"
 
 ## All user-facing output in Korean
