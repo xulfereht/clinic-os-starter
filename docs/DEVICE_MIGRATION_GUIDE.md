@@ -1,8 +1,8 @@
 ---
 hq_slug: device-migration-guide
 hq_title: "디바이스 마이그레이션"
-hq_category: "01. 설치 가이드"
-hq_sort: 5
+hq_category: "06. 설치와 환경"
+hq_sort: 18
 hq_active: true
 ---
 # 디바이스 마이그레이션

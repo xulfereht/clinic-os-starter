@@ -1,8 +1,8 @@
 ---
 hq_slug: design-system-guide
 hq_title: "디자인 설정 가이드 (커스터마이징)"
-hq_category: "09. 시스템 설정"
-hq_sort: 5
+hq_category: "06. 설치와 환경"
+hq_sort: 24
 hq_active: true
 ---
 # 디자인 설정 가이드 (커스터마이징)

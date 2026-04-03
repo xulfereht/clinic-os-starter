@@ -34,6 +34,7 @@ const INFRA_FILES = [
     'scripts/db-helper.js',
     'scripts/doctor.js',
     'scripts/db-sync.js',
+    'scripts/lib/setup-db-bootstrap.js',
     // 기능 관련
     'scripts/feature-migrate.js',
     'scripts/create-feature.js',
