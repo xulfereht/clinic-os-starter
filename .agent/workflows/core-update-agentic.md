@@ -1,3 +1,8 @@
+---
+description: Core 업데이트 Agent-First 워크플로우
+category: dev
+---
+
 # Core 업데이트 Agent-First 워크플로우
 
 > 에이전트가 변경사항을 분석하고, 사용자가 결정하는 안전한 업데이트 프로세스
