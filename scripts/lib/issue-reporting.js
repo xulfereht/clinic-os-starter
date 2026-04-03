@@ -12,6 +12,9 @@ import {
 export { findProjectRoot };
 
 const DEFAULT_SUPPORT_AGENT_URL = 'https://clinic-os-support-agent.yeonseung-choe.workers.dev';
+const OFFICIAL_SUPPORT_AGENT_HOSTS = new Set([
+  'clinic-os-support-agent.yeonseung-choe.workers.dev',
+]);
 const ISSUE_HISTORY_RELATIVE_PATH = path.join('.agent', 'issue-history.json');
 const ISSUE_REPORT_STATUS_RELATIVE_PATH = path.join('.agent', 'issue-report-status.json');
 
@@ -282,6 +285,38 @@ export function getIssueSupportUrl(explicitUrl) {
     || DEFAULT_SUPPORT_AGENT_URL;
 }
 
+export function classifyIssueSupportUrl(url) {
+  if (!url) {
+    return {
+      status: 'missing',
+      official: false,
+      host: null,
+      note: 'support URL이 비어 있습니다.',
+    };
+  }
+
+  try {
+    const parsed = new URL(url);
+    const official = OFFICIAL_SUPPORT_AGENT_HOSTS.has(parsed.host);
+
+    return {
+      status: official ? 'official' : 'custom',
+      official,
+      host: parsed.host,
+      note: official
+        ? 'Cloudflare 계정 서브도메인을 사용하는 공식 운영 support-agent endpoint입니다. hostname만으로 HQ 이슈로 보고하지 마세요.'
+        : '공식 allowlist 밖의 support URL입니다. 실제 운영 정책과 일치하는지 별도 확인이 필요합니다.',
+    };
+  } catch {
+    return {
+      status: 'invalid',
+      official: false,
+      host: null,
+      note: 'support URL 형식이 올바르지 않습니다.',
+    };
+  }
+}
+
 export function getIssueSupportLicenseKey(projectRoot, explicitLicenseKey) {
   if (explicitLicenseKey) {
     return explicitLicenseKey;
@@ -388,12 +423,17 @@ export function recordIssueOccurrence(projectRoot, candidate) {
 
 export function summarizeIssueReporting(projectRoot, options = {}) {
   const candidate = options.candidate || collectIssueCandidate(projectRoot, options);
+  const supportUrl = getIssueSupportUrl(options.supportUrl);
+  const supportUrlMeta = classifyIssueSupportUrl(supportUrl);
+
   if (!candidate) {
     return {
       available: false,
       reason: '현재 보고할 반복 오류 후보가 없습니다.',
       report_command: 'npm run agent:report-issue -- --auto --json',
       preview_command: 'npm run agent:report-issue -- --dry-run --json',
+      support_url: supportUrl,
+      support_url_meta: supportUrlMeta,
     };
   }
 
@@ -439,7 +479,8 @@ export function summarizeIssueReporting(projectRoot, options = {}) {
     already_reported_same_event: alreadyReportedSameEvent,
     report_command: 'npm run agent:report-issue -- --auto --json',
     preview_command: 'npm run agent:report-issue -- --dry-run --json',
-    support_url: getIssueSupportUrl(options.supportUrl),
+    support_url: supportUrl,
+    support_url_meta: supportUrlMeta,
     license_present: licensePresent,
     last_reported_bug_id: tracked.record.last_reported_bug_id || null,
     last_reported_at: tracked.record.last_reported_at || null,
@@ -581,6 +622,7 @@ function markIssueAsReported(projectRoot, candidate, summary, report) {
     internal_id: report.internal_id || report.bugId || null,
     github_issue_url: report.github_issue_url || null,
     support_url: report.support_url || null,
+    support_url_meta: report.support_url_meta || summary.support_url_meta || null,
   });
 }
 
@@ -617,6 +659,7 @@ export async function reportIssueToSupport(projectRoot, options = {}) {
     eligible: summary.eligible,
     already_reported_same_event: summary.already_reported_same_event,
     support_url: supportUrl,
+    support_url_meta: summary.support_url_meta,
     has_license_key: Boolean(licenseKey),
     bug_report: bugReport,
   };
@@ -674,6 +717,7 @@ export async function reportIssueToSupport(projectRoot, options = {}) {
         potential_duplicates: duplicates,
         trend_info: similar.trend_info || null,
         support_url: supportUrl,
+        support_url_meta: summary.support_url_meta,
       };
       markIssueAsReported(projectRoot, candidate, summary, report);
       return {
@@ -705,6 +749,7 @@ export async function reportIssueToSupport(projectRoot, options = {}) {
     github_issue_url: submission.github_issue_url || null,
     message: submission.message || 'Bug report submitted successfully',
     support_url: supportUrl,
+    support_url_meta: summary.support_url_meta,
   };
   markIssueAsReported(projectRoot, candidate, summary, report);
 
