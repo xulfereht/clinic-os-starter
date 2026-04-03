@@ -1,3 +1,8 @@
+---
+description: 검사도구 Agent-First 워크플로우
+category: dev
+---
+
 # 검사도구 Agent-First 워크플로우
 
 > 목적: 에이전트가 `src/survey-tools/local/**` 에 새 검사도구를 만들거나 수정할 때 런타임 계약을 먼저 읽고 진행하도록 돕는 실행 문서
