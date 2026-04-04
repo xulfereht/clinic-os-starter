@@ -1,8 +1,8 @@
 ---
 hq_slug: message-campaign-guide
 hq_title: "메시지 및 캠페인 관리 가이드"
-hq_category: "07. 마케팅 & CRM"
-hq_sort: 2
+hq_category: "03. 콘텐츠와 마케팅"
+hq_sort: 7
 hq_active: true
 ---
 # 메시지 및 캠페인 관리 가이드

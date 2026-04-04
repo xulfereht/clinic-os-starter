@@ -546,3 +546,149 @@ Currently no rate limits are enforced, but please:
 
 *Last Updated: 2026-02-03*
 *Version: 1.0.0*
+
+---
+
+## Data API (General-Purpose Query)
+
+Direct SQL access to the D1 database for analytics, BI integration, and ad-hoc queries.
+These endpoints provide maximum flexibility for external systems (database-gateway, Claude Code, OpenClaw).
+
+### Execute SQL Query
+
+```
+POST /api/data/query
+```
+
+**Headers:**
+```
+X-Admin-API-Key: cos_YOUR_API_KEY
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "sql": "SELECT name, total_payment, visit_count FROM patients WHERE deleted_at IS NULL ORDER BY total_payment DESC",
+  "params": [],
+  "limit": 100
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [{"name": "홍길동", "total_payment": 1500000, "visit_count": 12}],
+  "row_count": 42,
+  "columns": ["name", "total_payment", "visit_count"],
+  "execution_time_ms": 15,
+  "meta": {}
+}
+```
+
+**Security Constraints:**
+- **SELECT only** — INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE are blocked (HTTP 403)
+- **Sensitive columns redacted** — password, token, secret, api_key columns return `***REDACTED***`
+- **Default LIMIT 1000**, max 10000. Explicit LIMIT in SQL overrides default.
+- **API Key required** — session auth also works for admin users
+
+**Parameterized Queries:**
+```json
+{
+  "sql": "SELECT * FROM patients WHERE status = ? AND total_payment > ?",
+  "params": ["active", 100000]
+}
+```
+
+### List Tables
+
+```
+GET /api/data/schema
+```
+
+**Response:**
+```json
+{
+  "tables": ["patients", "payments", "reservations", "leads"],
+  "count": 95
+}
+```
+
+### Get Table Schema
+
+```
+GET /api/data/schema?table=patients
+```
+
+**Response:**
+```json
+{
+  "table": "patients",
+  "columns": [
+    {"name": "id", "type": "TEXT", "nullable": false, "default_value": null, "primary_key": true},
+    {"name": "name", "type": "TEXT", "nullable": false, "default_value": null, "primary_key": false},
+    {"name": "total_payment", "type": "INTEGER", "nullable": true, "default_value": "0", "primary_key": false}
+  ],
+  "row_count": 1234
+}
+```
+
+### Common Query Examples
+
+```sql
+-- Monthly revenue trend
+SELECT strftime('%Y-%m', created_at, 'unixepoch') as month,
+       COUNT(*) as count, SUM(amount) as revenue
+FROM payments WHERE status = 'completed'
+GROUP BY month ORDER BY month DESC
+
+-- VIP patients (top revenue)
+SELECT name, total_payment, visit_count, last_visit_date
+FROM patients WHERE deleted_at IS NULL
+ORDER BY total_payment DESC LIMIT 20
+
+-- Today's reservations
+SELECT r.id, p.name, p.current_phone, r.reserved_at, r.status
+FROM reservations r
+LEFT JOIN patients p ON r.patient_id = p.id
+WHERE date(r.reserved_at, 'unixepoch') = date('now')
+
+-- Churn risk (inactive > 1 year, with payment history)
+SELECT name, current_phone, last_visit_date, total_payment
+FROM patients WHERE deleted_at IS NULL
+AND last_activity_at < strftime('%s', 'now') - 365*86400
+AND total_payment > 0
+ORDER BY total_payment DESC
+```
+
+### Date/Time Reference
+
+| Column Pattern | Format | Example |
+|---------------|--------|---------|
+| `created_at`, `updated_at`, `reserved_at` | Unix timestamp (seconds) | `1711234567` |
+| `last_visit_date`, `birth_date` | YYYY-MM-DD string | `2026-03-24` |
+
+**SQLite Date Functions:**
+- `date(col, 'unixepoch')` — timestamp to date string
+- `strftime('%Y-%m', col, 'unixepoch')` — timestamp to YYYY-MM
+- `strftime('%s', 'now')` — current Unix timestamp
+- `date('now', '-30 days')` — 30 days ago as date string
+
+### Key Tables Quick Reference
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `patients` | Patient records | id, name, current_phone, chart_number, status, total_payment, visit_count, last_visit_date, tags, created_at |
+| `payments` | Financial transactions | id, patient_id, amount, method, status, memo, created_at |
+| `reservations` | Appointments | id, patient_id, doctor_id, reserved_at, status, memo |
+| `leads` | Inquiries/prospects | id, name, phone, source, status, type, created_at |
+| `patient_events` | Activity log | id, patient_id, event_type, data, created_at |
+| `staff` | Clinic staff | id, name, type, department, is_active |
+| `expense_requests` | Expenses | id, title, amount, category_id, status, created_at |
+| `segments` | Patient segments | id, name, criteria, query_sql, is_active |
+| `campaigns` | Marketing campaigns | id, name, segment_id, status, created_at |
+| `shipping_orders` | Shipping | id, patient_id, status, tracking_number |
+| `inventory_items` | Inventory | id, name, stock_level, min_stock_level |
+| `products` | Products/services | id, name, price, category |
+| `programs` | Treatment programs | id, name, description, is_visible |
