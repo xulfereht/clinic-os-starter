@@ -1,3 +1,8 @@
+---
+description: Skin Pack Workflow
+category: dev
+---
+
 # Skin Pack Workflow
 
 스킨 팩은 퍼블릭 페이지의 톤앤매너를 `manifest + css + 섹션 override` 단위로 관리하는 경로입니다.
