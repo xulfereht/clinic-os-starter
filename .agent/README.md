@@ -12,11 +12,6 @@
 | 에이전트 | 진입점 | 자동 로드? |
 |----------|--------|-----------|
 | Claude Code | `CLAUDE.md` + `.claude/rules/*.md` | 자동 |
-| Gemini CLI | `GEMINI.md` | 자동 |
-| Codex | `AGENTS.md` | 자동 |
-| Cursor AI | `.cursorrules` | 자동 |
-| Windsurf | `.windsurfrules` | 자동 |
-| Cline/Continue | `.clinerules` | 자동 |
 
 > 모든 진입점은 **자동 감지 프로토콜**을 포함합니다.
 > 상세 절차: `.agent/workflows/first-contact.md`
@@ -47,7 +42,7 @@
 ### 초기 설정 (수동 진행 시)
 
 ```
-1. AGENTS.md (또는 CLAUDE.md/GEMINI.md)  — 프로젝트 이해
+1. CLAUDE.md                             — 프로젝트 이해
 2. .agent/workflows/setup-clinic.md       — setup:step / setup:fast / setup:agent fast 자동 선택 가이드
 3. .agent/workflows/softgate.md           — 안전망 설정 (GitHub, 백업)
 4. .agent/workflows/onboarding.md         — 병원 개별화 (Tier 1→5)
@@ -164,7 +159,7 @@
 .docking/protection-manifest.yaml         — 원본 (SOT)
   ↓ scripts/generate-protection-docs.js    — 생성기
   ↓ .claude/rules/clinic-os-safety.md      — Claude Code용 (자동 로드)
-  ↓ AGENTS.md                              — Codex용 (자동 생성)
+  ↓ CLAUDE.md                              — 실행 가이드
 ```
 
 ### 상태 파일 (에이전트가 읽고 쓰는 파일)
@@ -210,7 +205,7 @@
 ### 에이전트가 처음 이 프로젝트를 만나면
 
 ```
-Step 1: 진입점 읽기 (AGENTS.md / CLAUDE.md / GEMINI.md)
+Step 1: 진입점 읽기 (CLAUDE.md)
   → 프로젝트 개요, 기술 스택, 보호 규칙 이해
 
 Step 2: 이 파일 읽기 (.agent/README.md)
