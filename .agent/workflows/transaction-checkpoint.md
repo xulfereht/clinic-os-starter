@@ -1,3 +1,8 @@
+---
+description: Transaction & Checkpoint System
+category: dev
+---
+
 # Transaction & Checkpoint System
 
 > 모든 에이전트 작업은 **Git 기반 체크포인트**로 관리되고, **언제든지 롤백** 가능합니다.
