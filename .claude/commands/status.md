@@ -3,6 +3,13 @@
 Displays a unified overview of the Clinic-OS system state.
 Works in both master and client repos.
 
+## When to Use
+
+- To get a quick overview of system health before starting work
+- When checking if the environment is ready for deploy
+- After core:pull or infrastructure changes
+- When diagnosing general system issues
+
 ## Procedure
 
 ### 1. Gather version info
@@ -88,3 +95,8 @@ node scripts/doctor.js --db-only --quiet
 - On failure, show "unavailable" instead of error (dashboard must not break)
 - All user-facing output in Korean
 - Master vs client detection: check if `hq/` directory exists
+
+## Triggers
+
+- "상태", "status", "현황", "대시보드"
+- "시스템 상태 보여줘"

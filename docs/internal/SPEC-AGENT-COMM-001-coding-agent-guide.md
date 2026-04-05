@@ -649,6 +649,6 @@ const response = await fetch('/support/chat', {
 
 For issues or questions about the conversational mode integration:
 
-1. Check the [SPEC-AGENT-COMM-001](../.moai/specs/SPEC-AGENT-COMM-001/) documentation
+1. Check the [SPEC-AGENT-COMM-001](../docs/internal/specs/SPEC-AGENT-COMM-001/) documentation
 2. Review test cases in `tests/support-agent/test-conversation.ts`
 3. Check implementation in `src/lib/conversation.ts` and `src/routes/chat.ts`
