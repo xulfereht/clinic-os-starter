@@ -571,6 +571,11 @@ async function executeMigration(filePath, options = {}) {
         // ALTER TABLE 구문을 제거하고 나머지만 임시 파일로 실행
         const nonAlterSql = sql.replace(/ALTER\s+TABLE\s+\S+\s+ADD\s+COLUMN\s+\S+\s+[^;]*;?/gi, '').trim();
         if (nonAlterSql.length > 10) { // 의미 있는 SQL이 남아있으면
+            // 리모트 모드에서 DML이 migrations/에 포함되어 있으면 경고 후 스킵
+            if (!local && /\b(INSERT|UPDATE|DELETE)\b/i.test(nonAlterSql)) {
+                console.log(`      ⚠️  [${fileName}] 리모트 모드: DML(INSERT/UPDATE/DELETE) 스킵 — migrations/에는 DDL만 허용`);
+                return { success: true, skipped: true, reason: 'dml_in_remote' };
+            }
             const tmpFile = path.join(PROJECT_ROOT, '.core', `_tmp_migration_${Date.now()}.sql`);
             try {
                 fs.ensureDirSync(path.dirname(tmpFile));
@@ -609,6 +614,14 @@ async function executeMigration(filePath, options = {}) {
     }
 
     // ── ALTER TABLE이 없는 일반 마이그레이션: 파일 전체 실행 ──
+
+    // 리모트 모드에서 순수 DML 파일 스킵 (migrations/에는 DDL만 허용)
+    if (!local && !/\b(CREATE|ALTER|DROP)\b/i.test(sql) && /\b(INSERT|UPDATE|DELETE)\b/i.test(sql)) {
+        console.log(`      ⚠️  [${fileName}] 리모트 모드: 순수 DML 파일 스킵 — seeds/로 이동 필요`);
+        await recordMigration(dbName, fileName, localFlag); // 기록은 하되 실행은 안 함
+        return { success: true, skipped: true, reason: 'pure_dml_in_remote' };
+    }
+
     try {
         const result = await executeWithRetry(async () => {
             const res = await runCommand(

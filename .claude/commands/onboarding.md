@@ -4,6 +4,13 @@ Unified entry point for the client setup journey.
 Checks softgate guardrails first, then guides through onboarding tiers.
 Primarily for client repos, but also works in the master repo.
 
+## When to Use
+
+- First session on a client repo — "설정하자", "온보딩"
+- Resume setup after interruption — "어디까지 했지?"
+- After core:pull — check if new features need onboarding
+- Client asks about features — "이 기능 뭐야?" → show relevant tier
+
 ## Source of Truth
 
 - Softgate workflow: `.agent/workflows/softgate.md`
@@ -23,7 +30,7 @@ Read all state files in parallel:
 .agent/softgate-state.json    — gate pass status
 .agent/onboarding-state.json  — feature completion status
 .agent/clinic-profile.json    — clinic data (Gate 0 result)
-.agent/onboarding-registry.json — feature specs (48 features × 5 tiers)
+.agent/onboarding-registry.json — feature specs (33 features × 5 tiers)
 ```
 
 If state files don't exist, initialize with defaults.
