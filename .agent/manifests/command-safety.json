@@ -50,6 +50,14 @@
       "purpose": "자동 복구 가능한 최근 에러를 비대화형으로 복구"
     },
     {
+      "command": "node scripts/update-starter-core.js --stable",
+      "purpose": "확인 프롬프트 없이 stable 채널 기준으로 starter 인프라와 core를 함께 최신화"
+    },
+    {
+      "command": "node scripts/update-starter-core.js --beta",
+      "purpose": "확인 프롬프트 없이 beta 채널 기준으로 starter 인프라와 core를 함께 최신화"
+    },
+    {
       "command": "npm run core:pull -- --auto",
       "purpose": "확인 프롬프트 없이 현재 채널 기준 코어 업데이트"
     },
@@ -71,7 +79,7 @@
     },
     {
       "command": "npm run setup:fast",
-      "purpose": "고성능 환경에서 모놀리식 setup의 루트/core 의존성 설치를 병렬 처리해 더 빠르게 초기 설정을 진행"
+      "purpose": "고성능 macOS 또는 WSL Ubuntu 환경에서 모놀리식 setup의 루트/core 의존성 설치를 병렬 처리해 더 빠르게 초기 설정을 진행"
     },
     {
       "command": "npm run deploy -- --non-interactive",
@@ -138,14 +146,15 @@
     {
       "command": "npm run setup",
       "risk": "레거시 모놀리식 setup으로 환경에 따라 대화형 흐름 또는 장시간 실행으로 중단될 수 있음",
-      "preferred_alternative": "기본은 npm run setup:step -- --next, 비Windows + 메모리 8GB 이상 고성능 환경은 npm run setup:fast"
+      "preferred_alternative": "기본은 npm run setup:step -- --next, 고성능 macOS 또는 WSL Ubuntu 환경은 npm run setup:fast"
     },
     {
       "command": "npm run setup:fast",
       "risk": "모놀리식 setup이며 브라우저 인증/Cloudflare 입력이 필요할 수 있으나, 고성능 환경에서는 루트/core 의존성 설치를 병렬 처리해 더 빠름",
-      "preferred_alternative": "저메모리 또는 Windows 환경은 npm run setup:step -- --next",
+      "preferred_alternative": "저메모리 환경이나 지원 외 플랫폼에서는 npm run setup:step -- --next",
       "recommended_when": [
-        "macOS/Linux",
+        "macOS",
+        "WSL Ubuntu",
         "메모리 8GB 이상",
         "사용자가 일괄 설치를 원함",
         "에이전트가 브라우저 인증/입력 단계에 대해 안내할 수 있음"
