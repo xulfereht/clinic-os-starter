@@ -21,7 +21,7 @@
 clinic-os/
 │
 ├── docs/HQ-GUIDE.md           # ⭐ HQ 개발 가이드 (지금 읽는 파일)
-├── GEMINI.md                  # 클라이언트용 템플릿 (core 배포 시 동적 생성)
+├── CLAUDE.md                  # 클라이언트 실행 가이드
 │
 ├── 📂 src/                    # 앱 소스코드 (Core로 배포됨)
 │   ├── pages/                 # 코어 페이지
@@ -43,7 +43,7 @@ clinic-os/
 │
 ├── 📂 scripts/                # 배포 자동화
 │   ├── total-release.js       # npm run publish
-│   ├── mirror-core.js         # core 미러링 + GEMINI.md 동적 생성
+│   ├── mirror-core.js         # core 미러링
 │   ├── mirror-starter.js      # starter kit 미러링
 │   └── create-starter-kit.js
 │
@@ -69,7 +69,7 @@ HQ 레포 (clinic-os)
     │
     ├─→ Core (.mirror-staging → GitHub)
     │     └─ 실제 앱 코드 (src/, plugins/, migrations/)
-    │     └─ GEMINI.md 동적 생성 (클라이언트 AI 가이드)
+    │     └─ CLAUDE.md 포함 (클라이언트 실행 가이드)
     │
     └─→ HQ Server (Cloudflare Pages)
           └─ 버전 관리, 다운로드 API
@@ -89,7 +89,7 @@ HQ 레포 (clinic-os)
 1. 버전 범프 (package.json)
 2. Git 커밋/푸시
 3. Starter Kit 생성 및 미러링
-4. **Core 미러링 + GEMINI.md 동적 생성**
+4. **Core 미러링**
 5. HQ R2/D1 업데이트
 6. HQ Pages 배포
 
@@ -182,10 +182,10 @@ npm run hq:deploy
 npm run publish
 ```
 
-### 클라이언트 GEMINI.md 수정
+### 클라이언트 CLAUDE.md 수정
 
-`scripts/mirror-core.js`의 `generateClientGeminiMd()` 함수 수정
-→ 다음 `npm run publish` 시 자동 반영
+클라이언트용 `CLAUDE.md`는 core:push에 포함됩니다.
+마스터의 `CLAUDE.md`를 수정하면 다음 `npm run publish` 시 자동 반영됩니다.
 
 ---
 
@@ -210,7 +210,7 @@ npm run publish
 ### 문서 계층 구조
 
 ```
-GEMINI.md (AI 시작점)
+CLAUDE.md (AI 시작점)
     │
     ├──→ docs/AI-QUICK-REFERENCE.md (상세 레퍼런스)
     │       ├── 컴포넌트 위치
@@ -233,7 +233,7 @@ GEMINI.md (AI 시작점)
 
 | 파일 | 용도 | 위치 |
 |------|------|------|
-| `GEMINI.md` | AI 시작점, 핵심 원칙 | 루트 |
+| `CLAUDE.md` | AI 시작점, 핵심 원칙 | 루트 |
 | `docs/AI-QUICK-REFERENCE.md` | 통합 레퍼런스 | docs/ |
 | `docs/API-REFERENCE.md` | Admin API 문서 | docs/ |
 | `SCHEMA.md` | DB 스키마 | 루트 |
@@ -297,7 +297,7 @@ npm run publish
 
 ### 자연어 → API 매핑 확장
 
-`GEMINI.md`의 "자연어 → API 매핑" 섹션에 새 패턴 추가 시:
+`CLAUDE.md`의 "자연어 → API 매핑" 섹션에 새 패턴 추가 시:
 
 ```markdown
 | 사용자 요청 | API 호출 |

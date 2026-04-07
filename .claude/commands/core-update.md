@@ -1,8 +1,18 @@
 # /core-update — Post-Update Conflict Resolution & Deploy
 
+> **Role**: Update Engineer
+> **Cognitive mode**: Pull, resolve, verify, deploy. Protect client customizations while applying upstream changes.
+
 Runs `core:pull`, resolves conflicts automatically, verifies the build, and optionally deploys.
 Designed for non-technical clients who need a one-shot update experience.
 Primarily for client repos.
+
+## When to Use
+
+- New core version available — "업데이트 해", "코어풀"
+- After master releases a new version — client needs to sync
+- Recovering from a broken update — "업데이트 실패했어"
+- Checking available updates — "새 버전 있어?"
 
 ## Source of Truth
 
@@ -84,60 +94,64 @@ echo "y" | node .docking/engine/fetch.js
 echo "y" | node .docking/engine/fetch.js --beta
 ```
 
-### 4. Post-pull conflict resolution
+### 4. Post-pull: audit-local + conflict resolution
 
-After core:pull completes, resolve all remaining conflicts:
+core:pull이 완료되면 `audit-local.js`가 자동 실행됩니다.
+결과를 확인하고 각 항목을 처리합니다.
 
-#### 4a. Check backup manifest
+#### 4a. audit-local 결과 확인
+
+core:pull 끝에 자동으로 표시됩니다. 수동 실행도 가능:
+
+```bash
+node scripts/audit-local.js
+```
+
+결과 카테고리별 처리:
+
+| 카테고리 | 의미 | 처리 |
+|---------|------|------|
+| **STALE** | 코어와 동일하거나 열화된 _local | **즉시 삭제** — 코어 업데이트를 차단하고 있음 |
+| **DRIFT** | 코어와 차이 있는 _local | diff 확인 → 코어가 더 나으면 삭제, _local이 필요하면 유지 |
+| **ORPHAN** | 코어에 없는 _local | 더 이상 필요 없으면 삭제, 커스텀이면 유지 |
+| **ADMIN** | admin 페이지 오버라이드 | 빌드 시 무시됨 — 삭제 권장 |
+| **OK** | 진짜 커스텀 | 유지 |
+
+```bash
+# STALE + ORPHAN 자동 삭제
+node scripts/audit-local.js --auto-clean
+```
+
+#### 4b. 충돌 백업 확인
+
+충돌 파일은 `.core-backup/`에 백업됩니다 (자동). 확인:
 
 ```bash
 ls -t .core-backup/ | head -1
+cat .core-backup/$(ls -t .core-backup/ | head -1)/manifest.json
 ```
 
-Read the latest `.core-backup/*/manifest.json` to see what was backed up.
+**기본 동작: 새 코어 버전을 사용.** 이전 버전이 필요한 경우에만:
+```bash
+# 백업에서 _local로 복원 (의도적으로 코어를 오버라이드할 때만)
+cp .core-backup/{날짜}/{파일경로} src/pages/_local/{파일경로}
+```
 
-#### 4b. Resolve component/lib conflicts
+⚠️ **_local로 복원하면 이후 코어 업데이트가 해당 파일에 적용되지 않습니다.**
+반드시 이유를 기록하세요: `.agent/core-patches.log`
 
-For each file in the backup manifest:
+#### 4c. _local import 검증
 
-**Pages** (`src/pages/`):
-- Already auto-migrated to `src/pages/_local/` by fetch.js → no action needed
-  - ⚠️ **단, `src/pages/admin/**`는 제외** — Core 버전을 항상 사용 (관리자 페이지는 자동 업데이트됨)
-  - Admin 페이지는 `.core-backup/`에만 백업되고 `_local/`로 이전되지 않음
-- Verify: check that the `_local/` version exists (admin 제외)
-
-**Components** (`src/components/`):
-- Copy backup to `src/plugins/local/components/{filename}`
-- Create the directory if needed
-- Update imports: the component can be imported from its new local path
-
-**Libs** (`src/lib/`):
-- Copy backup to `src/lib/local/{filename}`
-- Create the directory if needed
-
-**Other core files** (`src/layouts/`, `src/styles/`):
-- These rarely conflict. If they do, inform user and show the diff between backup and new version
-- Ask user if they want to keep their version (move to local path) or accept upstream
-
-#### 4c. Fix broken imports in _local/ overrides
-
-Scan all `src/pages/_local/**/*.astro` files for imports that reference core paths.
-Check if those imported modules still exist at the same path.
+기존 _local 파일의 import가 코어 변경으로 깨졌는지 확인:
 
 ```
 For each _local/ file:
-  Extract import paths (from '...', from "...")
-  For imports starting with @/ or relative paths into src/:
-    Check if target file exists
-    If NOT → report: "import 경로가 변경되었습니다"
-    Try to find the file at a new location (search by filename)
-    If found → auto-fix the import path
-    If not found → warn user
+  Extract import paths
+  Check if target file exists
+  If NOT → auto-fix or warn user
 ```
 
-#### 4d. Fix pointer-stub files
-
-Check for any remaining pointer-stub files that the doctor may have missed:
+#### 4d. Pointer-stub 복구
 
 ```bash
 find src/pages/api -name "*.ts" -size -200c | while read f; do
@@ -145,10 +159,7 @@ find src/pages/api -name "*.ts" -size -200c | while read f; do
 done
 ```
 
-For each stub found:
-- Check if the target file exists at the referenced path
-- If yes → copy the actual content over the stub
-- If no → restore from upstream using git: `git show v{version}:{path}`
+Stub 발견 시 upstream에서 실제 파일로 교체.
 
 ### 5. Install dependencies
 
@@ -206,13 +217,12 @@ If user accepts, run the Deploy Guardrails from `/onboarding`:
 
 After successful deploy (or if user declines deploy):
 
+```bash
+# 오래된 백업/스냅샷 자동 정리 (최근 5개 보존)
+node scripts/cleanup.js
 ```
-Check .core-backup/ for resolved conflicts:
-  - If all files migrated to local paths → delete backup folder
-  - If some remain → keep and inform user
 
-Update .agent/softgate-state.json with last_update timestamp
-```
+Update `.agent/softgate-state.json` with last_update timestamp.
 
 ### 10. Summary report
 
@@ -223,17 +233,17 @@ Update .agent/softgate-state.json with last_update timestamp
 📌 버전: v1.23.0 → v1.23.1
 📝 적용: 16개 파일
 🔀 머지: package.json (새 의존성 2개 추가)
-⚠️  충돌 해소:
-   - src/pages/doctors/index.astro → _local/ 자동 이전
-   - src/components/Header.tsx → plugins/local/ 이전
-   - src/pages/admin/login.astro → Core 버전 사용 (admin은 _local로 이전되지 않음)
+⚠️  충돌: 2개 → .core-backup/에 백업됨
+🔍 _local 감사: STALE 3개 삭제, DRIFT 1개 검토, OK 2개 유지
+🧹 정리: 백업 68→5개, 스냅샷 32→5개 (60MB 확보)
 📦 npm install: 완료
 🔨 빌드: 성공
 🌐 배포: 완료 (https://www.example.com → 200)
 
 💡 다음 안내:
-   - _local/ 파일을 정기적으로 코어와 비교하세요
-   - 코어 기능이 개선되면 _local/ 오버라이드가 불필요할 수 있습니다
+   - _local은 코어 업데이트를 차단합니다. 최소한으로 유지하세요.
+   - audit-local.js로 수시 점검: node scripts/audit-local.js
+   - _local 생성 시 이유를 .agent/core-patches.log에 기록하세요.
 ```
 
 ## Conflict Resolution Rules
@@ -242,27 +252,28 @@ Update .agent/softgate-state.json with last_update timestamp
 
 | Conflict Type | Resolution | Safe? |
 |---------------|-----------|-------|
-| Page in `src/pages/` | Already in `_local/` by fetch.js | ✅ Always safe |
-| Component in `src/components/` | Copy to `src/plugins/local/components/` | ✅ Safe |
-| Lib in `src/lib/` | Copy to `src/lib/local/` | ✅ Safe |
-| Pointer-stub file | Replace with actual content or upstream | ✅ Safe |
+| STALE _local (audit-local) | Delete — 코어와 동일하거나 열화 | ✅ Safe |
+| ORPHAN _local (audit-local) | Delete — 코어에 없음 | ✅ Safe |
+| ADMIN _local | Delete — 빌드 시 무시됨 | ✅ Safe |
+| Pointer-stub file | Replace with upstream content | ✅ Safe |
 | Broken import in `_local/` | Auto-fix path if target found | ✅ Safe |
 | Missing npm dependency | `npm install` | ✅ Safe |
 | Missing DB column | Schema doctor auto-fix | ✅ Safe |
+| Old backups/snapshots | `cleanup.js` — 최근 5개 보존 | ✅ Safe |
 
 ### What requires user input
 
 | Situation | Action |
 |-----------|--------|
-| Layout conflict (`src/layouts/`) | Ask: keep yours or accept upstream? |
-| Style conflict (`src/styles/`) | Ask: keep yours or accept upstream? |
+| DRIFT _local (audit-local) | Show diff → 코어 수용 or _local 유지? |
+| 충돌 파일 복원 요청 | .core-backup/ → _local/ 복사 (이유 기록 필수) |
 | Build error in core code | Bug Escalation to HQ |
 | Health score < 50 after fix | Inform user, suggest manual review |
 
 ### What the agent never does
 
 - Modify protected files (wrangler.toml, clinic.json)
-- Delete user's _local/ overrides
+- **자동으로 _local 생성** — 충돌 시 백업만, _local 복사는 사용자 결정
 - Force deploy without user confirmation
 - Skip backup verification
 
