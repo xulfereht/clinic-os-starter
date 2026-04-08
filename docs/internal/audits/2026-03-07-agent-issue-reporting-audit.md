@@ -159,6 +159,8 @@ HQ `/admin/support/issues`에는 다음이 추가되었습니다.
 
 - 현재 로컬 이슈 리포팅 기본값은 support-agent-worker URL을 직접 사용합니다.
 - 장기적으로는 HQ manifest 또는 공용 설정 파일에서 단일 source of truth로 내리는 편이 안전합니다.
+- 단, `https://clinic-os-support-agent.yeonseung-choe.workers.dev` 자체는 현재 공식 운영 endpoint이므로 hostname만으로 버그로 분류하면 안 됩니다.
+- 이후 감사/진단 에이전트는 `workers.dev` 계정 서브도메인이라는 사실만으로 HQ issue를 생성하지 말고, 실제 reachability/contract/auth 문제 증거를 먼저 확인해야 합니다.
 
 ### 2. HQ 운영면에서의 가시화
 
