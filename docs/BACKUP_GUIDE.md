@@ -1,8 +1,8 @@
 ---
 hq_slug: backup-guide
 hq_title: "백업 & 복원 가이드"
-hq_category: "09. 시스템 설정"
-hq_sort: 4
+hq_category: "06. 설치와 환경"
+hq_sort: 19
 hq_active: true
 ---
 # 백업 & 복원 가이드
