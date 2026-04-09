@@ -238,6 +238,7 @@ async function checkMigrationState() {
             result.ok = false;
             result.score = -10;
             result.issues.push(`마이그레이션 불일치: 적용 ${appliedCount}개 / 파일 ${sqlFiles.length}개`);
+            result.fixable = 'db_migrate';
         }
     } catch {
         // d1_migrations 테이블이 없거나 DB 접근 불가 → 경고만
@@ -362,6 +363,17 @@ async function applyFixes(checks, verbose) {
                 break;
             }
 
+            case 'db_migrate': {
+                if (verbose) console.log('   🔧 로컬 마이그레이션 재실행 중...');
+                try {
+                    execSync(buildNpmCommand('run db:migrate'), { cwd: PROJECT_ROOT, stdio: verbose ? 'inherit' : 'pipe', timeout: 120000 });
+                    fixes.push('db:migrate 완료');
+                } catch (e) {
+                    if (verbose) console.log(`   ⚠️  db:migrate 실패: ${e.message}`);
+                }
+                break;
+            }
+
             case 'npm_install': {
                 if (verbose) console.log('   🔧 npm install 실행 중...');
                 try {
@@ -455,13 +467,39 @@ export async function runHealthAudit(options = {}) {
         console.log(`\n   ${scoreIcon} 건강 점수: ${score}/100\n`);
     }
 
-    // Fix mode
+    // Fix mode — 최대 3회 반복 (doctor가 한 번에 완전 복구하지 못하는 경우 대비)
     let fixes = [];
     if (fix && allIssues.some(i => i.fixable)) {
-        if (verbose) console.log('🔧 자동 수정 시작...\n');
-        fixes = await applyFixes(checks, verbose);
+        const MAX_FIX_ROUNDS = 3;
+        for (let round = 1; round <= MAX_FIX_ROUNDS; round++) {
+            if (verbose) console.log(`🔧 자동 수정 ${round}/${MAX_FIX_ROUNDS} 라운드...\n`);
+            const roundFixes = await applyFixes(checks, verbose);
+            fixes.push(...roundFixes);
+
+            if (round < MAX_FIX_ROUNDS) {
+                // 재검사하여 추가 수정 필요한지 확인
+                const recheck = {};
+                recheck.schema_health = await checkSchemaHealth();
+                recheck.migration_state = await checkMigrationState();
+                const stillBroken = recheck.schema_health.issues.length > 0 || recheck.migration_state.issues.length > 0;
+                if (!stillBroken) {
+                    if (verbose) console.log(`   ✅ 라운드 ${round}에서 완전 복구됨\n`);
+                    // 최종 점수 재계산
+                    checks.schema_health = recheck.schema_health;
+                    checks.migration_state = recheck.migration_state;
+                    score = 100;
+                    for (const [, check] of Object.entries(checks)) { score += check.score; }
+                    score = Math.max(0, Math.min(100, score));
+                    break;
+                }
+                if (verbose) console.log(`   🔄 아직 ${recheck.schema_health.issues.length + recheck.migration_state.issues.length}개 이슈 남음, 다음 라운드 진행...\n`);
+                // 다음 라운드를 위해 checks 업데이트
+                checks.schema_health = recheck.schema_health;
+                checks.migration_state = recheck.migration_state;
+            }
+        }
         if (verbose && fixes.length > 0) {
-            console.log(`\n   ✅ ${fixes.length}개 항목 수정 완료\n`);
+            console.log(`\n   ✅ 총 ${fixes.length}개 항목 수정 완료\n`);
         }
     } else if (verbose && allIssues.some(i => i.fixable)) {
         console.log('💡 자동 수정 가능한 항목이 있습니다: npm run health:fix\n');
