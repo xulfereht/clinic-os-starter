@@ -8,11 +8,10 @@
 - 사람: 스타터킷 설치, 에이전트 CLI 실행, 필요한 정보 제공, 결과 승인
 - 에이전트: 레포 읽기, 상태 진단, 설치/복구/이관/배포 진행
 - 기본 권장 에이전트: `Claude Code`
-- 사용 가능 대안: `Codex 계열 (GPT-5.4+)`, `OpenClaw 계열`, `Kimi 2.5+ 등 프론티어 모델을 연결한 에이전트`
 
 ## 시작 전 준비
 
-### macOS / Linux
+### macOS / WSL Ubuntu
 
 1. Node.js 20 이상 설치
 2. Git 설치
@@ -21,7 +20,7 @@
 
 ### Windows
 
-Windows는 반드시 WSL 안에서 작업하세요.
+네이티브 Windows 설치는 지원하지 않습니다. Windows에서는 반드시 **WSL Ubuntu** 안에서 작업하세요.
 
 - 먼저 [Windows 가이드](./WINDOWS_GUIDE.md)를 따르세요.
 - 프로젝트는 `C:\...`가 아니라 `~/clinic-os` 같은 WSL 경로에 두는 것이 안전합니다.
@@ -42,7 +41,7 @@ Windows는 반드시 WSL 안에서 작업하세요.
 
 ```text
 이 레포를 읽고 현재 상태를 진단해줘.
-AGENTS.md와 .agent/README.md를 먼저 읽고,
+CLAUDE.md와 .agent/README.md를 먼저 읽고,
 필요하면 설치/복구/이관 플로우를 제안하고 실행해줘.
 ```
 
@@ -50,7 +49,7 @@ AGENTS.md와 .agent/README.md를 먼저 읽고,
 
 정상적인 에이전트라면 아래 순서로 진행해야 합니다.
 
-1. `AGENTS.md`
+1. `CLAUDE.md`
 2. `.agent/README.md`
 3. `.agent/workflows/first-contact.md`
 4. `npm run agent:doctor -- --json`

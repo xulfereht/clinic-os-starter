@@ -3,7 +3,7 @@
   "updated_at": "2026-03-07T00:00:00Z",
   "purpose": "에이전트가 요청을 잘못된 경로에 수정하지 않도록 변경 전략을 분류한다.",
   "default_read_order": [
-    "AGENTS.md",
+    "CLAUDE.md",
     ".agent/workflows/first-contact.md",
     ".agent/runtime-context.json",
     ".agent/manifests/change-strategy.json",

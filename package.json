@@ -1,6 +1,6 @@
 {
   "name": "clinic-os-client",
-  "version": "1.26.3",
+  "version": "1.40.6",
   "type": "module",
   "description": "Clinic-OS 클라이언트",
   "scripts": {
@@ -20,6 +20,7 @@
     "status": "node scripts/status.js",
     "health": "node scripts/health-audit.js",
     "health:fix": "node scripts/health-audit.js --fix",
+    "handoff:claim": "node scripts/handoff-claim.js",
     "error:status": "node scripts/lib/error-recovery.mjs status",
     "error:recover": "node scripts/lib/error-recovery.mjs recover",
     "error:resolve": "node scripts/lib/error-recovery.mjs resolve",

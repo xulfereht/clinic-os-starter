@@ -62,6 +62,22 @@ const resolvedSiteUrl = wranglerCloudflareUrl
 function clinicLocalOverrides() {
   const pagesDir = path.resolve(process.cwd(), 'src', 'pages');
   const localDir = path.join(pagesDir, '_local');
+  const warnedIgnoredOverrides = new Set();
+
+  // Supported page file extensions for _local overrides
+  const pageExtensions = ['.astro', '.ts', '.tsx'];
+
+  const isAdminPath = (relative) => (
+    relative === 'admin.astro'
+    || relative === 'admin.ts'
+    || relative.startsWith(`admin${path.sep}`)
+  );
+
+  const warnIgnoredOverride = (relative) => {
+    if (warnedIgnoredOverrides.has(relative)) return;
+    warnedIgnoredOverrides.add(relative);
+    console.warn(`  ⚠️ Ignoring _local admin override: ${relative} (admin pages are core/plugin-only)`);
+  };
 
   return {
     name: 'clinic-local-overrides',
@@ -69,10 +85,17 @@ function clinicLocalOverrides() {
     load(id) {
       // Strip query parameters (Astro adds ?astro&type=script internally)
       const cleanId = id.split('?')[0];
-      if (!cleanId.endsWith('.astro') || !cleanId.startsWith(pagesDir + path.sep)) return null;
+      if (!pageExtensions.some(ext => cleanId.endsWith(ext)) || !cleanId.startsWith(pagesDir + path.sep)) return null;
       // Skip files already inside _local/ to avoid self-referencing
       if (cleanId.startsWith(localDir + path.sep)) return null;
       const relative = path.relative(pagesDir, cleanId);
+      if (isAdminPath(relative)) {
+        const ignoredOverridePath = path.join(localDir, relative);
+        if (fs.existsSync(ignoredOverridePath)) {
+          warnIgnoredOverride(relative);
+        }
+        return null;
+      }
       const overridePath = path.join(localDir, relative);
       if (fs.existsSync(overridePath)) {
         console.log(`  🔀 Local override: ${relative}`);
@@ -87,6 +110,10 @@ function clinicLocalOverrides() {
       server.watcher.on('change', (file) => {
         if (file.startsWith(localDir + path.sep)) {
           const relative = path.relative(localDir, file);
+          if (isAdminPath(relative)) {
+            warnIgnoredOverride(relative);
+            return;
+          }
           const coreFile = path.join(pagesDir, relative);
           const mod = server.moduleGraph.getModuleById(coreFile);
           if (mod) {
@@ -107,7 +134,7 @@ export default defineConfig({
   // i18n Configuration
   i18n: {
     defaultLocale: 'ko',
-    locales: ['ko', 'en', 'ja', 'zh-hans', 'vi'],
+    locales: ['ko', 'en', 'ja', 'zh-hans', 'zh-hant', 'vi'],
     routing: {
       prefixDefaultLocale: false,
     }
