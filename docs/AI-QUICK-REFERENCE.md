@@ -302,7 +302,7 @@ t('common.bookNow')  // "예약하기" or "Book Now"
 ### 필수 문서
 | 문서 | 용도 |
 |------|------|
-| `GEMINI.md` | AI 시작점 |
+| `CLAUDE.md` | AI 시작점 |
 | `docs/API-REFERENCE.md` | Admin API 전체 |
 | `SCHEMA.md` | DB 스키마 |
 | `docs/PLUGIN_DEVELOPMENT_GUIDE.md` | 플러그인 개발 |
