@@ -21,6 +21,65 @@ import yaml from 'js-yaml';
 import { exec, execFileSync } from 'child_process';
 import { promisify } from 'util';
 
+// ═════════════════════════════════════════════════════════════════════════════
+// CORE WRITE PROTECTION GUARD (AC-8)
+// Prevents accidental writes to core/ directory which is a git submodule
+// ═════════════════════════════════════════════════════════════════════════════
+
+const CORE_WRITE_PROTECTION = {
+  enabled: true,
+  forbiddenPaths: ['core/', 'core\\'],
+  
+  validateWritePath(filePath) {
+    const normalized = filePath.replace(/\\/g, '/');
+    if (normalized.includes('core/')) {
+      const error = `
+❌ WRITE TO core/ DIRECTORY BLOCKED
+   Path: ${filePath}
+   
+   core/ is a git submodule (mode 160000). Changes here CANNOT be committed.
+   Your work WILL BE LOST on the next core:pull.
+   
+   ✅ SAFE alternatives:
+      - src/plugins/local/     (for plugins)
+      - src/pages/_local/      (for page overrides)
+      - src/lib/local/         (for utilities)
+   `;
+      throw new Error(error);
+    }
+  },
+  
+  wrapFsModule(fsModule) {
+    const guard = this;
+    const originalWriteFile = fsModule.writeFileSync;
+    const originalMkdir = fsModule.mkdirSync;
+    const originalCopy = fsModule.copySync;
+    
+    fsModule.writeFileSync = function(file, ...args) {
+      guard.validateWritePath(String(file));
+      return originalWriteFile.call(this, file, ...args);
+    };
+    
+    fsModule.mkdirSync = function(dir, ...args) {
+      guard.validateWritePath(String(dir));
+      return originalMkdir.call(this, dir, ...args);
+    };
+    
+    fsModule.copySync = function(src, dest, ...args) {
+      guard.validateWritePath(String(dest));
+      return originalCopy.call(this, src, dest, ...args);
+    };
+    
+    return fsModule;
+  }
+};
+
+// Apply fs wrapper
+CORE_WRITE_PROTECTION.wrapFsModule(fs);
+
+// ═════════════════════════════════════════════════════════════════════════════
+
+
 // SPEC-CORE-001: 신규 모듈 (optional - 없으면 기본 동작)
 let executeWithRetry, verifyMigrationState, printStateReport;
 let atomicEngineUpdate, recoverFromPreviousFailure;
@@ -288,25 +347,26 @@ try {
     // Fallback: bootstrap 또는 manifest 미존재 시 (하드코딩 값 유지)
     CORE_PATHS = [
         'src/pages/', 'src/components/', 'src/layouts/', 'src/styles/',
-        'src/lib/', 'src/plugins/custom-homepage/', 'src/plugins/survey-tools/',
+        'src/lib/', 'src/skins/', 'src/plugins/survey-tools/',
         'src/survey-tools/stress-check/', 'src/content/aeo/',
         'migrations/', 'seeds/', 'docs/',
         '.agent/README.md', '.agent/manifests/',
         '.agent/onboarding-registry.json', '.agent/workflows/',
         '.claude/commands/', '.claude/rules/',
         'scripts/', '.docking/engine/', 'package.json', 'astro.config.mjs',
-        'tsconfig.json', '.cursorrules', '.windsurfrules', '.clinerules',
+        'tsconfig.json',
     ];
     LOCAL_PREFIXES = [
-        'src/lib/local/', 'src/plugins/local/', 'src/pages/_local/',
+        'src/lib/local/', 'src/skins/local/', 'src/plugins/local/', 'src/pages/_local/',
         'src/survey-tools/local/', 'public/local/', 'docs/internal/',
     ];
     PROTECTED_EXACT = new Set([
         'wrangler.toml', 'clinic.json', '.docking/config.yaml',
         'src/config.ts', 'src/styles/global.css',
         '.agent/onboarding-state.json',
+        '.claude/settings.json',      // 클라이언트 고유 권한/훅 설정
     ]);
-    PROTECTED_PREFIXES = ['.env', '.core/', 'src/plugins/local/'];
+    PROTECTED_PREFIXES = ['.env', '.core/', 'src/plugins/local/', 'src/plugins/custom-homepage/'];
     SPECIAL_MERGE_FILES = new Set(['package.json']);
 }
 
@@ -811,7 +871,7 @@ async function detectDriftedFiles(targetTag, alreadyInDiff) {
         if (diffSet.has(f)) return false;
         if (isProtectedPath(f)) return false;
         if (isLocalPath(f)) return false;
-        if (f.startsWith('seeds/')) return false;
+        // seeds/ 파일은 다운로드하되 실행은 d1_seeds 테이블 기반으로 미적용 시드만 실행 (runAllSeeds)
         // CORE_PATHS에 속하는지 확인
         return CORE_PATHS.some(cp => f.startsWith(cp));
     });
@@ -1704,6 +1764,7 @@ async function runAllSeeds() {
     const SKIP_SEEDS = [
         'go_live.sql',               // 프로덕션 전용 (수동 실행)
         'seed_digestive_content.sql', // 대용량 컨텐츠 (선택적)
+        'screenshot_sample_data.sql', // 스크린샷 촬영용 (INSERT OR REPLACE로 클라이언트 데이터 덮어씀)
     ];
 
     // 샘플/더미 데이터 seeds (개발용, 클라이언트 제외)
@@ -1722,7 +1783,7 @@ async function runAllSeeds() {
         .filter(f => {
             // 스타터킷(클라이언트)에서는 sample_*, dummy_* 패턴 + SAMPLE_SEEDS 제외
             if (IS_STARTER_KIT) {
-                if (f.startsWith('sample_') || f.startsWith('dummy_')) return false;
+                if (f.startsWith('sample_') || f.startsWith('dummy_') || f.startsWith('screenshot_')) return false;
                 if (SAMPLE_SEEDS.includes(f)) return false;
             }
             return true;
@@ -1966,7 +2027,7 @@ async function corePull(targetVersion = 'latest', options = {}) {
                 const { runHealthAudit } = await import(healthPath);
                 const health = await runHealthAudit({ quiet: true, fix: true });
                 if (health.score < 30 && !force) {
-                    throw new Error(`건강 점수 ${health.score}/100 — npm run health:fix 후 재시도`);
+                    throw new Error(`건강 점수 ${health.score}/100 — npm run health:fix 후 재시도 (또는 --force로 강제 진행)`);
                 }
                 if (health.score < 70) {
                     console.log(`   ⚠️  건강 점수 ${health.score}/100 — 계속 진행합니다`);
@@ -2184,19 +2245,27 @@ async function corePull(targetVersion = 'latest', options = {}) {
             console.log(`\n✅ 완료: ${version} 적용됨 (Fresh-with-Migration)`);
         }
 
-        // 완료 메시지
+        // 후처리: npm install + db:migrate
+        console.log('\n🔧 후처리: 배포 준비 완성 중...');
+        try {
+            console.log('   📦 npm install...');
+            const npmRes = await runCommand('npm install', true, 120000);
+            console.log(npmRes.success ? '   ✅ npm install 완료' : '   ⚠️  npm install 실패 — 수동 실행 필요');
+        } catch { /* skip */ }
+        try {
+            const migRes = await runCommand('npm run db:migrate', true, 120000);
+            console.log(migRes.success ? '   ✅ db:migrate 완료' : '   ⚠️  db:migrate 실패 — 수동 실행 필요');
+        } catch { /* skip */ }
+
         console.log('\n════════════════════════════════════════════');
         console.log(`✅ Core Pull 완료: ${current} → ${version} (Fresh-with-Migration)`);
         if (freshResult.backupTag) {
             console.log(`🏷️  복구 태그: ${freshResult.backupTag}`);
         }
-        console.log('');
-        console.log('Next steps:');
-        console.log('  1. npm install (if package.json changed)');
-        console.log('  2. npm run dev (to test locally)');
         if (freshResult.changes?.length > 0) {
-            console.log('  3. .core/client-changes/ 에서 추출된 변경사항 확인');
+            console.log('   .core/client-changes/ 에서 추출된 변경사항 확인');
         }
+        console.log('   npm run dev 로 로컬 테스트하세요.');
         console.log('════════════════════════════════════════════');
         return;
     }
@@ -2239,42 +2308,22 @@ async function corePull(targetVersion = 'latest', options = {}) {
         backupDir = await backupModifiedFiles(conflicts, current, version);
 
         // ═══════════════════════════════════════════════
-        // Auto-migration: 페이지 충돌 시 자동으로 _local/에 보존
-        // config 없이도 클라이언트 수정 사항이 보호됨
-        // Vite clinicLocalOverrides 플러그인이 _local/ 우선 적용
+        // Conflict handling (v1.35.7):
+        // - Backup: always saved to .core-backup/ (above)
+        // - _local auto-copy: REMOVED. Previously auto-copied conflicts
+        //   to _local/, permanently blocking core updates.
+        // - Decision: agent reviews after core:pull via audit-local.js
+        //   and decides whether to restore from backup to _local/ or
+        //   adopt the new core version.
         // ═══════════════════════════════════════════════
-        if (!dryRun) {
-            const autoMigrated = [];
+        if (!dryRun && conflicts.length > 0) {
+            console.log(`\n   💡 충돌 파일 ${conflicts.length}개가 .core-backup/에 백업되었습니다.`);
+            console.log(`   💡 이전 버전이 필요하면: .core-backup/ → src/pages/_local/ 로 복사`);
+            console.log(`   💡 새 코어 버전을 사용하려면: 아무 작업 불필요 (기본값)`);
             for (const file of conflicts) {
-                // src/pages/ 파일만 자동 마이그레이션 (_local/ Vite 오버라이드 지원)
-                // 단, admin 페이지는 제외 (Core 버전 항상 사용)
-                if (!file.startsWith('src/pages/')) continue;
                 if (file.startsWith('src/pages/admin/')) {
-                    console.log(`   ⏭️  ${file} (admin 페이지는 Core 버전 사용, _local로 이전하지 않음)`);
-                    continue;
+                    console.log(`   ⏭️  ${file} (admin 페이지는 Core 버전 사용)`);
                 }
-                // 이미 _local에 있으면 스킵
-                const relativePage = file.replace(/^src\/pages\//, '');
-                const localOverridePath = path.join(
-                    PROJECT_ROOT,
-                    toLocalPath('src/pages/_local/' + relativePage)
-                );
-                if (fs.existsSync(localOverridePath)) continue;
-
-                // 현재 클라이언트 버전을 _local/에 복사
-                const clientFilePath = path.join(PROJECT_ROOT, toLocalPath(file));
-                if (fs.existsSync(clientFilePath)) {
-                    fs.ensureDirSync(path.dirname(localOverridePath));
-                    fs.copySync(clientFilePath, localOverridePath);
-                    autoMigrated.push(file);
-                }
-            }
-            if (autoMigrated.length > 0) {
-                console.log(`\n🔀 Auto-migration: ${autoMigrated.length}개 페이지를 _local/로 보존`);
-                autoMigrated.forEach(f => {
-                    const rel = f.replace(/^src\/pages\//, '');
-                    console.log(`   📄 ${f} → src/pages/_local/${rel}`);
-                });
                 console.log(`   💡 코어는 정상 업데이트되고, 빌드 시 _local/ 버전이 우선 적용됩니다.`);
             }
         }
@@ -2716,6 +2765,21 @@ async function corePull(targetVersion = 'latest', options = {}) {
     await writeCoreVersion(version);
 
     // ═══════════════════════════════════════════════
+    // 9.0.1. CLAUDE.local.md → CLAUDE.md 매핑
+    // 마스터 CLAUDE.md는 메타 에이전트용. 클라이언트는 CLAUDE.local.md를 CLAUDE.md로 사용.
+    // ═══════════════════════════════════════════════
+    try {
+        const claudeLocalPath = path.join(PROJECT_ROOT, 'CLAUDE.local.md');
+        const claudeMdPath = path.join(PROJECT_ROOT, 'CLAUDE.md');
+        if (fs.existsSync(claudeLocalPath)) {
+            fs.copyFileSync(claudeLocalPath, claudeMdPath);
+            console.log('   📝 CLAUDE.local.md → CLAUDE.md (agent execution guide updated)');
+        }
+    } catch (e) {
+        console.log(`   ⚠️  CLAUDE.md 매핑 실패: ${e.message}`);
+    }
+
+    // ═══════════════════════════════════════════════
     // 9.1. Content Doctor: prevent recurring build breaks
     // - Some files have historically been corrupted into a single path string
     //   (e.g. "../../../features/.../members.ts") or symlink loops.
@@ -2787,17 +2851,59 @@ async function corePull(targetVersion = 'latest', options = {}) {
     }
 
     // ═══════════════════════════════════════════════
-    // 11. 완료 메시지
+    // 11. 후처리: npm install + db:migrate (배포 준비 완성)
     // ═══════════════════════════════════════════════
+    console.log('\n🔧 후처리: 배포 준비 완성 중...');
+
+    // npm install (package.json이 변경되었거나 node_modules가 오래된 경우)
+    try {
+        const pkgMtime = fs.statSync(path.join(PROJECT_ROOT, 'package.json')).mtimeMs;
+        const nmPath = path.join(PROJECT_ROOT, 'node_modules');
+        const nmExists = fs.existsSync(nmPath);
+        const nmStale = nmExists && fs.statSync(nmPath).mtimeMs < pkgMtime;
+        if (!nmExists || nmStale) {
+            console.log('   📦 npm install (package.json 변경됨)...');
+            const npmResult = await runCommand('npm install', true, 120000);
+            if (npmResult.success) {
+                console.log('   ✅ npm install 완료');
+            } else {
+                console.log('   ⚠️  npm install 실패 — 수동 실행 필요: npm install');
+            }
+        }
+    } catch {
+        // stat 실패 시 건너뜀
+    }
+
+    // db:migrate (로컬 DB 동기화)
+    try {
+        const migrateResult = await runCommand('npm run db:migrate', true, 120000);
+        if (migrateResult.success) {
+            console.log('   ✅ db:migrate 완료');
+        } else {
+            console.log('   ⚠️  db:migrate 실패 — 수동 실행 필요: npm run db:migrate');
+        }
+    } catch {
+        // 건너뜀
+    }
+
     console.log('\n════════════════════════════════════════════');
     console.log(`✅ Core Pull 완료: ${current} → ${version}`);
-    console.log('');
-    console.log('Next steps:');
-    console.log('  1. npm install (if package.json changed)');
-    console.log('  2. npm run dev (to test locally)');
+    console.log('   npm run dev 로 로컬 테스트하세요.');
     console.log('════════════════════════════════════════════');
 
     await refreshAgentRuntimeContext();
+
+    // _local 감사 — stale 오버라이드 감지
+    try {
+        const auditPath = path.join(PROJECT_ROOT, 'scripts', 'audit-local.js');
+        if (fs.existsSync(auditPath)) {
+            console.log('\n🔍 _local 오버라이드 감사 실행 중...');
+            const { execFileSync } = await import('child_process');
+            execFileSync('node', [auditPath], { cwd: PROJECT_ROOT, stdio: 'inherit', timeout: 10000 });
+        }
+    } catch {
+        // audit-local이 exit 1 (stale 발견)이면 정상 — 에이전트에게 보고됨
+    }
 
     // 성공 시 이전 에러 보고서 삭제
     await clearErrorReport();
@@ -3235,6 +3341,7 @@ async function main() {
     let dryRun = false;
     let skipConfirm = false;
     let checkOnly = false;
+    let force = false;
     let forceBootstrap = false;
     let autoMode = false;
 
@@ -3253,6 +3360,8 @@ async function main() {
             skipConfirm = true;
         } else if (arg === '--check') {
             checkOnly = true;
+        } else if (arg === '--force') {
+            force = true;
         } else if (arg === '--force-bootstrap') {
             forceBootstrap = true;
         } else if (arg === '--auto') {
@@ -3266,7 +3375,7 @@ async function main() {
     try {
         // --dry-run: 기존 동작 (상세 분석 후 종료)
         if (dryRun) {
-            await corePull(targetVersion, { dryRun: true, forceBootstrap });
+            await corePull(targetVersion, { dryRun: true, force, forceBootstrap });
             return;
         }
 
@@ -3309,7 +3418,7 @@ async function main() {
 
         // 실제 업데이트 진행
         console.log('\n');
-        await corePull(result.target, { dryRun: false, forceBootstrap, autoMode });
+        await corePull(result.target, { dryRun: false, force, forceBootstrap, autoMode });
 
         // 스키마 자동복구는 corePull 내부에서 이미 완료
         // 추가 Doctor 실행 불필요 (중복 실행 방지)
@@ -3341,6 +3450,7 @@ async function main() {
 // npm run core:pull -- --beta         → latest-beta 채널
 // npm run core:pull -- --dry-run      → 상세 변경 사항 미리보기 (기존 동작)
 // npm run core:pull -- v1.0.93        → 특정 버전 직접 지정
+// npm run core:pull -- --force           → 건강 점수 미달 시 강제 진행
 // npm run core:pull -- --force-bootstrap → 마이그레이션 bootstrap 모드 강제 실행
 //
 // 환경 변수:

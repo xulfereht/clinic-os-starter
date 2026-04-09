@@ -119,15 +119,20 @@ function getInstallState() {
     return { setup, runtimeContext };
 }
 
-function getSystemProfile() {
+export function getSystemProfile() {
     const totalMemoryGb = os.totalmem() / 1024 / 1024 / 1024;
     const platform = os.platform();
+    const installPlatformSupported = platform !== 'win32';
 
     return {
         platform,
         total_memory_gb: Number(totalMemoryGb.toFixed(1)),
         is_windows: platform === 'win32',
-        supports_fast_setup: platform !== 'win32' && totalMemoryGb >= 8
+        supports_fast_setup: installPlatformSupported && totalMemoryGb >= 8,
+        install_platform_supported: installPlatformSupported,
+        install_platform_note: installPlatformSupported
+            ? '공식 설치 기준: macOS 또는 WSL Ubuntu'
+            : '네이티브 Windows 설치는 지원하지 않습니다. WSL Ubuntu로 이동하세요.'
     };
 }
 
@@ -151,8 +156,10 @@ function analyzeFastSetupCandidate({ projectRoot, installState, rootPkg }) {
     let reason = '기본은 단계별 setup이 권장됩니다.';
     if (eligible) {
         reason = '고성능 신규 스타터 설치본으로 판단되어 fast setup 후보입니다.';
+    } else if (!systemProfile.install_platform_supported) {
+        reason = '네이티브 Windows 설치는 지원하지 않습니다. WSL Ubuntu에서 다시 진행해야 합니다.';
     } else if (!systemProfile.supports_fast_setup) {
-        reason = 'Windows 또는 메모리 부족 환경이라 fast setup을 권장하지 않습니다.';
+        reason = '고성능 macOS/WSL Ubuntu 환경이 아니거나 메모리가 부족해 fast setup을 권장하지 않습니다.';
     } else if (!isStarterClient) {
         reason = '스타터킷 클라이언트 설치본이 아니라서 fast setup 대상이 아닙니다.';
     } else if (!hasSignedLicense) {
@@ -195,15 +202,35 @@ function getStarterUpdateCommands(projectRoot, preferredChannel) {
     return { starterUpdateCommand, starterCoreSyncCommand };
 }
 
-function buildActions({ installState, health, errorStatus, versions, lifecycle, issueReporting, fastSetup }) {
+export function buildActions({ installState, health, errorStatus, versions, lifecycle, issueReporting, fastSetup }) {
     const actions = [];
     const setupPending = installState.setup.exists && installState.setup.pending > 0;
     const preferredChannel = versions.preferred_channel;
     const targetVersion = versions[`hq_${preferredChannel}`];
+    const systemProfile = fastSetup?.system_profile || getSystemProfile();
     const starterCompatibility = getCheck(health, 'starter_compatibility');
     const nodeModules = getCheck(health, 'node_modules');
     const versionConsistency = getCheck(health, 'version_consistency');
+    const schemaHealth = getCheck(health, 'schema_health');
+    const migrationState = getCheck(health, 'migration_state');
     const { starterUpdateCommand, starterCoreSyncCommand } = getStarterUpdateCommands(PROJECT_ROOT, preferredChannel);
+    const coreOutdated = (
+        lifecycle?.scenario !== 'legacy_reinstall_migration'
+        && targetVersion
+        && (!versions.core_version || compareSemver(versions.core_version, targetVersion) < 0)
+    );
+
+    if (!systemProfile.install_platform_supported) {
+        actions.push({
+            id: 'move_to_supported_platform',
+            priority: 120,
+            severity: 'high',
+            title: '지원되는 설치 환경으로 이동',
+            reason: '네이티브 Windows 설치는 지원하지 않습니다. macOS 또는 WSL Ubuntu에서 다시 진행해야 합니다.',
+            command: null,
+            autoRunnable: false
+        });
+    }
 
     if (lifecycle?.scenario === 'legacy_reinstall_migration') {
         actions.push({
@@ -306,7 +333,7 @@ function buildActions({ installState, health, errorStatus, versions, lifecycle, 
         });
     }
 
-    if (!starterCompatibility.ok) {
+    if (!starterCompatibility.ok && !coreOutdated) {
         actions.push({
             id: 'update_starter',
             priority: 85,
@@ -318,7 +345,7 @@ function buildActions({ installState, health, errorStatus, versions, lifecycle, 
         });
     }
 
-    if (!nodeModules.ok) {
+    if (!nodeModules.ok && !coreOutdated) {
         actions.push({
             id: 'install_dependencies',
             priority: 75,
@@ -330,22 +357,35 @@ function buildActions({ installState, health, errorStatus, versions, lifecycle, 
         });
     }
 
-    if (
-        lifecycle?.scenario !== 'legacy_reinstall_migration' &&
-        targetVersion &&
-        (!versions.core_version || compareSemver(versions.core_version, targetVersion) < 0)
-    ) {
+    if (!schemaHealth.ok || !migrationState.ok) {
+        const healthReasons = [
+            ...(schemaHealth.issues || []),
+            ...(migrationState.issues || []),
+        ].filter(Boolean);
+
+        actions.push({
+            id: 'repair_local_database',
+            priority: setupPending ? 35 : 78,
+            severity: health.score < 50 ? 'high' : 'medium',
+            title: '로컬 DB 스키마/마이그레이션 복구',
+            reason: healthReasons.join(' / ') || '로컬 DB 상태가 설치 기준을 만족하지 않습니다.',
+            command: 'npm run health:fix',
+            autoRunnable: true
+        });
+    }
+
+    if (coreOutdated) {
         actions.push({
             id: 'update_core',
             priority: setupPending ? 40 : 80,
             severity: setupPending ? 'low' : 'high',
-            title: starterCompatibility.ok ? '코어 업데이트' : '스타터 + 코어 동기화',
-            reason: versions.core_version
-                ? `설치된 코어 ${versions.core_version}가 ${preferredChannel} 채널 ${targetVersion}보다 낮습니다.`
-                : '설치된 코어 버전을 찾지 못했습니다.',
-            command: starterCompatibility.ok
-                ? `npm run core:pull -- --auto --${preferredChannel}`
-                : starterCoreSyncCommand,
+            title: '스타터 + 코어 최신화',
+            reason: `${
+                versions.core_version
+                    ? `설치된 코어 ${versions.core_version}가 ${preferredChannel} 채널 ${targetVersion}보다 낮습니다.`
+                    : '설치된 코어 버전을 찾지 못했습니다.'
+            } 에이전트 업데이트는 스타터 인프라와 코어를 함께 동기화해 최신 상태를 보장합니다.`,
+            command: starterCoreSyncCommand,
             autoRunnable: !setupPending
         });
     }
@@ -491,8 +531,10 @@ async function gatherStatus() {
             update_starter: starterUpdateCommand,
             update_starter_core_stable: starterCoreSyncCommand.replace(`--${preferredChannel}`, '--stable'),
             update_starter_core_beta: starterCoreSyncCommand.replace(`--${preferredChannel}`, '--beta'),
-            update_core_stable: 'npm run core:pull -- --auto --stable',
-            update_core_beta: 'npm run core:pull -- --auto --beta'
+            update_core_stable: starterCoreSyncCommand.replace(`--${preferredChannel}`, '--stable'),
+            update_core_beta: starterCoreSyncCommand.replace(`--${preferredChannel}`, '--beta'),
+            update_core_only_stable: 'npm run core:pull -- --auto --stable',
+            update_core_only_beta: 'npm run core:pull -- --auto --beta'
         }
     };
 }
@@ -546,7 +588,10 @@ function printHuman(status, syncResults = null) {
     }
 
     if (status.issue_reporting?.available) {
-        console.log(`- issue reporting: ${status.issue_reporting.occurrence_count}회 (${status.issue_reporting.severity})`);
+        const endpointBadge = status.issue_reporting.support_url_meta?.official ? ', official endpoint' : '';
+        console.log(`- issue reporting: ${status.issue_reporting.occurrence_count}회 (${status.issue_reporting.severity}${endpointBadge})`);
+    } else if (status.issue_reporting?.support_url_meta?.official) {
+        console.log(`- support endpoint: official (${status.issue_reporting.support_url_meta.host})`);
     }
 
     if (status.install.exists) {

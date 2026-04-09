@@ -354,9 +354,49 @@ export function normalizePluginScaffoldOptions(rawOptions = {}) {
   };
 }
 
+function validateSafePluginPath(pluginDir) {
+  const normalizedPath = path.normalize(pluginDir);
+  const forbiddenPatterns = [
+    '/core/',
+    '\\core\\',
+    '/core\\',
+    '\\core/',
+  ];
+
+  for (const pattern of forbiddenPatterns) {
+    if (normalizedPath.includes(pattern)) {
+      throw new Error(
+        `❌ Plugins cannot be created inside core/ directory: ${pluginDir}\n` +
+        `   core/ is a git submodule - changes cannot be committed.\n` +
+        `   Use src/plugins/local/ instead (committed to main repo).`
+      );
+    }
+  }
+
+  // Ensure path is within safe plugin directories
+  const isSafePath =
+    normalizedPath.includes('/src/plugins/local/') ||
+    normalizedPath.includes('\\src\\plugins\\local\\') ||
+    normalizedPath.includes('/plugins/local/') ||
+    normalizedPath.includes('\\plugins\\local\\');
+
+  if (!isSafePath) {
+    throw new Error(
+      `❌ Plugins must be created in a safe location: ${pluginDir}\n` +
+      `   Allowed paths:\n` +
+      `   - src/plugins/local/{plugin-id}/\n` +
+      `   - plugins/local/{plugin-id}/\n` +
+      `   Avoid: src/plugins/{plugin-id}/ (core area, will be overwritten by core:pull)`
+    );
+  }
+}
+
 export function buildPluginScaffold(rawOptions = {}) {
   const options = normalizePluginScaffoldOptions(rawOptions);
   const pluginDir = path.join(options.projectRoot, 'src', 'plugins', 'local', options.pluginId);
+
+  // Validate safe path before any file operations
+  validateSafePluginPath(pluginDir);
 
   if (fs.existsSync(pluginDir) && !options.force) {
     throw new Error(`Plugin directory already exists: ${pluginDir}`);
