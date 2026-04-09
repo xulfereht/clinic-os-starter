@@ -139,6 +139,7 @@ const FALLBACK_INFRA_FILES = [
     'scripts/dev-preflight.js',
     'scripts/deploy-guard.js',
     'scripts/update-starter.js',
+    'scripts/lib/setup-db-bootstrap.js',
 
     // 건강 진단
     'scripts/health-audit.js',

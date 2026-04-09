@@ -1,5 +1,6 @@
 ---
 description: 도킹 패키지(.zip)를 프로젝트에 적용합니다
+category: dev
 ---
 
 # 패키지 적용 워크플로우
