@@ -1,3 +1,19 @@
+/**
+ * deploy-guard.js — Clinic-OS deploy pipeline (preflight + deploy)
+ *
+ * Usage:
+ *   node scripts/deploy-guard.js                    # Interactive (prompts before deploy)
+ *   node scripts/deploy-guard.js --non-interactive   # Preflight only, no deploy
+ *   node scripts/deploy-guard.js --non-interactive --yes  # CI: preflight + auto-deploy
+ *   node scripts/deploy-guard.js --yes               # Interactive preflight, auto-deploy
+ *
+ * Flags:
+ *   --non-interactive   Skip all prompts (CI mode). Without --yes, only runs preflight.
+ *   --yes, -y           Auto-confirm deploy step.
+ *   --skip-secrets      Skip secret binding check (implied by --non-interactive).
+ *   --skip-e2e          Skip E2E tests.
+ *   --allow-target-change  Allow deploying to a different CF project than recorded.
+ */
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs-extra';
@@ -18,7 +34,7 @@ const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.join(__dirname, '..');
 const CLI_ARGS = new Set(process.argv.slice(2));
 const IS_NON_INTERACTIVE = CLI_ARGS.has('--non-interactive') || process.env.CI === 'true';
-const AUTO_YES = CLI_ARGS.has('--yes');
+const AUTO_YES = CLI_ARGS.has('--yes') || CLI_ARGS.has('-y');
 const SKIP_SECRETS = CLI_ARGS.has('--skip-secrets') || IS_NON_INTERACTIVE;
 const ALLOW_TARGET_CHANGE = CLI_ARGS.has('--allow-target-change');
 const LAST_DEPLOY_FILE = path.join(PROJECT_ROOT, '.agent', 'last-deploy.json');
@@ -38,12 +54,15 @@ async function ask(question) {
     });
 }
 
-async function runCommand(cmd, silent = false) {
+async function runCommand(cmd, silent = false, timeoutMs = 120000) {
     if (!silent) console.log(`   Running: ${cmd}`);
     try {
-        const { stdout, stderr } = await execAsync(cmd, { cwd: PROJECT_ROOT });
+        const { stdout, stderr } = await execAsync(cmd, { cwd: PROJECT_ROOT, timeout: timeoutMs });
         return { success: true, stdout, stderr };
     } catch (error) {
+        if (error.killed) {
+            error.message = `타임아웃 (${Math.round(timeoutMs/1000)}초): ${cmd}`;
+        }
         return { success: false, error };
     }
 }
@@ -114,7 +133,7 @@ async function deployGuard() {
     let warnings = 0;
     let blockers = 0;
 
-    // 0.5 건강 검진 (차단 — score < 50이면 배포 중단)
+    // 0.5 건강 검진 (검증만 — 수리는 core:pull/setup이 담당)
     try {
         const healthPath = path.join(PROJECT_ROOT, 'scripts', 'health-audit.js');
         if (fs.existsSync(healthPath)) {
@@ -122,7 +141,16 @@ async function deployGuard() {
             const health = await runHealthAudit({ quiet: false });
             if (health.score < 50) {
                 console.error(`\n❌ 건강 점수 ${health.score}/100 — 배포를 중단합니다.`);
-                console.log('   💡 npm run health:fix 실행 후 다시 시도하세요.\n');
+                if (health.issues?.length) {
+                    console.log('   차단 이슈:');
+                    for (const issue of health.issues) {
+                        console.log(`      - ${issue.issue}`);
+                    }
+                }
+                console.log('\n   💡 해결 방법:');
+                console.log('      npm run health:fix    (자동 복구 시도)');
+                console.log('      npm run core:pull     (코어 재동기화)');
+                console.log('      npm install           (의존성 갱신)\n');
                 process.exit(1);
             }
         }
@@ -143,15 +171,46 @@ async function deployGuard() {
         // check-core-imports.js 없으면 건너뜀
     }
 
+    // 0.7 이미지 경로 무결성 검사 (DB 경로 ↔ 파일 존재 확인)
+    try {
+        const { checkImagePaths } = await import('./check-image-paths.js');
+        const imgCheck = await checkImagePaths({ quiet: false });
+        if (!imgCheck.ok) {
+            const staffMissing = imgCheck.missing.filter(m => m.staff);
+            console.error(`\n⚠️  DB에 등록된 이미지 ${imgCheck.missing.length}건의 파일이 없습니다.`);
+            for (const m of imgCheck.missing) {
+                const label = m.program ? `${m.program}/${m.section}` : `staff/${m.staff}`;
+                console.log(`      ${label}: ${m.path}`);
+            }
+            console.log('   💡 이미지 파일을 public/local/images/에 배치하거나 DB 경로를 수정하세요.\n');
+            if (staffMissing.length > 0) {
+                blockers++;
+            } else {
+                warnings++;
+            }
+        }
+        if (imgCheck.warnings?.length) {
+            for (const w of imgCheck.warnings) console.log(`   ⚠️  ${w}`);
+            warnings++;
+        }
+    } catch {
+        // check-image-paths.js 없으면 건너뜀
+    }
+
     // 1. Check Wrangler Login
     console.log("👤 Step 1: Cloudflare 로그인 확인...");
     const whoami = await runCommand('npx wrangler whoami', true);
     if (!whoami.success) {
-        console.error("❌ Cloudflare에 로그인되어 있지 않습니다.");
-        console.log("   명령어를 실행하세요: npx wrangler login\n");
-        process.exit(1);
+        if (process.env.CLOUDFLARE_API_TOKEN) {
+            console.log("   ✅ CLOUDFLARE_API_TOKEN 토큰 인증 모드로 진행합니다.\n");
+        } else {
+            console.error("❌ Cloudflare에 로그인되어 있지 않습니다.");
+            console.log("   명령어를 실행하세요: npx wrangler login\n");
+            process.exit(1);
+        }
+    } else {
+        console.log("   ✅ 로그인 확인됨.\n");
     }
-    console.log("   ✅ 로그인 확인됨.\n");
 
     // 2. Parse wrangler.toml
     console.log("📂 Step 2: 설정 파일 분석...");
@@ -302,8 +361,18 @@ async function deployGuard() {
             console.log("   ✅ D1 데이터베이스 확인됨.");
 
             // DG3: 리모트 D1 마이그레이션 상태 확인
-            const localMigrations = fs.readdirSync(path.join(PROJECT_ROOT, 'migrations'))
-                .filter(f => f.endsWith('.sql')).length;
+            // 스타터킷(core/ 구조) 폴백 포함
+            const migrationsDir = fs.existsSync(path.join(PROJECT_ROOT, 'migrations'))
+                ? path.join(PROJECT_ROOT, 'migrations')
+                : fs.existsSync(path.join(PROJECT_ROOT, 'core', 'migrations'))
+                    ? path.join(PROJECT_ROOT, 'core', 'migrations')
+                    : null;
+            if (!migrationsDir) {
+                console.log("   ⚠️  migrations/ 디렉토리를 찾을 수 없습니다.");
+            }
+            const localMigrations = migrationsDir
+                ? fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).length
+                : 0;
             try {
                 const migCheck = await runCommand(
                     `npx wrangler d1 execute ${dbIdentifier} --remote --command "SELECT COUNT(*) as cnt FROM d1_migrations"`,
@@ -317,9 +386,50 @@ async function deployGuard() {
                         console.log("      💡 npx wrangler d1 migrations apply <DB_NAME> --remote 를 실행하세요.");
                         blockers++;
                     } else if (remoteMigCount < localMigrations) {
-                        console.log(`   ⚠️  리모트 마이그레이션 ${remoteMigCount}개 / 로컬 ${localMigrations}개 — 미적용 마이그레이션 존재`);
-                        console.log("      💡 배포 후 npx wrangler d1 migrations apply <DB_NAME> --remote 를 실행하세요.");
-                        warnings++;
+                        const gap = localMigrations - remoteMigCount;
+                        console.log(`   ⚠️  리모트 마이그레이션 ${remoteMigCount}개 / 로컬 ${localMigrations}개 — ${gap}개 미적용`);
+
+                        // 배포 전 리모트 마이그레이션 자동 적용
+                        // DDL 마이그레이션은 멱등(PRAGMA 컬럼 체크)이므로 자동 적용 안전
+                        let applyRemote = AUTO_YES || IS_NON_INTERACTIVE;
+                        if (!applyRemote) {
+                            const answer = await ask(`   🗃️  리모트 DB에 마이그레이션을 적용할까요? (Y/n): `);
+                            applyRemote = !answer || answer.toLowerCase() !== 'n';
+                        }
+
+                        if (applyRemote) {
+                            console.log(`   🚀 리모트 마이그레이션 적용 중...`);
+                            try {
+                                const migrateEngine = await import('../.docking/engine/migrate.js');
+                                const migrationPromise = migrateEngine.runMigrations({
+                                    local: false,
+                                    verbose: true,
+                                    verify: true,
+                                    dbName: dbIdentifier
+                                });
+                                const migrationTimeout = new Promise((_, reject) =>
+                                    setTimeout(() => reject(new Error('리모트 마이그레이션 120초 타임아웃')), 120000)
+                                );
+                                const result = await Promise.race([migrationPromise, migrationTimeout]);
+                                if (result.success) {
+                                    console.log(`   ✅ 리모트 마이그레이션 ${result.applied}개 적용 완료`);
+                                } else {
+                                    console.error(`   ❌ 리모트 마이그레이션 실패: ${result.failed}개 오류`);
+                                    if (result.errors) {
+                                        for (const err of result.errors) {
+                                            console.log(`      - ${err.file}: ${err.error}`);
+                                        }
+                                    }
+                                    blockers++;
+                                }
+                            } catch (e) {
+                                console.error(`   ❌ 리모트 마이그레이션 엔진 오류: ${e.message}`);
+                                blockers++;
+                            }
+                        } else {
+                            console.log("   ⏭️  리모트 마이그레이션 건너뜀 (수동 적용 필요)");
+                            warnings++;
+                        }
                     } else {
                         console.log(`   ✅ 리모트 마이그레이션 ${remoteMigCount}개 적용됨.`);
                     }
@@ -328,6 +438,37 @@ async function deployGuard() {
                 console.log("   ⚠️  리모트 마이그레이션 상태를 확인할 수 없습니다 (d1_migrations 테이블 미존재 가능).");
                 warnings++;
             }
+
+            // DG15: 콘텐츠 비어있음 경고 (프로그램/게시글)
+            try {
+                const progCheck = await runCommand(
+                    `npx wrangler d1 execute ${dbIdentifier} --remote --command "SELECT COUNT(*) as cnt FROM programs WHERE deleted_at IS NULL"`,
+                    true
+                );
+                if (progCheck.success) {
+                    const progMatch = progCheck.stdout.match(/(\d+)/);
+                    const progCount = progMatch ? parseInt(progMatch[1]) : 0;
+                    if (progCount === 0) {
+                        console.log("   ⚠️  프로그램이 0개입니다. 사이트가 비어보일 수 있습니다.");
+                        warnings++;
+                    }
+                }
+            } catch { /* programs 테이블 미존재 시 무시 */ }
+
+            try {
+                const postCheck = await runCommand(
+                    `npx wrangler d1 execute ${dbIdentifier} --remote --command "SELECT COUNT(*) as cnt FROM posts WHERE deleted_at IS NULL"`,
+                    true
+                );
+                if (postCheck.success) {
+                    const postMatch = postCheck.stdout.match(/(\d+)/);
+                    const postCount = postMatch ? parseInt(postMatch[1]) : 0;
+                    if (postCount === 0) {
+                        console.log("   ⚠️  게시글이 0개입니다.");
+                        warnings++;
+                    }
+                }
+            } catch { /* posts 테이블 미존재 시 무시 */ }
         }
     }
 
@@ -392,6 +533,15 @@ async function deployGuard() {
     } catch (e) {
         console.log(`   ⚠️  스냅샷 실패 (무시됨): ${e.message}`);
     }
+
+    // Auto-cleanup old backups/snapshots (keep 5)
+    try {
+        const cleanupPath = path.join(PROJECT_ROOT, 'scripts', 'cleanup.js');
+        if (fs.existsSync(cleanupPath)) {
+            const { execFileSync } = await import('child_process');
+            execFileSync('node', [cleanupPath], { cwd: PROJECT_ROOT, stdio: 'inherit', timeout: 10000 });
+        }
+    } catch { /* cleanup failure is non-blocking */ }
     console.log("");
 
     // 5. Pre-flight blocker 체크
@@ -408,7 +558,12 @@ async function deployGuard() {
 
     // 6. Build
     console.log("🔨 Step 6: 애플리케이션 빌드...");
-    const buildResult = await runCommand('npm run build');
+    const astroCacheDir = path.join(PROJECT_ROOT, '.astro');
+    if (fs.existsSync(astroCacheDir)) {
+        fs.removeSync(astroCacheDir);
+        console.log("   🧹 .astro/ 캐시 삭제 (stale 빌드 방지)");
+    }
+    const buildResult = await runCommand('npm run build', false, 300000);
     if (!buildResult.success) {
         console.error("❌ 빌드에 실패했습니다. 오류를 수정한 후 다시 시도하세요.");
         process.exit(1);
@@ -432,7 +587,89 @@ async function deployGuard() {
             process.exit(1);
         }
     }
-    console.log(`   ✅ 빌드 산출물 검증 완료 (${buildOutput.relative}/_routes.json, _worker.js)\n`);
+    console.log(`   ✅ 빌드 산출물 검증 완료 (${buildOutput.relative}/_routes.json, _worker.js)`);
+
+    // DG15: 이미지 무결성 체크 — 빌드 후 dist/ 검증
+    console.log("   🖼️  이미지 무결성 검증...");
+    const imageIssues = [];
+
+    // Check 1: logo.png placeholder (68-byte 1x1 transparent)
+    const logoPath = path.join(distDir, 'logo.png');
+    if (fs.existsSync(logoPath)) {
+        const logoSize = fs.statSync(logoPath).size;
+        if (logoSize < 500) {
+            imageIssues.push(`logo.png이 ${logoSize}바이트 — placeholder 가능성 (실제 로고로 교체 필요)`);
+        }
+    }
+
+    // Check 2: /local/ 경로 잔류 확인 (_routes.json에 /local/ 경로 없어야 함)
+    if (fs.existsSync(routesJson)) {
+        const routesContent = fs.readFileSync(routesJson, 'utf8');
+        if (routesContent.includes('/local/')) {
+            imageIssues.push('_routes.json에 /local/ 경로 잔류 — postbuild 정리 실패 가능성');
+        }
+    }
+
+    // Check 3: dist/local/ 디렉토리 잔류 확인
+    const distLocal = path.join(distDir, 'local');
+    if (fs.existsSync(distLocal)) {
+        imageIssues.push('dist/local/ 디렉토리 잔류 — postbuild 정리가 완료되지 않음');
+    }
+
+    if (imageIssues.length > 0) {
+        for (const issue of imageIssues) {
+            console.log(`   ⚠️  ${issue}`);
+        }
+        warnings += imageIssues.length;
+    } else {
+        console.log("   ✅ 이미지 무결성 정상");
+    }
+    console.log('');
+
+    // DG14: E2E 테스트 (배포 전 회귀 검증)
+    const SKIP_E2E = CLI_ARGS.has('--skip-e2e');
+    if (!SKIP_E2E) {
+        console.log("🎭 Step 6.5: E2E 테스트 (배포 전 회귀 검증)...");
+        const playwrightConfig = path.join(PROJECT_ROOT, 'playwright.config.ts');
+        if (fs.existsSync(playwrightConfig)) {
+            try {
+                // DB 시드 (E2E용)
+                await runCommand('npm run db:init && npm run db:seed', true);
+                const e2eSeedScript = path.join(PROJECT_ROOT, 'scripts', 'e2e-admin-seed.js');
+                if (fs.existsSync(e2eSeedScript)) {
+                    await runCommand('node scripts/e2e-admin-seed.js', true);
+                }
+
+                // Playwright 실행
+                const e2eResult = await runCommand('npx playwright test --project=public', false, 180000);
+                if (!e2eResult.success) {
+                    console.warn('   ⚠️  E2E 테스트 실패');
+                    console.log('   💡 npx playwright test --project=public --headed 로 디버깅하세요.\n');
+                    if (IS_NON_INTERACTIVE) {
+                        console.log('   ℹ️  비대화형 모드: E2E 실패는 경고로 처리합니다.');
+                        warnings++;
+                    } else {
+                        const e2eContinue = await ask('   E2E 실패에도 배포를 계속할까요? (y/N): ');
+                        if (e2eContinue.toLowerCase() === 'y') {
+                            warnings++;
+                        } else {
+                            blockers++;
+                        }
+                    }
+                } else {
+                    console.log('   ✅ E2E 테스트 통과\n');
+                }
+            } catch (e) {
+                console.warn(`   ⚠️  E2E 테스트 실행 중 오류: ${e.message}`);
+                console.log('   💡 npx playwright install chromium 으로 브라우저를 설치하세요.\n');
+                warnings++;
+            }
+        } else {
+            console.log('   ℹ️  playwright.config.ts 없음 — E2E 테스트 건너뜀\n');
+        }
+    } else {
+        console.log("⏭️  E2E 테스트 건너뜀 (--skip-e2e)\n");
+    }
 
     // 7. Deploy
     console.log("🚀 Step 7: 최종 배포...");
@@ -474,6 +711,24 @@ async function deployGuard() {
             });
             console.log("\n✅ 배포가 성공적으로 완료되었습니다!");
             console.log(`   🌍 URL: https://${projectName}.pages.dev\n`);
+
+            // 배포 후 스모크 테스트 (CDN 전파 대기 후 실제 응답 확인)
+            console.log("   🔍 배포 검증 중 (5초 대기)...");
+            await new Promise(r => setTimeout(r, 5000));
+            const smokeBaseUrl = cloudflareUrl || `https://${projectName}.pages.dev`;
+            for (const smokePath of ['/', '/ko/']) {
+                try {
+                    const smokeRes = await fetch(`${smokeBaseUrl}${smokePath}`, {
+                        headers: { 'Cache-Control': 'no-cache' },
+                        redirect: 'follow'
+                    });
+                    console.log(`   ${smokeRes.ok ? '✅' : '❌'} ${smokePath} → ${smokeRes.status}`);
+                } catch (smokeErr) {
+                    console.warn(`   ⚠️  ${smokePath} → ${smokeErr.message}`);
+                }
+            }
+            console.log('');
+
             if (latestProduction?.Source && gitHead && latestProduction.Source !== gitHead) {
                 console.log(`   ⚠️  최신 Production 배포 Source(${latestProduction.Source})가 현재 HEAD(${gitHead})와 다릅니다.`);
                 console.log('      💡 release-validate DEPLOYED 단계에서 다시 확인하세요.\n');

@@ -1,8 +1,8 @@
 ---
 hq_slug: patient-management
 hq_title: "환자 관리 가이드 (CRM)"
-hq_category: "05. 환자 & 예약 관리"
-hq_sort: 1
+hq_category: "04. 데이터와 경영"
+hq_sort: 3
 hq_active: true
 ---
 # 환자 관리 가이드 (CRM)
