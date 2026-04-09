@@ -1,5 +1,6 @@
 ---
 description: 새 한의원 프로젝트 초기 설정 및 로컬 실행 (Zero-Touch)
+category: dev
 ---
 
 # 초기 설정 워크플로우 (Zero-Touch)
@@ -10,6 +11,7 @@ description: 새 한의원 프로젝트 초기 설정 및 로컬 실행 (Zero-To
 
 ## 사전 요구사항
 
+- **Cloudflare 계정**: [가입](https://dash.cloudflare.com/sign-up) (무료) — 📖 [Cloudflare 셋업 가이드](https://clinic-os-hq.pages.dev/guide/cloudflare-setup)
 - **Node.js**: v18 이상
 - **Git**: 설치됨
 - **Wrangler**: Cloudflare CLI (자동 설치 안내)
@@ -33,7 +35,10 @@ Agent-First Architecture의 **단계별 설치 시스템**을 사용합니다.
 
 ### 방법 A: 단계별 설치 (권장 - 메모리 안전)
 
-메모리 제한 환경에서도 안전하게 실행되는 16단계 설치:
+> **CF-First**: Phase 1에서 Cloudflare 로그인과 D1/R2 리소스 생성이 자동으로 진행됩니다.
+> Cloudflare 계정이 없으면 먼저 [Cloudflare 셋업 가이드](https://clinic-os-hq.pages.dev/guide/cloudflare-setup) (`docs/CLOUDFLARE_SETUP_GUIDE.md`)를 참조하세요.
+
+메모리 제한 환경에서도 안전하게 실행되는 17단계 설치:
 
 ```bash
 # 설치 상태 확인
@@ -53,14 +58,15 @@ npm run setup:step -- --next
 
 ### 방법 B: 빠른 일괄 설치 (고성능 환경)
 
-비Windows + 메모리 8GB 이상 환경이라면 루트/core 의존성 설치를 병렬 처리하는 빠른 경로를 사용할 수 있습니다.
+macOS 또는 WSL Ubuntu + 메모리 8GB 이상 환경이라면 루트/core 의존성 설치를 병렬 처리하는 빠른 경로를 사용할 수 있습니다.
 
 ```bash
-npm run setup:fast
+npm run setup:fast -- --auto
 ```
 
 **적합한 경우:**
-- macOS 또는 Linux
+- macOS
+- WSL Ubuntu
 - 메모리 8GB 이상
 - 사용자가 브라우저 인증과 일괄 설치 흐름을 받아들일 수 있음
 - signed `clinic.json`이 있어 `setup:agent`가 자동 fast 선택 가능
@@ -69,7 +75,7 @@ npm run setup:fast
 npm run setup:agent -- --prefer-fast
 ```
 
-`setup:agent`는 고성능 fresh install + signed `clinic.json`이면 내부적으로 `setup:fast -- --auto`를 먼저 시도하고,
+`setup:agent`는 고성능 fresh install + signed `clinic.json`이며 플랫폼이 macOS 또는 WSL Ubuntu면 내부적으로 `setup:fast -- --auto`를 먼저 시도하고,
 실패하면 `setup:step`으로 자동 전환합니다.
 
 ### 방법 C: 레거시 일괄 설치
@@ -79,10 +85,37 @@ npm run setup
 ```
 
 이 스크립트는 다음을 자동으로 처리합니다:
-1. 시스템 건전성 체크 (Node, Git, Wrangler, WSL 등) 및 필요시 자동 설치 제안
+1. 시스템 건전성 체크 (Node, Git, Wrangler, 플랫폼 지원 여부) 및 필요시 자동 설치 제안
 2. `clinic.json`을 통한 HQ 서버 자동 연결 및 디바이스 등록
 3. D1 데이터베이스 및 R2 버킷 자동 생성 (Wrangler 로그인 필요)
 4. `.docking/config.yaml` 및 `wrangler.toml` 자동 생성
+
+### 방법 D: 위임 셋업 (Delegated Setup)
+
+고객이 초기 설정을 중앙에 위임하는 방식입니다.
+
+**중앙 에이전트 (마스터 레포에서):**
+```bash
+# HQ 인테이크 데이터로 클라이언트 디렉토리 생성
+node scripts/delegated-init.js --client-id=<CLIENT_ID>
+
+# 생성된 디렉토리에서 셋업 + 온보딩 + 배포
+cd ../delegated-clients/{병원명}/
+npm install
+npm run setup:step -- --next  # 반복
+npm run deploy
+```
+
+**고객 (인수 시):**
+```bash
+git clone <GITHUB_URL> my-clinic
+cd my-clinic
+npm install
+npx wrangler login
+npm run handoff:claim
+```
+
+> 상세 워크플로우: `.agent/workflows/delegated-setup.md`, `.agent/workflows/delegated-handoff.md`
 
 ---
 
@@ -139,6 +172,9 @@ npm run core:pull # 다시 시도
 마법사가 자동으로 수동 입력 또는 브라우저 인증 모드로 전환합니다.
 
 ### Wrangler 로그인 필요
+
+> 📖 [Cloudflare 셋업 가이드](https://clinic-os-hq.pages.dev/guide/cloudflare-setup) (`docs/CLOUDFLARE_SETUP_GUIDE.md`)
+
 ```bash
 npx wrangler login
 ```
@@ -154,8 +190,9 @@ npm run db:seed      # 샘플 데이터 삽입
 ```
 
 wrangler.toml이 없다면 먼저 `npm run setup:step -- --next`를 진행하세요.
-고성능 환경이라면 `npm run setup:fast`도 가능합니다.
-마이그레이션 실패 시 seeds는 자동으로 건너뛰며, 복구 후 `npm run db:seed`로 별도 실행할 수 있습니다.
+고성능 macOS 또는 WSL Ubuntu 환경이라면 `npm run setup:fast -- --auto`도 가능합니다.
+설치 중 로컬 DB 마이그레이션 또는 필수 시드가 실패하면 setup은 성공으로 끝나지 않습니다.
+복구 후 `npm run db:seed`로 누락 시드를 다시 적용할 수 있습니다.
 
 ### 에러 자동 복구
 
@@ -202,7 +239,7 @@ npm run error:resolve
 | `npm run status` | **통합 상태 확인** (설치+온볼딩+건강도+Lock) |
 | `npm run setup:step -- --next` | 다음 설치 단계 실행 |
 | `npm run setup:step -- --status` | 설치 진행도 확인 |
-| `npm run setup:fast` | 고성능 환경용 빠른 일괄 설치 |
+| `npm run setup:fast` | 고성능 macOS/WSL Ubuntu 환경용 빠른 일괄 설치 |
 | `npm run error:status` | 에러 복구 상태 확인 |
 | `npm run error:recover` | 자동 복구 시도 |
 

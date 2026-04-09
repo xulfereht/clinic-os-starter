@@ -1,7 +1,7 @@
 {
   "$comment": "SOT for onboarding features. Read by AI agents to guide clinic setup.",
-  "version": "1.0.0",
-  "description": "Clinic-OS 온보딩 기능 레지스트리. 에이전트가 이 파일을 읽고 클라이언트의 셋업을 안내합니다.",
+  "version": "2.0.0",
+  "description": "Clinic-OS 온보딩 기능 레지스트리. 에이전트가 이 파일을 읽고 클라이언트의 셋업을 안내합니다. 핵심부터 차근차근 접근.",
   "usage": {
     "template": ".agent/onboarding-registry.json (코어 배포, 읽기 전용)",
     "state": ".agent/onboarding-state.json (클라이언트별 진행 상태, setup 시 생성)"
@@ -9,28 +9,38 @@
   "tiers": {
     "1": {
       "name": "배포 필수",
-      "description": "이것 없이는 사이트가 정상 작동하지 않음. 최우선 완료 후 1차 배포.",
-      "goal": "사이트가 돌아가고 법적 요건을 충족하는 상태"
+      "description": "사이트가 정상 작동하고 법적 요건을 충족하는 최소한의 설정. 이것만 되어도 사이트는 뜬다.",
+      "goal": "사이트가 돌아가고 법적 문제가 없는 상태 → 1차 배포 가능",
+      "eta": "1-2일",
+      "flow_description": "보안 → 병원 정보 → 연락처 → 진료시간 → 브랜딩 → 약관"
     },
     "2": {
       "name": "핵심 콘텐츠",
-      "description": "사이트가 비어보이지 않게. 의료진, 프로그램, 홈페이지 구성.",
-      "goal": "환자가 봤을 때 실제 운영 중인 병원처럼 보이는 상태"
+      "description": "사이트가 '비어있지 않게' 보이도록 하는 필수 콘텐츠. 실제 운영 중인 병원처럼 보이기 위한 요소.",
+      "goal": "홈페이지 방문자가 '실제 병원'이라고 인식할 수 있는 상태 → 2차 배포",
+      "eta": "3-5일",
+      "flow_description": "콘텐츠 임포트 → 의료진 → 프로그램 → 홈페이지 구성 → 오시는길 → SNS 썸네일"
     },
     "3": {
-      "name": "환자 서비스",
-      "description": "환자 유입과 접수가 가능한 상태. 접수 폼, 예약, 기본 콘텐츠.",
-      "goal": "환자가 온라인으로 접수하고 예약할 수 있는 상태"
+      "name": "환자 연결",
+      "description": "온라인으로 환자가 접수되고 예약될 수 있는 기능. 실제 업무가 시작되는 단계.",
+      "goal": "환자가 온라인으로 문진 작성 → 예약 → 확인 문자 받는 플로우 완성",
+      "eta": "1주차",
+      "flow_description": "문진표 → 예약 시스템 → 알림 채널 → 블로그 → 샘플데이터 정리"
     },
     "4": {
-      "name": "마케팅 & 확장",
-      "description": "환자 유치와 재방문을 위한 마케팅 도구. 운영 안정 후 세팅.",
-      "goal": "SMS 캠페인, SEO, 다국어 등으로 환자 유입 확대"
+      "name": "성장 & 마케팅",
+      "description": "운영이 안정된 후 환자 유치와 재방문을 위한 마케팅 기능. 병원별 선택적 활성화.",
+      "goal": "문자 캠페인, SEO, 후기 관리로 환자 유입 확대",
+      "eta": "2-4주차",
+      "flow_description": "문자 캠페인 → 상담 관리 → 후기 수집 → 검색최적화 → 다국어 → 검사도구/고급스킨"
     },
     "5": {
       "name": "운영 고도화",
-      "description": "내부 업무 효율화와 고급 기능. 필요한 것만 선택적 활성화.",
-      "goal": "재고, 지출, AI, 외부 연동 등 병원별 맞춤 기능"
+      "description": "내부 업무 효율화와 고급 기능. 재고, 회계, 외부 연동 등 필요할 때만 선택적으로.",
+      "goal": "병원별 맞춤 자동화와 고급 기능",
+      "eta": "필요시",
+      "flow_description": "기존 데이터 마이그레이션 → 재고/회계 → AI 설정 → 외부 연동 → API 관리"
     }
   },
   "categories": [
@@ -39,11 +49,58 @@
     "patient-service",
     "marketing",
     "operations",
-    "system",
     "advanced"
   ],
+  "flows": {
+    "onboarding": {
+      "description": "Full clinic setup from zero to production",
+      "tiers": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "decision_points": [
+        {
+          "after_tier": 1,
+          "question": "1차 배포를 진행하시겠습니까?",
+          "yes_action": "deploy to production",
+          "no_action": "continue to tier 2"
+        },
+        {
+          "after_tier": 3,
+          "question": "온라인 예약/문진이 활성화됩니다. 배포하시겠습니까?",
+          "yes_action": "deploy patient services",
+          "no_action": "continue to tier 4-5"
+        }
+      ]
+    },
+    "quick_start": {
+      "description": "Minimum viable clinic site",
+      "features": [
+        "admin-account",
+        "clinic-info",
+        "clinic-contact",
+        "clinic-hours",
+        "branding-minimal",
+        "terms-management"
+      ],
+      "time_estimate": "2-4 hours"
+    },
+    "patient_ready": {
+      "description": "Ready for online patient intake",
+      "extends": "quick_start",
+      "additional_features": [
+        "intake-setup",
+        "reservation-setup",
+        "notifications",
+        "blog-management"
+      ],
+      "time_estimate": "1 week"
+    }
+  },
   "features": [
-
     {
       "id": "admin-account",
       "name": "관리자 계정 보안",
@@ -52,987 +109,1289 @@
       "category": "essential",
       "requires_human": true,
       "human_inputs": [
-        { "key": "password", "label": "관리자 비밀번호", "type": "password", "required": true },
-        { "key": "email", "label": "관리자 이메일", "type": "email", "required": true }
+        {
+          "key": "password",
+          "label": "관리자 비밀번호",
+          "type": "password",
+          "required": true
+        },
+        {
+          "key": "email",
+          "label": "관리자 이메일",
+          "type": "email",
+          "required": true
+        }
       ],
       "admin_path": "/admin/change-password",
-      "doc_ref": "CLINIC_INFO_SETUP.md#4-관리자-계정-보안",
+      "doc_ref": "CLINIC_INFO_SETUP.md",
+      "skill_ref": null,
       "depends_on": [],
-      "db_tables": ["super_admins"],
-      "source_paths": ["src/pages/admin/change-password.astro", "src/pages/api/auth/change-password.ts", "src/lib/password-hasher.ts"],
-      "setup_notes": "시드 기본값 admin123에서 반드시 변경. 최소 8자, 영문+숫자+특수문자 권장."
+      "db_tables": [
+        "super_admins"
+      ],
+      "source_paths": [
+        "src/pages/admin/change-password.astro",
+        "src/pages/api/auth/change-password.ts"
+      ],
+      "setup_notes": "최초 1회 필수. 최소 8자, 영문+숫자+특수문자 권장."
     },
-
     {
       "id": "clinic-info",
       "name": "병원 기본 정보",
-      "description": "/admin/settings에서 병원 이름(한/영), 소개, 대표자, 사업자번호, URL 입력. 홈페이지 헤더·푸터·메타태그에 자동 반영.",
+      "description": "병원 이름(한/영), 소개, 대표자, 사업자번호 입력. 홈페이지 헤더·푸터·메타태그에 자동 반영.",
       "tier": 1,
       "category": "essential",
       "requires_human": true,
       "human_inputs": [
-        { "key": "name", "label": "병원 이름 (한글)", "type": "text", "required": true, "example": "서울한의원" },
-        { "key": "english_name", "label": "병원 이름 (영문)", "type": "text", "required": true, "example": "Seoul Korean Medicine Clinic" },
-        { "key": "description", "label": "병원 한 줄 소개", "type": "text", "required": true },
-        { "key": "representative_name", "label": "대표자 이름", "type": "text", "required": true },
-        { "key": "business_license_number", "label": "사업자등록번호", "type": "text", "required": true, "example": "123-45-67890" },
-        { "key": "url", "label": "웹사이트 URL", "type": "url", "required": true, "example": "https://my-clinic.com" }
+        {
+          "key": "name",
+          "label": "병원 이름 (한글)",
+          "type": "text",
+          "required": true,
+          "example": "서울한의원"
+        },
+        {
+          "key": "english_name",
+          "label": "병원 이름 (영문)",
+          "type": "text",
+          "required": true,
+          "example": "Seoul Korean Medicine Clinic"
+        },
+        {
+          "key": "description",
+          "label": "병원 한 줄 소개",
+          "type": "text",
+          "required": true
+        },
+        {
+          "key": "representative_name",
+          "label": "대표자 이름",
+          "type": "text",
+          "required": true
+        },
+        {
+          "key": "business_license_number",
+          "label": "사업자등록번호",
+          "type": "text",
+          "required": true,
+          "example": "123-45-67890"
+        }
       ],
       "admin_path": "/admin/settings",
-      "doc_ref": "CLINIC_INFO_SETUP.md#기본-정보",
-      "depends_on": ["admin-account"],
-      "db_tables": ["clinics", "site_settings"],
-      "source_paths": ["src/pages/admin/settings/index.astro", "src/pages/api/admin/clinic-info.ts", "src/lib/clinic.ts"]
+      "doc_ref": "CLINIC_INFO_SETUP.md",
+      "skill_ref": "setup-clinic-info",
+      "depends_on": [
+        "admin-account"
+      ],
+      "db_tables": [
+        "clinics",
+        "site_settings"
+      ],
+      "source_paths": [
+        "src/pages/admin/settings/index.astro"
+      ]
     },
-
     {
       "id": "clinic-contact",
       "name": "병원 연락처",
-      "description": "/admin/settings 하단에서 전화번호, 주소, 이메일, 카카오 채널, 외부 예약 URL 입력. 푸터와 오시는길 페이지에 표시.",
+      "description": "전화번호, 주소, 이메일, 카카오 채널 입력. 푸터와 오시는길 페이지에 표시.",
       "tier": 1,
       "category": "essential",
       "requires_human": true,
       "human_inputs": [
-        { "key": "phone", "label": "전화번호", "type": "tel", "required": true, "example": "02-1234-5678" },
-        { "key": "address", "label": "주소 (도로명)", "type": "text", "required": true },
-        { "key": "email", "label": "이메일", "type": "email", "required": false },
-        { "key": "kakao_channel", "label": "카카오톡 채널", "type": "text", "required": false, "example": "@my-clinic" },
-        { "key": "booking_url", "label": "외부 예약 URL", "type": "url", "required": false }
+        {
+          "key": "phone",
+          "label": "전화번호",
+          "type": "tel",
+          "required": true,
+          "example": "02-1234-5678"
+        },
+        {
+          "key": "address",
+          "label": "주소 (도로명)",
+          "type": "text",
+          "required": true
+        },
+        {
+          "key": "email",
+          "label": "이메일",
+          "type": "email",
+          "required": false
+        },
+        {
+          "key": "kakao_channel",
+          "label": "카카오톡 채널",
+          "type": "text",
+          "required": false,
+          "example": "@my-clinic"
+        }
       ],
       "admin_path": "/admin/settings",
-      "doc_ref": "CLINIC_INFO_SETUP.md#연락처-및-위치",
-      "depends_on": ["clinic-info"],
-      "db_tables": ["clinics"],
-      "source_paths": ["src/pages/admin/settings/index.astro", "src/pages/api/admin/clinic-info.ts"]
+      "doc_ref": "CLINIC_INFO_SETUP.md",
+      "skill_ref": null,
+      "depends_on": [
+        "clinic-info"
+      ],
+      "db_tables": [
+        "clinics"
+      ],
+      "source_paths": [
+        "src/pages/admin/settings/index.astro"
+      ]
     },
-
     {
       "id": "clinic-hours",
       "name": "진료 시간",
-      "description": "/admin/settings에서 4행 구조로 진료시간 입력 (평일/토요일/점심/휴진). 홈페이지 푸터와 예약 페이지에 자동 표시.",
+      "description": "4행 구조로 진료시간 입력 (평일/토요일/점심/휴진). 홈페이지 푸터와 예약 페이지에 자동 표시.",
       "tier": 1,
       "category": "essential",
       "requires_human": true,
       "human_inputs": [
-        { "key": "weekdays", "label": "평일 진료시간", "type": "text", "required": true, "example": "09:00 - 18:00" },
-        { "key": "saturday", "label": "토요일 진료시간", "type": "text", "required": false, "example": "09:00 - 13:00" },
-        { "key": "lunch", "label": "점심시간", "type": "text", "required": false, "example": "13:00 - 14:00" },
-        { "key": "closed", "label": "휴진일", "type": "text", "required": true, "example": "일요일, 공휴일" }
+        {
+          "key": "weekdays",
+          "label": "평일 진료시간",
+          "type": "text",
+          "required": true,
+          "example": "09:00 - 18:00"
+        },
+        {
+          "key": "saturday",
+          "label": "토요일 진료시간",
+          "type": "text",
+          "required": false,
+          "example": "09:00 - 13:00"
+        },
+        {
+          "key": "lunch",
+          "label": "점심시간",
+          "type": "text",
+          "required": false,
+          "example": "13:00 - 14:00"
+        },
+        {
+          "key": "closed",
+          "label": "휴진일",
+          "type": "text",
+          "required": true,
+          "example": "일요일, 공휴일"
+        }
       ],
       "admin_path": "/admin/settings",
-      "doc_ref": "CLINIC_INFO_SETUP.md#진료-시간",
-      "depends_on": ["clinic-info"],
-      "db_tables": ["clinics"],
-      "source_paths": ["src/pages/admin/settings/index.astro", "src/pages/api/admin/hours.ts"]
+      "doc_ref": "CLINIC_INFO_SETUP.md",
+      "skill_ref": null,
+      "depends_on": [
+        "clinic-info"
+      ],
+      "db_tables": [
+        "clinics"
+      ],
+      "source_paths": [
+        "src/pages/admin/settings/index.astro"
+      ]
     },
-
     {
       "id": "branding-minimal",
-      "name": "최소 브랜딩 (로고/파비콘/컬러)",
-      "description": "/admin/design에서 스킨(컬러 프리셋), 브랜드 색상, 라운딩, 밀도 설정. 로고/파비콘은 이미지 업로드. 전체 사이트 테마에 즉시 반영.",
+      "name": "최소 브랜딩",
+      "description": "스킨(컬러 프리셋) 선택, 로고/파비콘 업로드. 전체 사이트 테마에 즉시 반영. 고급 스킨 개발은 Tier 4.",
       "tier": 1,
       "category": "essential",
       "requires_human": true,
       "human_inputs": [
-        { "key": "logo", "label": "로고 이미지", "type": "file", "required": false, "note": "PNG/SVG, 투명 배경 권장" },
-        { "key": "logo_text", "label": "로고 텍스트 (폴백)", "type": "text", "required": true, "example": "S" },
-        { "key": "favicon", "label": "파비콘", "type": "file", "required": false, "note": "32x32 ICO/SVG" },
-        { "key": "primary_color", "label": "메인 컬러", "type": "select", "required": true, "options": ["blue", "green", "teal", "indigo", "violet", "purple", "pink", "rose"] }
+        {
+          "key": "logo",
+          "label": "로고 이미지",
+          "type": "file",
+          "required": false,
+          "note": "PNG/SVG, 투명 배경 권장"
+        },
+        {
+          "key": "logo_text",
+          "label": "로고 텍스트 (폴백)",
+          "type": "text",
+          "required": true,
+          "example": "S"
+        },
+        {
+          "key": "favicon",
+          "label": "파비콘",
+          "type": "file",
+          "required": false,
+          "note": "32x32 ICO/SVG"
+        },
+        {
+          "key": "primary_color",
+          "label": "메인 컬러",
+          "type": "select",
+          "required": true,
+          "options": [
+            "blue",
+            "green",
+            "teal",
+            "indigo",
+            "violet",
+            "purple",
+            "pink",
+            "rose"
+          ]
+        }
       ],
       "admin_path": "/admin/design",
-      "doc_ref": "DESIGN_SYSTEM_GUIDE.md#1-브랜딩-컬러-및-폰트",
-      "depends_on": ["clinic-info"],
-      "db_tables": ["clinics"],
-      "source_paths": ["src/pages/admin/design.astro", "src/pages/api/admin/theme-config.ts", "src/lib/design-system/themes.ts"],
-      "file_paths": ["public/local/logo.png", "public/local/favicon.svg"]
+      "doc_ref": "DESIGN_SYSTEM_GUIDE.md",
+      "skill_ref": "setup-skin",
+      "depends_on": [
+        "clinic-info"
+      ],
+      "db_tables": [
+        "clinics"
+      ],
+      "source_paths": [
+        "src/pages/admin/design.astro"
+      ],
+      "file_paths": [
+        "public/local/logo.png",
+        "public/local/favicon.svg"
+      ],
+      "next_skill": "dev-skin"
     },
-
     {
       "id": "terms-management",
       "name": "약관 및 정책 문서",
-      "description": "/admin/settings/terms에서 개인정보처리방침, 이용약관, 환불규정 등 법적 필수 문서를 관리. 시드 템플릿의 {{병원명}} 등을 실제 정보로 교체. 버전 관리되며 환자 동의 기록에 연결.",
+      "description": "개인정보처리방침, 이용약관 등 법적 필수 문서. 시드 템플릿의 {{병원명}} 등을 실제 정보로 교체.",
       "tier": 1,
       "category": "essential",
       "requires_human": true,
       "human_inputs": [
-        { "key": "privacy_policy", "label": "개인정보처리방침", "type": "richtext", "required": true },
-        { "key": "terms_of_service", "label": "이용약관", "type": "richtext", "required": true },
-        { "key": "refund_policy", "label": "환불 규정", "type": "richtext", "required": false }
+        {
+          "key": "privacy_policy",
+          "label": "개인정보처리방침",
+          "type": "richtext",
+          "required": true
+        },
+        {
+          "key": "terms_of_service",
+          "label": "이용약관",
+          "type": "richtext",
+          "required": true
+        },
+        {
+          "key": "refund_policy",
+          "label": "환불 규정",
+          "type": "richtext",
+          "required": false
+        }
       ],
       "admin_path": "/admin/settings/terms",
-      "doc_ref": "CLINIC_INFO_SETUP.md#5-약관-및-정책-문서",
-      "depends_on": ["clinic-info"],
-      "db_tables": ["terms_versions", "terms_definitions"],
-      "source_paths": ["src/pages/admin/settings/terms/index.astro", "src/pages/admin/settings/terms/[id].astro", "src/pages/api/admin/terms/index.ts"],
-      "setup_notes": "시드 템플릿에 병원명/대표자/연락처를 실제 정보로 교체 필수."
+      "doc_ref": "CLINIC_INFO_SETUP.md",
+      "skill_ref": null,
+      "depends_on": [
+        "clinic-info"
+      ],
+      "db_tables": [
+        "terms_versions",
+        "terms_definitions"
+      ],
+      "source_paths": [
+        "src/pages/admin/settings/terms/index.astro"
+      ],
+      "setup_notes": "시드 템플릿에 병원명/대표자/연락처를 실제 정보로 교체 필수. 법적 필수!"
     },
-
     {
-      "id": "admin-password-env",
-      "name": "ADMIN_PASSWORD 환경변수",
-      "description": "wrangler.toml의 [vars] 섹션에서 ADMIN_PASSWORD 값을 보안 비밀번호로 변경. 이 값이 Cloudflare 배포 시 관리자 로그인에 사용됨. DB 비밀번호와 별개.",
-      "tier": 1,
-      "category": "essential",
+      "id": "naver-content-import",
+      "name": "네이버 콘텐츠 임포트",
+      "description": "네이버 블로그/플레이스에 기존 콘텐츠가 있으면 자동 추출하여 임포트. 플레이스 정보는 병원 정보 보강, 블로그 글은 draft 상태로 가져옴.",
+      "tier": 2,
+      "category": "content",
       "requires_human": true,
       "human_inputs": [
-        { "key": "admin_password", "label": "wrangler.toml ADMIN_PASSWORD", "type": "password", "required": true }
+        {
+          "key": "blog_ids",
+          "label": "네이버 블로그 ID",
+          "type": "array",
+          "required": false,
+          "example": "blog.naver.com/my_clinic → my_clinic"
+        },
+        {
+          "key": "place_id",
+          "label": "네이버 플레이스 ID",
+          "type": "text",
+          "required": false
+        }
       ],
       "admin_path": null,
-      "doc_ref": "CLINIC_INFO_SETUP.md#6-환경변수-설정-배포-전",
-      "depends_on": ["admin-account"],
-      "db_tables": [],
-      "source_paths": ["src/pages/api/admin/settings/super-admin-password.ts", "src/lib/password-hasher.ts"],
-      "file_paths": ["wrangler.toml"],
-      "setup_notes": "wrangler.toml [vars] 섹션의 ADMIN_PASSWORD를 보안값으로 변경."
+      "doc_ref": "CONTENT_EXTRACT_GUIDE.md",
+      "skill_ref": "extract-content",
+      "depends_on": [
+        "clinic-info"
+      ],
+      "db_tables": [
+        "posts",
+        "post_translations"
+      ],
+      "source_paths": [
+        "scripts/extract-naver.js"
+      ],
+      "setup_notes": "생략 가능. 추후 /extract-content로 언제든 실행 가능."
     },
-
-
+    {
+      "id": "content-analysis",
+      "name": "콘텐츠 분석 + 포지셔닝",
+      "description": "블로그 키워드 분석, 라이터 페르소나 추출, 경쟁 포지셔닝, 사이트 기획. naver-content-import 후 자동 진행.",
+      "tier": 2,
+      "category": "content",
+      "requires_human": true,
+      "human_inputs": [
+        {
+          "key": "reference_urls",
+          "label": "경쟁사/기존사이트 URL (선택)",
+          "type": "array",
+          "required": false
+        },
+        {
+          "key": "edge_interview",
+          "label": "핵심 강점/차별점 인터뷰",
+          "type": "text",
+          "required": true
+        }
+      ],
+      "skill_ref": null,
+      "sub_skills": [
+        "collect-references",
+        "analyze-content",
+        "discover-edge",
+        "plan-content"
+      ],
+      "depends_on": [
+        "naver-content-import"
+      ],
+      "produces": [
+        "style-card.yaml",
+        "edge-profile.yaml",
+        "site-plan.yaml",
+        "pipeline-context.yaml"
+      ],
+      "setup_notes": "naver-content-import 완료 후 자동 진행. 블로그 글 5건 미만이면 보충 질문. 건너뛰면 프로그램/홈페이지가 수동 모드로 전환."
+    },
+    {
+      "id": "copy-writing",
+      "name": "마케팅 카피 작성",
+      "description": "히어로 문구, 프로그램 설명, 내러티브 등 홈페이지/프로그램 카피를 블로그 데이터 + 포지셔닝 기반으로 작성.",
+      "tier": 2,
+      "category": "content",
+      "requires_human": false,
+      "skill_ref": "write-copy",
+      "depends_on": [
+        "content-analysis"
+      ],
+      "setup_notes": "content-analysis 완료 시 자동 진행. 미완료 시 수동 카피 입력."
+    },
     {
       "id": "staff-management",
-      "name": "의료진 등록",
-      "description": "/admin/staff에서 의료진(의사/간호사/직원) 등록. 이름, 직함, 프로필 사진, 전문분야, 약력 입력. 등록된 의료진은 프로그램·예약·블로그에 자동 연결.",
+      "name": "의료진 관리",
+      "description": "원장/의사/직원 정보 등록. 프로필 사진, 학력, 경력, 자격증 입력. 의사 소개 페이지에 표시.",
       "tier": 2,
       "category": "content",
       "requires_human": true,
       "human_inputs": [
-        { "key": "doctors", "label": "의료진 목록", "type": "array", "required": true, "fields": [
-          { "key": "name", "label": "이름", "type": "text" },
-          { "key": "position", "label": "직함", "type": "text", "example": "대표원장" },
-          { "key": "image", "label": "프로필 사진", "type": "file" },
-          { "key": "specialties", "label": "전문 분야", "type": "text" },
-          { "key": "bio", "label": "약력", "type": "richtext" },
-          { "key": "education", "label": "학력", "type": "text" },
-          { "key": "career", "label": "경력", "type": "text" }
-        ]}
+        {
+          "key": "name",
+          "label": "이름",
+          "type": "text",
+          "required": true
+        },
+        {
+          "key": "role",
+          "label": "직책",
+          "type": "select",
+          "required": true,
+          "options": [
+            "원장",
+            "의사",
+            "실장",
+            "테라피스트",
+            "코디네이터"
+          ]
+        },
+        {
+          "key": "photo",
+          "label": "프로필 사진",
+          "type": "file",
+          "required": false
+        },
+        {
+          "key": "bio",
+          "label": "약력/소개",
+          "type": "richtext",
+          "required": true
+        }
       ],
       "admin_path": "/admin/staff",
-      "doc_ref": "STAFF_MANAGEMENT.md",
-      "depends_on": ["clinic-info"],
-      "db_tables": ["staff", "staff_translations"],
-      "source_paths": ["src/pages/admin/staff/index.astro", "src/pages/admin/staff/[id].astro", "src/pages/admin/staff/new.astro", "src/pages/api/admin/staff/index.ts"]
+      "doc_ref": "OPERATIONS_GUIDE.md",
+      "skill_ref": null,
+      "depends_on": [
+        "clinic-info"
+      ],
+      "db_tables": [
+        "staff",
+        "staff_translations"
+      ],
+      "source_paths": [
+        "src/pages/admin/staff/index.astro"
+      ]
     },
-
     {
       "id": "program-management",
-      "name": "진료 프로그램",
-      "description": "/admin/programs에서 진료 과목(다이어트, 통증치료 등) 등록. 제목, 설명, 대표이미지, 상세 섹션(인사말/특징/치료과정/FAQ 등) 구성. 담당 의료진 연결.",
+      "name": "진료 프로그램 관리",
+      "description": "치료 프로그램 등록. 프로그램명, 설명, 가격, 소요시간, 주의사항 입력. 홈페이지 프로그램 페이지에 표시.",
       "tier": 2,
       "category": "content",
       "requires_human": true,
       "human_inputs": [
-        { "key": "programs", "label": "진료 프로그램 목록", "type": "array", "required": true, "fields": [
-          { "key": "title", "label": "프로그램명", "type": "text" },
-          { "key": "description", "label": "간단 설명", "type": "text" },
-          { "key": "image", "label": "대표 이미지", "type": "file" },
-          { "key": "content", "label": "상세 내용", "type": "richtext" },
-          { "key": "doctor_ids", "label": "담당 의료진", "type": "ref", "ref": "staff-management" }
-        ]}
+        {
+          "key": "name",
+          "label": "프로그램명",
+          "type": "text",
+          "required": true
+        },
+        {
+          "key": "description",
+          "label": "프로그램 설명",
+          "type": "richtext",
+          "required": true
+        },
+        {
+          "key": "price",
+          "label": "가격",
+          "type": "text",
+          "required": false,
+          "example": "100,000원"
+        },
+        {
+          "key": "duration",
+          "label": "소요시간",
+          "type": "text",
+          "required": false,
+          "example": "60분"
+        }
       ],
       "admin_path": "/admin/programs",
-      "doc_ref": "CONTENT_MANAGEMENT_GUIDE.md#2-진료-프로그램-관리",
-      "depends_on": ["staff-management"],
-      "db_tables": ["programs", "program_translations"],
-      "source_paths": ["src/pages/admin/programs/index.astro", "src/pages/admin/programs/[id].astro", "src/pages/api/admin/programs/index.ts", "src/lib/program-presets.ts"]
+      "doc_ref": "CONTENT_MANAGEMENT_GUIDE.md",
+      "skill_ref": "setup-programs",
+      "depends_on": [
+        "clinic-info",
+        "copy-writing"
+      ],
+      "db_tables": [
+        "programs",
+        "program_translations"
+      ],
+      "source_paths": [
+        "src/pages/admin/programs/index.astro"
+      ]
     },
-
     {
       "id": "homepage-setup",
       "name": "홈페이지 구성",
-      "description": "/admin/pages에서 홈페이지 편집. 히어로 배너(이미지/타이틀/CTA), 섹션 구성(프로그램 소개/의료진/후기 등). 페이지 빌더 UI로 드래그 편집.",
+      "description": "프리셋 선택 + 섹션 구성. Hero, 의사소개, 프로그램, 후기 등 섹션별 데이터 연결.",
       "tier": 2,
       "category": "content",
       "requires_human": true,
       "human_inputs": [
-        { "key": "hero_image", "label": "히어로 배너 이미지", "type": "file", "required": false },
-        { "key": "hero_title", "label": "메인 타이틀 문구", "type": "text", "required": true },
-        { "key": "hero_subtitle", "label": "서브 문구", "type": "text", "required": false },
-        { "key": "cta_buttons", "label": "CTA 버튼 (예약, 전화 등)", "type": "array", "required": false },
-        { "key": "sections", "label": "홈페이지 섹션 구성", "type": "json", "required": false }
+        {
+          "key": "preset",
+          "label": "홈페이지 프리셋",
+          "type": "select",
+          "required": true,
+          "options": [
+            "classic",
+            "editorial"
+          ]
+        },
+        {
+          "key": "sections",
+          "label": "표시할 섹션",
+          "type": "multiselect",
+          "required": true,
+          "options": [
+            "hero",
+            "about",
+            "programs",
+            "reviews",
+            "location",
+            "cta"
+          ]
+        }
       ],
       "admin_path": "/admin/pages",
-      "doc_ref": "CONTENT_MANAGEMENT_GUIDE.md#5-홈페이지-구성",
-      "depends_on": ["branding-minimal", "staff-management", "program-management"],
-      "db_tables": ["pages"],
-      "source_paths": ["src/pages/admin/pages/index.astro", "src/pages/admin/pages/[id].astro", "src/pages/api/admin/pages/index.ts", "src/lib/PageService.ts", "src/lib/section-schemas.ts"],
-      "file_paths": ["src/plugins/local/custom-homepage/pages/index.astro"]
-    },
-
-    {
-      "id": "navigation-management",
-      "name": "메뉴/네비게이션 구성",
-      "description": "/admin/settings/navigation에서 상단 메뉴 구성. 드롭다운/링크/프로그램 동적 메뉴 지원. 순서 변경은 JSON 편집. 저장 즉시 PC/모바일 모두 반영.",
-      "tier": 2,
-      "category": "content",
-      "requires_human": true,
-      "human_inputs": [
-        { "key": "menu_items", "label": "상단 메뉴 구성", "type": "json", "required": true, "note": "노출할 페이지와 순서 설정" }
+      "doc_ref": "CUSTOMIZATION_GUIDE.md",
+      "skill_ref": "setup-homepage",
+      "depends_on": [
+        "staff-management",
+        "program-management",
+        "copy-writing"
       ],
-      "admin_path": "/admin/settings/navigation",
-      "doc_ref": "CONTENT_MANAGEMENT_GUIDE.md#4-메뉴-및-네비게이션-관리",
-      "depends_on": ["program-management"],
-      "db_tables": ["site_settings"],
-      "source_paths": ["src/pages/admin/settings/navigation.astro", "src/lib/clinic.ts"]
-    },
-
-    {
-      "id": "og-image",
-      "name": "OG 이미지 (소셜 공유용)",
-      "description": "/admin/settings/seo에서 og:title, og:description, og:image 설정. 카카오톡/페이스북 등에서 링크 공유 시 표시되는 미리보기 이미지. 1200x630px 권장.",
-      "tier": 2,
-      "category": "content",
-      "requires_human": true,
-      "human_inputs": [
-        { "key": "og_image", "label": "OG 이미지", "type": "file", "required": true, "note": "1200x630px 권장" }
+      "db_tables": [
+        "homepage_sections"
       ],
-      "admin_path": "/admin/settings/seo",
-      "doc_ref": "SEO_MARKETING_GUIDE.md#3-소셜-미디어-미리보기-open-graph",
-      "depends_on": ["branding-minimal"],
-      "db_tables": ["site_settings"],
-      "source_paths": ["src/pages/admin/settings/seo.astro", "src/pages/api/admin/settings.ts"],
-      "file_paths": ["public/local/og-image.png"]
+      "source_paths": [
+        "src/pages/admin/homepage.astro"
+      ],
+      "next_skill": "frontend-code"
     },
-
     {
       "id": "location-page",
-      "name": "오시는 길 설정",
-      "description": "/admin/settings의 주소/지도 섹션에서 mapSearchKeyword(네이버 지도 검색어)와 교통편 안내 입력. clinic-contact의 주소와 연동되어 오시는길 페이지에 지도 자동 표시.",
+      "name": "오시는 길 페이지",
+      "description": "지도 임베드, 교통편 안내, 주차 정보 입력. 연락처 정보와 연동.",
       "tier": 2,
       "category": "content",
       "requires_human": true,
       "human_inputs": [
-        { "key": "map_search_keyword", "label": "지도 검색 키워드", "type": "text", "required": false },
-        { "key": "transportation", "label": "교통편 안내", "type": "richtext", "required": false }
+        {
+          "key": "map_embed",
+          "label": "지도 임베드 코드",
+          "type": "textarea",
+          "required": true
+        },
+        {
+          "key": "parking_info",
+          "label": "주차 안내",
+          "type": "textarea",
+          "required": false
+        },
+        {
+          "key": "public_transport",
+          "label": "대중교통 안내",
+          "type": "textarea",
+          "required": false
+        }
+      ],
+      "admin_path": "/admin/pages",
+      "doc_ref": "CLINIC_INFO_SETUP.md",
+      "skill_ref": null,
+      "depends_on": [
+        "clinic-contact"
+      ],
+      "db_tables": [
+        "site_settings"
+      ],
+      "source_paths": [
+        "src/pages/about/location.astro"
+      ]
+    },
+    {
+      "id": "og-image",
+      "name": "OG 이미지 설정",
+      "description": "SNS 공유 시 표시될 썸네일 이미지. 1200x630px 권장. 카카오톡/페이스북 미리보기에 사용.",
+      "tier": 2,
+      "category": "content",
+      "requires_human": true,
+      "human_inputs": [
+        {
+          "key": "og_image",
+          "label": "OG 이미지",
+          "type": "file",
+          "required": true,
+          "note": "1200x630px JPG/PNG"
+        }
       ],
       "admin_path": "/admin/settings",
-      "doc_ref": "CLINIC_INFO_SETUP.md#연락처-및-위치",
-      "depends_on": ["clinic-contact"],
-      "db_tables": ["clinics"],
-      "source_paths": ["src/pages/admin/settings/index.astro", "src/pages/api/admin/clinic-info.ts"]
+      "doc_ref": "SEO_MARKETING_GUIDE.md",
+      "skill_ref": "setup-og",
+      "depends_on": [
+        "clinic-info"
+      ],
+      "db_tables": [
+        "site_settings"
+      ],
+      "source_paths": [
+        "src/components/seo/SEO.astro"
+      ],
+      "file_paths": [
+        "public/local/og-image.png"
+      ]
     },
-
-
     {
       "id": "intake-setup",
-      "name": "접수 폼 설정",
-      "description": "site_settings에서 접수 폼 활성화 토글. /admin/intake에서 접수 현황 관리. 접수 필드(이름/연락처/증상 등)는 intake-schema.ts로 구성. 환자가 홈페이지에서 직접 접수 가능.",
+      "name": "문진표 설정",
+      "description": "환자 첫 방문 시 정보 수집 양식. 템플릿 선택 → 질문 구성 → /intake 페이지 활성화.",
       "tier": 3,
       "category": "patient-service",
       "requires_human": true,
       "human_inputs": [
-        { "key": "intake_enabled", "label": "접수 폼 활성화", "type": "boolean", "required": true },
-        { "key": "intake_fields", "label": "접수 필드 구성", "type": "json", "required": false }
+        {
+          "key": "template",
+          "label": "문진표 템플릿",
+          "type": "select",
+          "required": true,
+          "options": [
+            "basic-hanbang",
+            "dermatology",
+            "diet",
+            "pain",
+            "custom"
+          ]
+        },
+        {
+          "key": "questions",
+          "label": "추가/수정할 질문",
+          "type": "json",
+          "required": false
+        }
       ],
       "admin_path": "/admin/intake",
       "doc_ref": "INTAKE_MANAGEMENT.md",
-      "depends_on": ["clinic-info"],
-      "db_tables": ["intake_submissions", "intakes"],
-      "source_paths": ["src/pages/admin/intake/index.astro", "src/pages/api/intake/submit.ts", "src/lib/intake-schema.ts", "src/lib/intake-formatter.ts"],
-      "feature_flag": "features.intake"
+      "skill_ref": "setup-intake",
+      "depends_on": [
+        "clinic-info"
+      ],
+      "db_tables": [
+        "intake_forms",
+        "intake_responses"
+      ],
+      "source_paths": [
+        "src/pages/intake.astro"
+      ]
     },
-
     {
       "id": "reservation-setup",
       "name": "예약 시스템 설정",
-      "description": "의료진과 프로그램이 등록되면 예약 시스템 자동 활성화. /admin/reservations에서 날짜/담당의별 예약 현황 확인. 예약 정책(시간 슬롯, 최소 예약 시간) 설정 가능.",
+      "description": "온라인 예약 기능 활성화. 예약 시간대, 진료과목, 예약 폼 구성.",
       "tier": 3,
       "category": "patient-service",
-      "requires_human": false,
-      "human_inputs": [],
+      "requires_human": true,
+      "human_inputs": [
+        {
+          "key": "time_slots",
+          "label": "예약 가능 시간대",
+          "type": "array",
+          "required": true
+        },
+        {
+          "key": "max_booking_days",
+          "label": "최대 예약 가능일",
+          "type": "number",
+          "required": true,
+          "example": "30"
+        }
+      ],
       "admin_path": "/admin/reservations",
       "doc_ref": "RESERVATION_MANAGEMENT.md",
-      "depends_on": ["staff-management", "program-management"],
-      "db_tables": ["reservations"],
-      "source_paths": ["src/pages/admin/reservations/index.astro", "src/pages/api/reservations/index.ts", "src/pages/api/admin/settings/reservation-policy.ts"],
-      "setup_notes": "의료진과 프로그램이 등록되면 예약 시스템은 자동으로 사용 가능."
+      "skill_ref": "setup-intake",
+      "depends_on": [
+        "clinic-hours"
+      ],
+      "db_tables": [
+        "reservations",
+        "reservation_slots"
+      ],
+      "source_paths": [
+        "src/pages/reservation.astro"
+      ]
     },
-
     {
-      "id": "clinic-schedule",
-      "name": "운영시간/휴무일 상세 설정",
-      "description": "/admin/settings/schedule에서 요일별 운영시간을 캘린더 UI로 설정. 공휴일 자동 로드(한국 공휴일). 특별 진료일/임시 휴무일 개별 추가. 예약 슬롯에 자동 반영.",
+      "id": "notifications",
+      "name": "알림 채널 설정",
+      "description": "SMS(Aligo) 또는 카카오 알림톡 연동. 예약 확인/리마인드 문자 자동 발송.",
       "tier": 3,
       "category": "patient-service",
       "requires_human": true,
       "human_inputs": [
-        { "key": "weekly_schedule", "label": "요일별 운영시간", "type": "json", "required": true },
-        { "key": "holidays", "label": "휴무일 목록", "type": "array", "required": false },
-        { "key": "special_days", "label": "특별 진료일", "type": "array", "required": false }
+        {
+          "key": "channel",
+          "label": "알림 채널",
+          "type": "select",
+          "required": true,
+          "options": [
+            "sms",
+            "kakao",
+            "both"
+          ]
+        },
+        {
+          "key": "api_key",
+          "label": "API 키",
+          "type": "password",
+          "required": true
+        },
+        {
+          "key": "sender",
+          "label": "발신번호/채널",
+          "type": "text",
+          "required": true
+        }
       ],
-      "admin_path": "/admin/settings/schedule",
-      "doc_ref": "RESERVATION_MANAGEMENT.md#5-운영시간-및-휴무일-설정",
-      "depends_on": ["clinic-hours"],
-      "db_tables": ["clinic_weekly_schedules", "clinic_holidays", "clinic_special_work_days"],
-      "source_paths": ["src/pages/admin/settings/schedule.astro", "src/components/admin/schedule/MonthCalendar.astro", "src/lib/korean-holidays.ts"]
+      "admin_path": "/admin/settings/integrations",
+      "doc_ref": "MESSAGE_CAMPAIGN_GUIDE.md",
+      "skill_ref": "setup-notifications",
+      "depends_on": [
+        "reservation-setup"
+      ],
+      "db_tables": [
+        "notification_templates",
+        "notification_logs"
+      ],
+      "source_paths": [
+        "src/lib/notifications.ts"
+      ],
+      "setup_notes": "Aligo 또는 Kakao Business 사전 가입 필요."
     },
-
     {
       "id": "blog-management",
-      "name": "블로그/칼럼 작성",
-      "description": "/admin/posts에서 블로그/칼럼 글 작성. 제목, 슬러그(SEO URL), 카테고리, 태그, 의료진 연결 설정. 리치 에디터로 본문 작성. 임시저장/발행 상태 관리.",
-      "tier": 3,
-      "category": "content",
-      "requires_human": true,
-      "human_inputs": [
-        { "key": "posts", "label": "블로그 글 (최소 2~3개 권장)", "type": "array", "required": false, "fields": [
-          { "key": "title", "label": "제목", "type": "text" },
-          { "key": "content", "label": "본문", "type": "richtext" },
-          { "key": "featured_image", "label": "대표 이미지", "type": "file" }
-        ]}
-      ],
-      "admin_path": "/admin/posts",
-      "doc_ref": "CONTENT_MANAGEMENT_GUIDE.md#1-블로그-및-칼럼-관리",
-      "depends_on": ["staff-management"],
-      "db_tables": ["posts", "post_translations"],
-      "source_paths": ["src/pages/admin/posts/index.astro", "src/pages/admin/posts/[id].astro", "src/pages/api/admin/posts/index.ts"],
-      "setup_notes": "시드 샘플 게시글 삭제 후 실제 콘텐츠 작성."
-    },
-
-    {
-      "id": "notice-management",
-      "name": "공지사항 작성",
-      "description": "/admin/notices에서 공지사항 관리. 블로그와 동일한 에디터 사용하되 type='notice'로 구분. 소프트 딜리트 지원. 홈페이지 공지사항 섹션에 자동 노출.",
-      "tier": 3,
-      "category": "content",
-      "requires_human": true,
-      "human_inputs": [
-        { "key": "notices", "label": "초기 공지사항", "type": "array", "required": false, "fields": [
-          { "key": "title", "label": "제목", "type": "text" },
-          { "key": "content", "label": "내용", "type": "richtext" }
-        ]}
-      ],
-      "admin_path": "/admin/notices",
-      "doc_ref": "CONTENT_MANAGEMENT_GUIDE.md#1-블로그-및-칼럼-관리",
-      "depends_on": [],
-      "db_tables": ["notices"],
-      "source_paths": ["src/pages/admin/notices/index.astro", "src/pages/admin/notices/[id].astro", "src/pages/api/admin/posts/index.ts"]
-    },
-
-    {
-      "id": "tag-management",
-      "name": "환자 태그 설정",
-      "description": "/admin/settings/tags에서 환자 분류 태그 관리. 태그별 색상/카테고리 구분. 시드에 기본 태그(초진/재진 등) 포함. 병원 진료 특성에 맞게 추가/수정. CRM 세그먼트의 기반 데이터.",
+      "name": "블로그/콘텐츠 관리",
+      "description": "블로그 글 작성/관리. AEO 메타데이터 추가로 AI 검색 최적화.",
       "tier": 3,
       "category": "patient-service",
       "requires_human": true,
       "human_inputs": [
-        { "key": "tags", "label": "환자 분류 태그", "type": "array", "required": false, "example": ["초진", "재진", "교통사고", "다이어트"] }
+        {
+          "key": "title",
+          "label": "글 제목",
+          "type": "text",
+          "required": true
+        },
+        {
+          "key": "content",
+          "label": "글 내용",
+          "type": "richtext",
+          "required": true
+        },
+        {
+          "key": "tags",
+          "label": "태그",
+          "type": "array",
+          "required": false
+        }
       ],
-      "admin_path": "/admin/settings/tags",
-      "doc_ref": "PATIENT_MANAGEMENT.md#5-태그-관리",
-      "depends_on": [],
-      "db_tables": ["patient_tags"],
-      "source_paths": ["src/pages/admin/settings/tags.astro", "src/pages/api/admin/tags/index.ts"],
-      "setup_notes": "시드 기본 태그 검토 후 병원 진료 특성에 맞게 추가."
+      "admin_path": "/admin/posts",
+      "doc_ref": "CONTENT_MANAGEMENT_GUIDE.md",
+      "skill_ref": "write-blog",
+      "depends_on": [
+        "clinic-info"
+      ],
+      "db_tables": [
+        "posts",
+        "post_translations"
+      ],
+      "source_paths": [
+        "src/pages/admin/posts/index.astro"
+      ]
     },
-
     {
       "id": "sample-data-cleanup",
       "name": "샘플 데이터 정리",
-      "description": "시드로 생성된 더미 데이터(샘플 게시글, 리뷰, 환자 등)를 일괄 삭제. /admin/posts에서 트리거하거나 전용 API 호출. 실 운영 전 반드시 정리.",
+      "description": "시드 데이터(샘플 병원 정보, 테스트 예약 등)를 삭제하고 실 데이터로 전환.",
       "tier": 3,
-      "category": "essential",
+      "category": "patient-service",
       "requires_human": false,
-      "human_inputs": [],
-      "admin_path": "/admin/posts",
-      "doc_ref": "CLINIC_INFO_SETUP.md#7-샘플-데이터-정리",
-      "depends_on": ["blog-management"],
-      "db_tables": ["posts", "reviews"],
-      "source_paths": ["src/pages/api/admin/settings/delete-sample-data.ts"],
-      "setup_notes": "시드 데이터 (더미 게시글, 리뷰, 환자) 삭제 확인."
-    },
-
-
-    {
-      "id": "sms-setup",
-      "name": "SMS 연동 (알리고)",
-      "description": "알리고 SMS API 연동으로 환자에게 예약 리마인더, 캠페인 메시지 등을 발송할 수 있도록 설정합니다.",
-      "tier": 4,
-      "category": "marketing",
-      "requires_human": true,
-      "human_inputs": [
-        { "key": "aligo_api_key", "label": "알리고 API 키", "type": "text", "required": true },
-        { "key": "aligo_user_id", "label": "알리고 아이디", "type": "text", "required": true },
-        { "key": "aligo_sender", "label": "발신번호", "type": "tel", "required": true, "example": "02-1234-5678" },
-        { "key": "aligo_testmode", "label": "테스트 모드", "type": "select", "required": true, "options": ["Y", "N"], "default": "Y" }
-      ],
-      "admin_path": null,
-      "doc_ref": "MESSAGE_CAMPAIGN_GUIDE.md",
+      "admin_path": "/admin/settings",
+      "doc_ref": "OPERATIONS_GUIDE.md",
+      "skill_ref": "cleanup-samples",
       "depends_on": [],
-      "db_tables": [],
-      "source_paths": ["src/lib/aligo.ts", "src/lib/alimtalk-sender.ts", "src/pages/api/admin/templates/register-aligo.ts", "src/pages/api/admin/templates/sync-aligo.ts"],
-      "file_paths": ["wrangler.toml"]
+      "db_tables": [
+        "patients",
+        "reservations",
+        "posts"
+      ],
+      "source_paths": [
+        "src/pages/admin/settings/index.astro"
+      ],
+      "setup_notes": "실제 운영 시작 전 반드시 실행!"
     },
-
     {
-      "id": "message-template-management",
-      "name": "메시지 템플릿 작성",
-      "description": "SMS/카카오톡 메시지 템플릿을 생성 및 관리하고 캠페인에 활용합니다.",
+      "id": "campaign-sms",
+      "name": "문자 캠페인 설정",
+      "description": "환자 세그먼트별 문자 발송. 재방문 유도, 생일 축하, 공지 등.",
       "tier": 4,
       "category": "marketing",
       "requires_human": true,
       "human_inputs": [
-        { "key": "templates", "label": "메시지 템플릿", "type": "array", "required": false, "fields": [
-          { "key": "name", "label": "템플릿명", "type": "text" },
-          { "key": "content", "label": "내용", "type": "richtext" },
-          { "key": "channel", "label": "채널", "type": "select", "options": ["SMS", "KAKAO", "BOTH"] }
-        ]}
+        {
+          "key": "campaign_type",
+          "label": "캠페인 유형",
+          "type": "select",
+          "required": true,
+          "options": [
+            "recall",
+            "birthday",
+            "announcement",
+            "custom"
+          ]
+        }
       ],
-      "admin_path": "/admin/campaigns/templates",
-      "doc_ref": "MESSAGE_CAMPAIGN_GUIDE.md",
-      "depends_on": ["sms-setup"],
-      "db_tables": ["message_templates"],
-      "source_paths": ["src/pages/admin/campaigns/templates.astro", "src/pages/api/admin/templates/index.ts", "src/pages/api/admin/templates/[id].ts"]
-    },
-
-    {
-      "id": "campaign-management",
-      "name": "캠페인 설정",
-      "description": "세그먼트 기반으로 타겟 환자에게 SMS/카카오톡 메시지 캠페인을 작성, 예약, 발송하고 결과를 분석합니다.",
-      "tier": 4,
-      "category": "marketing",
-      "requires_human": true,
-      "human_inputs": [],
       "admin_path": "/admin/campaigns",
       "doc_ref": "MESSAGE_CAMPAIGN_GUIDE.md",
-      "depends_on": ["message-template-management", "crm-segment-builder"],
-      "db_tables": ["campaigns", "campaign_runs", "message_logs"],
-      "source_paths": ["src/pages/admin/campaigns/index.astro", "src/pages/api/admin/campaigns/index.ts", "src/pages/api/admin/campaigns/[id]/send.ts", "src/lib/campaign-validation.ts"]
+      "skill_ref": "campaign-draft",
+      "depends_on": [
+        "notifications"
+      ],
+      "db_tables": [
+        "campaigns",
+        "campaign_logs"
+      ],
+      "source_paths": [
+        "src/pages/admin/campaigns/index.astro"
+      ]
     },
-
     {
-      "id": "crm-segment-builder",
-      "name": "환자 세그먼트 설정",
-      "description": "고급 필터(초진/재진, 내원 횟수, 결제액 등)로 환자를 자동 분류하여 캠페인 대상으로 활용합니다.",
+      "id": "leads-management",
+      "name": "상담/잠재고객 관리",
+      "description": "온라인 문의, 전화 상담 내용 기록. 상담 상태 추적 및 후속 관리.",
       "tier": 4,
       "category": "marketing",
       "requires_human": true,
-      "human_inputs": [
-        { "key": "segments", "label": "환자 그룹 분류 기준", "type": "array", "required": false }
-      ],
-      "admin_path": "/admin/crm/segments",
+      "admin_path": "/admin/leads",
       "doc_ref": "PATIENT_MANAGEMENT.md",
-      "depends_on": ["tag-management"],
-      "db_tables": ["segments"],
-      "source_paths": ["src/pages/admin/crm/segments/index.astro", "src/pages/api/admin/segments/index.ts", "src/lib/segment-engine.ts", "src/components/admin/patients/FilterBuilder.tsx"]
+      "skill_ref": "campaign-draft",
+      "depends_on": [
+        "clinic-contact"
+      ],
+      "db_tables": [
+        "leads",
+        "lead_activities"
+      ],
+      "source_paths": [
+        "src/pages/admin/leads/index.astro"
+      ]
     },
-
     {
       "id": "review-management",
-      "name": "환자 후기 관리",
-      "description": "환자 동의하의 치료 후기, 사례 및 평점을 관리하여 홈페이지에 노출하고 신뢰도를 높입니다.",
+      "name": "후기 수집 및 관리",
+      "description": "환자 후기 요청, 수집, 홈페이지 노출 관리. 익명화 및 동의 관리.",
       "tier": 4,
-      "category": "content",
+      "category": "marketing",
       "requires_human": true,
-      "human_inputs": [],
+      "human_inputs": [
+        {
+          "key": "review_text",
+          "label": "후기 내용",
+          "type": "textarea",
+          "required": true
+        },
+        {
+          "key": "rating",
+          "label": "평점",
+          "type": "select",
+          "required": true,
+          "options": [
+            "5",
+            "4",
+            "3",
+            "2",
+            "1"
+          ]
+        }
+      ],
       "admin_path": "/admin/reviews",
       "doc_ref": "REVIEW_MANAGEMENT.md",
+      "skill_ref": "review-curate",
       "depends_on": [],
-      "db_tables": ["reviews"],
-      "source_paths": ["src/pages/admin/reviews/index.astro", "src/pages/admin/reviews/[id].astro", "src/pages/api/admin/reviews.ts"],
-      "setup_notes": "샘플 후기 삭제 후 환자 동의 받은 실제 후기만 등록."
-    },
-
-    {
-      "id": "aeo-topic-management",
-      "name": "토픽/FAQ 관리",
-      "description": "AI 검색 최적화(AEO)를 위해 핵심 주제(Pillar Page)와 관련 FAQ를 체계적으로 관리합니다.",
-      "tier": 4,
-      "category": "content",
-      "requires_human": true,
-      "human_inputs": [
-        { "key": "topics", "label": "건강 정보 토픽", "type": "array", "required": false }
+      "db_tables": [
+        "reviews",
+        "review_translations"
       ],
-      "admin_path": "/admin/topics",
-      "doc_ref": null,
-      "depends_on": ["program-management"],
-      "db_tables": ["topics", "topic_translations", "faq_items", "faq_translations"],
-      "source_paths": ["src/pages/admin/topics/index.astro", "src/lib/aeo-store.ts", "src/lib/aeo.ts"],
-      "setup_notes": "시드 FAQ 26개 검토 → 병원에 맞게 수정 또는 삭제."
+      "source_paths": [
+        "src/pages/admin/reviews/index.astro"
+      ]
     },
-
     {
-      "id": "seo-management",
-      "name": "SEO 설정",
-      "description": "메타 타이틀, 설명, OG 이미지, Google Analytics ID 등 검색 엔진 최적화 설정을 관리합니다.",
+      "id": "aeo-optimization",
+      "name": "AEO/SEO 최적화",
+      "description": "AI 검색 최적화. Schema.org, llms.txt, 블로그 메타데이터 관리.",
+      "tier": 4,
+      "category": "marketing",
+      "requires_human": false,
+      "admin_path": "/admin/aeo",
+      "doc_ref": "SEO_MARKETING_GUIDE.md",
+      "skill_ref": "optimize-aeo",
+      "depends_on": [
+        "blog-management"
+      ],
+      "db_tables": [
+        "content_aeo_metadata"
+      ],
+      "source_paths": [
+        "src/pages/admin/aeo/index.astro"
+      ]
+    },
+    {
+      "id": "multilingual",
+      "name": "다국어 지원",
+      "description": "영어, 일본어, 중국어 등 다국어 페이지 설정. 외국인 환자 대응.",
       "tier": 4,
       "category": "marketing",
       "requires_human": true,
       "human_inputs": [
-        { "key": "meta_title_suffix", "label": "타이틀 접미사", "type": "text", "required": false },
-        { "key": "meta_description", "label": "기본 메타 설명", "type": "text", "required": false },
-        { "key": "ga_id", "label": "Google Analytics ID", "type": "text", "required": false }
-      ],
-      "admin_path": "/admin/settings/seo",
-      "doc_ref": "SEO_MARKETING_GUIDE.md",
-      "depends_on": ["clinic-info"],
-      "db_tables": ["site_settings"],
-      "source_paths": ["src/pages/admin/settings/seo.astro", "src/pages/api/admin/settings.ts", "src/components/seo/AEOScript.astro"]
-    },
-
-    {
-      "id": "language-management",
-      "name": "다국어 설정",
-      "description": "활성 언어(한국어, 영어, 일본어, 중국어 간체, 베트남어)를 선택하여 홈페이지를 다국어로 제공합니다.",
-      "tier": 4,
-      "category": "system",
-      "requires_human": true,
-      "human_inputs": [
-        { "key": "active_languages", "label": "활성 언어", "type": "multiselect", "required": true, "options": ["ko", "en", "ja", "zh-hans", "vi"] }
+        {
+          "key": "locales",
+          "label": "추가 언어",
+          "type": "multiselect",
+          "required": true,
+          "options": [
+            "en",
+            "ja",
+            "zh-hans",
+            "vi"
+          ]
+        }
       ],
       "admin_path": "/admin/settings/i18n",
-      "doc_ref": null,
-      "depends_on": ["clinic-info"],
-      "db_tables": ["site_settings"],
-      "source_paths": ["src/pages/admin/settings/languages.astro", "src/pages/api/admin/settings/languages.ts", "src/lib/i18n.ts"],
-      "setup_notes": "외국인 환자를 받는 병원만 설정. ko는 필수 기본값."
+      "doc_ref": "OPERATIONS_GUIDE.md",
+      "skill_ref": "setup-i18n",
+      "depends_on": [
+        "homepage-setup"
+      ],
+      "db_tables": [
+        "page_translations",
+        "nav_translations"
+      ],
+      "source_paths": [
+        "src/pages/admin/i18n/index.astro"
+      ]
     },
-
     {
-      "id": "translation-management",
-      "name": "콘텐츠 번역",
-      "description": "블로그, 프로그램, 의료진 등 각 콘텐츠의 다국어 번역을 직접 입력하거나 자동 번역으로 관리합니다.",
-      "tier": 4,
-      "category": "system",
-      "requires_human": true,
-      "human_inputs": [],
-      "admin_path": "/admin/translations",
-      "doc_ref": null,
-      "depends_on": ["language-management"],
-      "db_tables": ["page_translations", "post_translations", "program_translations", "staff_translations", "faq_translations"],
-      "source_paths": ["src/pages/admin/translations/index.astro", "src/pages/api/admin/translations/save.ts", "src/lib/translation/orchestrator.ts"]
-    },
-
-    {
-      "id": "event-form-builder",
-      "name": "이벤트 폼 제작",
-      "description": "이벤트/프로모션 신청 폼을 만들어 홈페이지에 게시하고 고객 응답을 수집합니다.",
+      "id": "survey-tools",
+      "name": "검사도구/설문",
+      "description": "맞춤형 검사도구 개발. 자가진단, 설문, 건강체크 등.",
       "tier": 4,
       "category": "marketing",
       "requires_human": true,
-      "human_inputs": [],
-      "admin_path": "/admin/events",
-      "doc_ref": null,
-      "depends_on": ["product-management"],
-      "db_tables": ["event_campaigns"],
-      "source_paths": ["src/pages/admin/events/index.astro", "src/pages/admin/events/[id].astro", "src/pages/api/admin/event-campaigns/save.ts"]
+      "admin_path": "/admin/surveys/tools",
+      "doc_ref": "SURVEY_TOOLS_GUIDE.md",
+      "skill_ref": "dev-survey",
+      "depends_on": [],
+      "db_tables": [
+        "survey_tool_results"
+      ],
+      "source_paths": [
+        "src/survey-tools/"
+      ]
     },
-
     {
-      "id": "survey-management",
-      "name": "설문/자가진단 도구",
-      "description": "질병 자가진단, 건강 패널 조사, 만족도 설문 등을 관리하고 환자 응답 결과를 분석합니다.",
+      "id": "custom-skin",
+      "name": "고급 스킨 개발",
+      "description": "디자인 시스템 기반 커스텀 스킨 개발. Tier 1 기본 스킨을 넘어선 고급 브랜딩.",
       "tier": 4,
-      "category": "patient-service",
+      "category": "marketing",
       "requires_human": true,
-      "human_inputs": [],
-      "admin_path": "/admin/surveys",
-      "doc_ref": null,
-      "depends_on": ["program-management"],
-      "db_tables": ["self_diagnosis_templates", "self_diagnosis_results", "survey_tool_results"],
-      "source_paths": ["src/pages/admin/surveys/index.astro", "src/pages/admin/surveys/tools/index.astro", "src/lib/survey-registry.ts", "src/plugins/survey-tools/pages/index.astro"],
-      "file_paths": ["src/survey-tools/local/"]
+      "admin_path": null,
+      "doc_ref": "DESIGN_SYSTEM_GUIDE.md",
+      "skill_ref": "dev-skin",
+      "depends_on": [
+        "branding-minimal"
+      ],
+      "db_tables": [],
+      "source_paths": [
+        "src/skins/local/"
+      ],
+      "setup_notes": "/dev-skin 스킬로 개발 후 /setup-homepage와 연계"
     },
-
-
     {
-      "id": "product-management",
-      "name": "상품/가격 설정",
-      "description": "진료 상품(다이어트, 한약 등), 판매 상품의 가격, 설명, 카테고리를 관리합니다.",
+      "id": "data-import",
+      "name": "기존 데이터 가져오기",
+      "description": "이전 시스템이나 엑셀 파일에서 환자/예약 데이터 마이그레이션.",
       "tier": 5,
-      "category": "operations",
+      "category": "advanced",
       "requires_human": true,
       "human_inputs": [
-        { "key": "products", "label": "상품 목록", "type": "array", "required": false, "fields": [
-          { "key": "name", "label": "상품명", "type": "text" },
-          { "key": "category", "label": "카테고리", "type": "select", "options": ["diet", "medicine", "program", "other"] },
-          { "key": "price", "label": "가격", "type": "number" }
-        ]}
+        {
+          "key": "data_file",
+          "label": "데이터 파일 (CSV/Excel)",
+          "type": "file",
+          "required": true
+        },
+        {
+          "key": "source_system",
+          "label": "이전 시스템",
+          "type": "select",
+          "required": false,
+          "options": [
+            "excel",
+            "existing_program",
+            "other"
+          ]
+        }
       ],
-      "admin_path": "/admin/settings/products",
-      "doc_ref": null,
+      "admin_path": "/admin/data/converter",
+      "doc_ref": "OPERATIONS_GUIDE.md",
+      "skill_ref": "import-data",
       "depends_on": [],
-      "db_tables": ["products"],
-      "source_paths": ["src/pages/admin/settings/products.astro", "src/pages/api/admin/products/index.ts"]
+      "db_tables": [
+        "patients",
+        "reservations"
+      ],
+      "source_paths": [
+        "src/pages/admin/data/converter.astro"
+      ],
+      "setup_notes": "반드시 백업 후 진행!"
     },
-
-    {
-      "id": "promotion-management",
-      "name": "프로모션/할인 설정",
-      "description": "시즌 프로모션, 할인 쿠폰, 패키지 상품을 생성하여 환자 모집을 촉진합니다.",
-      "tier": 5,
-      "category": "operations",
-      "requires_human": true,
-      "human_inputs": [],
-      "admin_path": "/admin/settings/promotions",
-      "doc_ref": null,
-      "depends_on": ["product-management"],
-      "db_tables": ["promotions"],
-      "source_paths": ["src/pages/admin/settings/promotions.astro", "src/pages/api/admin/promotions/index.ts"]
-    },
-
     {
       "id": "inventory-management",
       "name": "재고 관리",
-      "description": "약품, 영양제, 기재 등의 재고 현황을 추적하고 수급 계획을 세웁니다.",
+      "description": "한약재, 소모품, 상품 재고 관리. 입출고 및 재고 알림.",
       "tier": 5,
-      "category": "operations",
+      "category": "advanced",
       "requires_human": true,
-      "human_inputs": [],
       "admin_path": "/admin/inventory",
-      "doc_ref": null,
+      "doc_ref": "OPERATIONS_GUIDE.md",
+      "skill_ref": null,
       "depends_on": [],
-      "db_tables": ["inventory_items", "inventory_transactions", "vendors"],
-      "source_paths": ["src/pages/admin/inventory/index.astro"]
+      "db_tables": [
+        "inventory_items",
+        "inventory_transactions"
+      ],
+      "source_paths": [
+        "src/pages/admin/inventory/index.astro"
+      ]
     },
-
     {
       "id": "expense-management",
-      "name": "지출 관리",
-      "description": "의료용품, 광고비, 임차료 등 지출을 카테고리별로 기록하고 월별 분석합니다.",
+      "name": "지출/회계 관리",
+      "description": "병원 운영비, 인건비, 지출 내역 관리 및 보고서.",
       "tier": 5,
-      "category": "operations",
+      "category": "advanced",
       "requires_human": true,
-      "human_inputs": [],
       "admin_path": "/admin/expenses",
-      "doc_ref": null,
+      "doc_ref": "OPERATIONS_GUIDE.md",
+      "skill_ref": null,
       "depends_on": [],
-      "db_tables": ["expense_requests", "expense_templates", "expense_categories"],
-      "source_paths": ["src/pages/admin/expenses/index.astro", "src/pages/api/admin/expenses/index.ts", "src/pages/api/admin/expenses/categories.ts"]
+      "db_tables": [
+        "expenses",
+        "expense_categories"
+      ],
+      "source_paths": [
+        "src/pages/admin/expenses/index.astro"
+      ]
     },
-
-    {
-      "id": "payment-management",
-      "name": "결제 관리",
-      "description": "온라인 결제, 선불금, 환불 기록을 관리하고 결제 수단별 통계를 확인합니다.",
-      "tier": 5,
-      "category": "operations",
-      "requires_human": false,
-      "human_inputs": [],
-      "admin_path": "/admin/payments",
-      "doc_ref": null,
-      "depends_on": ["product-management"],
-      "db_tables": ["payments"],
-      "source_paths": ["src/pages/admin/payments/index.astro", "src/pages/api/admin/payments/index.ts"],
-      "setup_notes": "상품이 등록되면 결제 기록은 자동 관리됨."
-    },
-
-    {
-      "id": "shipping-management",
-      "name": "배송/해피콜 관리",
-      "description": "홈케어 상품 배송, 해피콜, 배송 추적 정보를 관리합니다.",
-      "tier": 5,
-      "category": "operations",
-      "requires_human": false,
-      "human_inputs": [],
-      "admin_path": "/admin/shipping",
-      "doc_ref": null,
-      "depends_on": ["payment-management"],
-      "db_tables": ["shipping_orders", "shipments"],
-      "source_paths": ["src/pages/admin/shipping/index.astro", "src/pages/api/admin/shipping/index.ts"]
-    },
-
-    {
-      "id": "task-management",
-      "name": "업무 체크리스트",
-      "description": "직원 업무 할당, 체크리스트, 완료 추적으로 내부 작업 흐름을 관리합니다.",
-      "tier": 5,
-      "category": "operations",
-      "requires_human": true,
-      "human_inputs": [],
-      "admin_path": "/admin/tasks",
-      "doc_ref": null,
-      "depends_on": ["staff-management"],
-      "db_tables": ["tasks", "task_templates"],
-      "source_paths": ["src/pages/admin/tasks/index.astro", "src/lib/task-scheduler.ts"]
-    },
-
-    {
-      "id": "manual-management",
-      "name": "업무 매뉴얼",
-      "description": "직원 교육용 매뉴얼, SOP, 프로토콜을 작성하고 버전 관리합니다.",
-      "tier": 5,
-      "category": "operations",
-      "requires_human": true,
-      "human_inputs": [],
-      "admin_path": "/admin/manuals",
-      "doc_ref": null,
-      "depends_on": ["staff-management"],
-      "db_tables": ["manual_pages", "system_manuals"],
-      "source_paths": ["src/pages/admin/manuals/index.astro", "src/pages/admin/manuals/[id].astro"]
-    },
-
-    {
-      "id": "knowledge-base-management",
-      "name": "직원 지식베이스",
-      "description": "직원들이 공유하는 진료 팁, FAQ, 최신 정보를 카드 형태로 축적하는 내부 위키입니다.",
-      "tier": 5,
-      "category": "operations",
-      "requires_human": true,
-      "human_inputs": [],
-      "admin_path": "/admin/knowledge",
-      "doc_ref": null,
-      "depends_on": ["staff-management"],
-      "db_tables": ["knowledge_cards", "knowledge_categories"],
-      "source_paths": ["src/pages/admin/knowledge/index.astro", "src/lib/knowledge.ts"]
-    },
-
-    {
-      "id": "document-management",
-      "name": "문서 보관함",
-      "description": "병원 운영 관련 문서(계약서, 정책, 신청서 등)를 중앙 집중식으로 보관하고 검색합니다.",
-      "tier": 5,
-      "category": "operations",
-      "requires_human": false,
-      "human_inputs": [],
-      "admin_path": "/admin/documents",
-      "doc_ref": null,
-      "depends_on": [],
-      "db_tables": ["documents"],
-      "source_paths": ["src/pages/admin/documents/index.astro", "src/pages/api/admin/documents/index.ts"]
-    },
-
     {
       "id": "ai-configuration",
-      "name": "AI 에이전트 설정",
-      "description": "OpenAI/Gemini/Claude/DeepSeek API 키를 등록하여 AI 기능(채팅, 자동응답, 분석)을 활성화합니다.",
+      "name": "AI 설정",
+      "description": "Claude API 등 AI 서비스 연동. 에이전트 기능 커스터마이징.",
       "tier": 5,
       "category": "advanced",
       "requires_human": true,
-      "human_inputs": [
-        { "key": "provider", "label": "AI 제공자", "type": "select", "required": true, "options": ["openai", "gemini", "claude", "deepseek"] },
-        { "key": "api_key", "label": "API 키", "type": "password", "required": true },
-        { "key": "model", "label": "모델명", "type": "text", "required": false }
-      ],
       "admin_path": "/admin/settings/ai",
       "doc_ref": "AI_FEATURE_GUIDE.md",
+      "skill_ref": null,
       "depends_on": [],
-      "db_tables": ["ai_configs"],
-      "source_paths": ["src/pages/admin/settings/ai.astro", "src/pages/api/admin/ai-config.ts", "src/lib/ai-discovery.ts"]
+      "db_tables": [
+        "ai_configurations"
+      ],
+      "source_paths": [
+        "src/pages/admin/ai-config.astro"
+      ],
+      "setup_notes": "API 키 발급 필요"
     },
-
     {
-      "id": "integration-configuration",
-      "name": "외부 서비스 연동 (Slack 등)",
-      "description": "Slack, 네이버 톡톡, 외부 예약 시스템 등을 API 연동하여 업무 자동화를 구성합니다.",
+      "id": "custom-plugins",
+      "name": "커스텀 플러그인 개발",
+      "description": "병원 특화 기능을 플러그인으로 개발. 환자 메모, 특수 예약 등.",
       "tier": 5,
       "category": "advanced",
       "requires_human": true,
-      "human_inputs": [
-        { "key": "slack_webhook_url", "label": "Slack Webhook URL", "type": "url", "required": false },
-        { "key": "slack_channel", "label": "Slack 채널", "type": "text", "required": false }
-      ],
-      "admin_path": "/admin/settings/integrations",
-      "doc_ref": null,
+      "admin_path": null,
+      "doc_ref": "PLUGIN_DEVELOPMENT_GUIDE.md",
+      "skill_ref": "dev-plugin",
       "depends_on": [],
-      "db_tables": ["site_settings", "webhook_logs"],
-      "source_paths": ["src/pages/admin/settings/integrations.astro", "src/pages/api/admin/settings/integrations.ts"]
-    },
-
-    {
-      "id": "data-import",
-      "name": "EMR 데이터 이관",
-      "description": "기존 한의사랑, 오케이차트 등 EMR에서 환자 데이터를 CSV/Excel로 내보내 Clinic-OS로 마이그레이션합니다.",
-      "tier": 5,
-      "category": "advanced",
-      "requires_human": true,
-      "human_inputs": [
-        { "key": "emr_file", "label": "EMR 내보내기 파일 (CSV/Excel)", "type": "file", "required": true },
-        { "key": "emr_source", "label": "EMR 종류", "type": "select", "required": true, "options": ["한의사랑", "오케이차트", "네오보감", "기타"] }
+      "db_tables": [
+        "plugin_storage"
       ],
-      "admin_path": "/admin/data/converter",
-      "doc_ref": null,
-      "depends_on": ["tag-management"],
-      "db_tables": ["data_converters", "patients"],
-      "source_paths": ["src/pages/admin/data/converter.astro", "src/pages/api/admin/data-hub/converters.ts", "src/lib/converters/hanisarang.ts", "src/lib/converters/okchart.ts"]
-    },
-
-    {
-      "id": "security-settings",
-      "name": "보안 설정",
-      "description": "관리자 IP 화이트리스트, 계정 잠금 정책, 접근 제어를 설정하여 보안을 강화합니다.",
-      "tier": 5,
-      "category": "system",
-      "requires_human": true,
-      "human_inputs": [
-        { "key": "ip_filter_enabled", "label": "IP 필터링 활성화", "type": "boolean", "required": false },
-        { "key": "whitelist_ips", "label": "허용 IP 목록", "type": "array", "required": false }
+      "source_paths": [
+        "src/plugins/local/"
       ],
-      "admin_path": "/admin/settings/security",
-      "doc_ref": null,
-      "depends_on": ["admin-account"],
-      "db_tables": ["site_settings"],
-      "source_paths": ["src/pages/admin/settings/security.astro", "src/lib/ip-filter.ts", "src/lib/account-lockout.ts"]
+      "setup_notes": "/dev-plugin 스킬로 개발"
     },
-
     {
-      "id": "api-key-management",
+      "id": "api-keys",
       "name": "API 키 관리",
-      "description": "외부 앱/시스템이 Clinic-OS API에 접근할 수 있도록 API 키를 발급하고 권한을 관리합니다.",
+      "description": "외부 연동을 위한 API 키 생성 및 관리. 외부 시스템 연동 시 사용.",
       "tier": 5,
       "category": "advanced",
-      "requires_human": false,
-      "human_inputs": [],
+      "requires_human": true,
       "admin_path": "/admin/settings/api-keys",
       "doc_ref": "API-REFERENCE.md",
+      "skill_ref": null,
       "depends_on": [],
-      "db_tables": ["site_settings"],
-      "source_paths": ["src/pages/admin/settings/api-keys.astro", "src/pages/api/admin/settings/api-key.ts"]
+      "db_tables": [
+        "api_keys"
+      ],
+      "source_paths": [
+        "src/pages/admin/settings/api-keys.astro"
+      ]
     },
-
     {
-      "id": "chat-widget-configuration",
-      "name": "채팅 위젯 설정",
-      "description": "홈페이지 우측 하단 채팅 위젯의 위치, 환영 메시지, 운영 시간을 설정합니다.",
-      "tier": 5,
-      "category": "advanced",
+      "id": "intake-form",
+      "name": "문진표 설정",
+      "description": "환자 첫 방문 시 정보 수집 양식 구성. 온보딩 초기 단계에서 기본 문진표 활성화.",
+      "tier": 1,
+      "category": "essential",
       "requires_human": true,
       "human_inputs": [
-        { "key": "enabled", "label": "위젯 활성화", "type": "boolean", "required": true },
-        { "key": "welcome_message", "label": "환영 메시지", "type": "text", "required": false },
-        { "key": "position", "label": "위치", "type": "select", "options": ["left", "right"], "default": "right" }
+        {
+          "key": "template",
+          "label": "문진표 템플릿",
+          "type": "select",
+          "required": true,
+          "options": [
+            "basic-hanbang",
+            "dermatology",
+            "diet",
+            "custom"
+          ]
+        }
       ],
-      "admin_path": "/admin/settings/widget",
-      "doc_ref": null,
-      "depends_on": [],
-      "db_tables": ["site_settings"],
-      "source_paths": ["src/pages/admin/settings/widget.astro", "src/pages/api/admin/settings/widget.ts"]
+      "admin_path": "/admin/intake",
+      "doc_ref": "INTAKE_MANAGEMENT.md",
+      "skill_ref": "setup-intake",
+      "depends_on": [
+        "clinic-info"
+      ],
+      "db_tables": [
+        "intake_forms",
+        "intake_responses"
+      ],
+      "source_paths": [
+        "src/pages/intake.astro"
+      ]
     },
-
     {
-      "id": "chatbot-configuration",
-      "name": "챗봇 자동응답 설정",
-      "description": "챗봇 인사말, 미응답 시 안내 메시지, 작동 모드(상시/진료시간 외)를 설정합니다.",
-      "tier": 5,
-      "category": "advanced",
+      "id": "sms-kakao-setup",
+      "name": "알림 채널 설정",
+      "description": "SMS 및 카카오 알림톡 연동. 예약 확인/리마인드 문자 자동 발송 설정.",
+      "tier": 1,
+      "category": "essential",
       "requires_human": true,
       "human_inputs": [
-        { "key": "mode", "label": "작동 모드", "type": "select", "options": ["always", "away", "outside_hours"], "required": false },
-        { "key": "greeting", "label": "인사말", "type": "text", "required": false },
-        { "key": "fallback_message", "label": "미응답 시 안내 메시지", "type": "text", "required": false }
+        {
+          "key": "channel",
+          "label": "알림 채널",
+          "type": "select",
+          "required": true,
+          "options": [
+            "sms",
+            "kakao",
+            "both"
+          ]
+        },
+        {
+          "key": "api_key",
+          "label": "API 키",
+          "type": "password",
+          "required": true
+        },
+        {
+          "key": "sender",
+          "label": "발신번호/채널",
+          "type": "text",
+          "required": true
+        }
       ],
-      "admin_path": null,
-      "doc_ref": null,
-      "depends_on": ["chat-widget-configuration"],
-      "db_tables": ["chatbot_settings", "chatbot_nodes"],
-      "source_paths": ["src/lib/plugin-sdk/api/schedules.ts"]
+      "admin_path": "/admin/settings/integrations",
+      "doc_ref": "MESSAGE_CAMPAIGN_GUIDE.md",
+      "skill_ref": "setup-notifications",
+      "depends_on": [],
+      "db_tables": [
+        "notification_templates",
+        "notification_logs"
+      ],
+      "source_paths": [
+        "src/lib/notifications.ts"
+      ],
+      "setup_notes": "Aligo 또는 Kakao Business 사전 가입 필요."
     },
-
     {
-      "id": "staff-schedule",
-      "name": "직원 근무 일정",
-      "description": "의료진별 근무 일정, 휴가/휴무일을 설정하여 예약 시스템에 반영합니다.",
+      "id": "data-migration",
+      "name": "기존 데이터 마이그레이션",
+      "description": "이전 시스템에서 환자/예약/진료 데이터를 마이그레이션. 운영 고도화 단계에서 실행.",
       "tier": 5,
       "category": "operations",
       "requires_human": true,
-      "human_inputs": [],
-      "admin_path": "/admin/settings/schedule",
-      "doc_ref": null,
-      "depends_on": ["staff-management", "clinic-schedule"],
-      "db_tables": ["staff_schedules", "staff_leaves"],
-      "source_paths": ["src/pages/admin/settings/schedule.astro", "src/pages/api/admin/schedules/staff/[id].ts"]
-    },
-
-    {
-      "id": "aeo-optimization",
-      "name": "AEO 모니터링",
-      "description": "AI 검색 엔진(Perplexity, Claude Search 등) 봇 트래픽을 추적하고 SEO 성능을 모니터링합니다.",
-      "tier": 5,
-      "category": "advanced",
-      "requires_human": false,
-      "human_inputs": [],
-      "admin_path": "/admin/aeo",
-      "doc_ref": null,
-      "depends_on": ["aeo-topic-management"],
-      "db_tables": ["aeo_logs"],
-      "source_paths": ["src/pages/admin/aeo/index.astro", "src/lib/aeo-traffic-quality.ts"],
-      "setup_notes": "토픽/FAQ가 등록되면 AI 검색엔진 봇 트래픽이 자동 추적됨."
-    },
-
-    {
-      "id": "web-member-management",
-      "name": "웹회원 관리",
-      "description": "홈페이지 회원 가입/로그인, 마이페이지, 예약 이력, 프로필을 관리합니다.",
-      "tier": 5,
-      "category": "patient-service",
-      "requires_human": false,
-      "human_inputs": [],
-      "admin_path": "/admin/members",
-      "doc_ref": null,
+      "human_inputs": [
+        {
+          "key": "data_file",
+          "label": "데이터 파일 (CSV/Excel)",
+          "type": "file",
+          "required": true
+        },
+        {
+          "key": "source_system",
+          "label": "이전 시스템",
+          "type": "select",
+          "required": false,
+          "options": [
+            "excel",
+            "existing_program",
+            "other"
+          ]
+        }
+      ],
+      "admin_path": "/admin/data/converter",
+      "doc_ref": "OPERATIONS_GUIDE.md",
+      "skill_ref": "import-data",
       "depends_on": [],
-      "db_tables": ["web_members"],
-      "source_paths": ["src/pages/admin/members/index.astro", "src/pages/api/admin/members/[id]/approve.ts"],
-      "setup_notes": "환자 로그인/회원가입 기능 사용 시 자동 관리."
+      "db_tables": [
+        "patients",
+        "reservations",
+        "treatments"
+      ],
+      "source_paths": [
+        "src/pages/admin/data/converter.astro"
+      ],
+      "setup_notes": "반드시 백업 후 진행!"
     },
-
     {
-      "id": "custom-page-management",
-      "name": "커스텀 페이지 제작",
-      "description": "병원 특성에 맞는 커스텀 랜딩 페이지, 이벤트 페이지를 무코딩으로 제작합니다.",
-      "tier": 5,
+      "id": "align-programs",
+      "name": "프로그램 정렬 검증",
+      "description": "tacit-product.yaml의 7축 암묵지를 기준으로 프로그램/콘텐츠의 정렬 상태를 검증. 불일치 감지 및 수정 제안. 콘텐츠 드리프트 방지.",
+      "tier": 4,
+      "category": "content",
+      "requires_human": false,
+      "depends_on": [
+        "extract-tacit-product"
+      ],
+      "input_artifacts": [
+        ".agent/tacit-product.yaml"
+      ],
+      "output_artifacts": [
+        ".agent/alignment-report.yaml"
+      ],
+      "skill_ref": "align-programs",
+      "time_estimate": "5-10 min (분석) + 검토 시간",
+      "usage_scenarios": [
+        "월 1회 주기적 검증",
+        "tacit 업데이트 후 기존 프로그램 검증",
+        "신규 콘텐츠 사전 검증 (--preview)"
+      ],
+      "setup_notes": "자동 수정 금지. 보고서 기반 수동 수정."
+    },
+    {
+      "id": "extract-tacit-product",
+      "name": "제품 암묵지 추출",
+      "description": "원장의 제품/임상 설계 철학을 7축(프로덕트정의, 의학철학, 개인화, 포지셔닝, 커뮤니케이션, 제형진화, 이커머스)으로 체계적으로 추출. 콘텐츠의 '결'을 결정하여 clinic-specific한 메시지로 전환.",
+      "tier": 4,
       "category": "content",
       "requires_human": true,
-      "human_inputs": [],
-      "admin_path": "/admin/pages",
-      "doc_ref": null,
-      "depends_on": [],
-      "db_tables": ["pages", "page_translations"],
-      "source_paths": ["src/pages/admin/pages/index.astro", "src/pages/admin/pages/[id].astro", "src/lib/PageService.ts"]
-    },
-
-    {
-      "id": "plugin-management",
-      "name": "플러그인 관리",
-      "description": "설치된 플러그인 목록, 활성화/비활성화, 버전 업데이트, 권한 설정을 관리합니다.",
-      "tier": 5,
-      "category": "system",
-      "requires_human": false,
-      "human_inputs": [],
-      "admin_path": "/admin/plugins",
-      "doc_ref": "PLUGIN_DEVELOPMENT_GUIDE.md",
-      "depends_on": [],
-      "db_tables": ["plugin_status", "plugin_storage"],
-      "source_paths": ["src/pages/admin/plugins/index.astro", "src/pages/admin/plugins/installed.astro", "src/lib/plugin-loader.ts", "src/lib/plugin-sdk.ts"]
-    }
-  ],
-
-  "auto_features": [
-    {
-      "id": "audit-logging",
-      "name": "감사 로그",
-      "description": "시스템 변경사항 자동 기록. 설정 불필요.",
-      "db_tables": ["audit_events"]
-    },
-    {
-      "id": "consent-logging",
-      "name": "동의 기록",
-      "description": "개인정보/마케팅 동의 자동 기록.",
-      "db_tables": ["consent_log"]
-    },
-    {
-      "id": "contact-history",
-      "name": "연락처 변경 이력",
-      "description": "환자 연락처 변경 시 자동 기록.",
-      "db_tables": ["contact_history"]
-    },
-    {
-      "id": "analytics-tracking",
-      "name": "방문자 분석",
-      "description": "웹사이트 방문/이벤트 자동 추적.",
-      "admin_path": "/admin/analytics",
-      "db_tables": ["analytics_events", "page_views", "sessions"]
-    },
-    {
-      "id": "media-library",
-      "name": "미디어 라이브러리",
-      "description": "이미지 업로드 시 자동 관리. 별도 설정 불필요.",
-      "admin_path": "/admin/media",
-      "db_tables": []
-    },
-    {
-      "id": "trash-recovery",
-      "name": "휴지통",
-      "description": "삭제된 항목 자동 보관. 30일 후 영구 삭제.",
-      "admin_path": "/admin/trash"
+      "human_inputs": [
+        {
+          "key": "interview_mode",
+          "label": "인터뷰 방식",
+          "type": "select",
+          "required": true,
+          "options": [
+            "voice_live",
+            "voice_recorded",
+            "text"
+          ]
+        }
+      ],
+      "doc_ref": "CONTENT_BOOTSTRAP.md",
+      "skill_ref": "extract-tacit-product",
+      "depends_on": [
+        "content-analysis"
+      ],
+      "output_artifacts": [
+        ".agent/tacit-product.yaml"
+      ],
+      "time_estimate": "30-45 min (대화 + 정리)",
+      "setup_notes": "원장의 암묵지를 외부에 공개하지 않고 clinic/ 낸부에만 저장. 콘텐츠 작성 시 참조용."
     }
   ]
 }
