@@ -1,8 +1,8 @@
 ---
 hq_slug: intake-management
 hq_title: "접수 현황 관리 가이드"
-hq_category: "05. 환자 & 예약 관리"
-hq_sort: 4
+hq_category: "04. 데이터와 경영"
+hq_sort: 6
 hq_active: true
 ---
 # 접수 현황 관리 가이드
