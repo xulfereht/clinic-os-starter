@@ -1,3 +1,8 @@
+---
+description: 로컬 커스터마이징 Agent-First 워크플로우
+category: dev
+---
+
 # 로컬 커스터마이징 Agent-First 워크플로우
 
 > 목적: 에이전트가 플러그인 외의 safe workspace를 정확히 골라서 로컬 클라이언트 작업을 진행하도록 돕는 실행 문서
