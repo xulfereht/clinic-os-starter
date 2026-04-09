@@ -3,6 +3,14 @@
 Comprehensive check of all infrastructure required for Clinic-OS operation.
 Works in both master and client repos.
 
+## When to Use
+
+- After initial setup to verify all infrastructure is properly configured
+- Before deployment to ensure all resources are available
+- Diagnosing connectivity or configuration issues
+- Periodic health checks of the Clinic-OS environment
+- Verifying Cloudflare resources (D1, R2, Pages) are accessible
+
 ## Source of Truth
 
 - Environment diagnostics: `scripts/doctor.js`
@@ -88,6 +96,12 @@ npx wrangler d1 list | grep clinic-hq
 # HQ site response
 curl -sf -o /dev/null -w "%{http_code}" "https://clinic-os-hq.pages.dev/api/health"
 ```
+
+## Triggers
+
+- "인프라 점검", "인프라 확인", "환경 확인"
+- "infra check", "infrastructure"
+- "클라우드플레어 확인", "D1 확인"
 
 ## Rules
 
