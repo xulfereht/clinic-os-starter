@@ -1,0 +1,26 @@
+{
+  "campaign": "clinic-os-2nd-workshop",
+  "workshop_start": "2026-04-09",
+  "live_demo": "2026-03-27",
+  "channels": ["쉼터카페", "단톡방", "LiveKlass", "개별연락"],
+  "entries": [
+    {
+      "date": "2026-03-25",
+      "channel": "쉼터카페",
+      "type": "post",
+      "title": "시연 웨비나 모집글",
+      "description": "AI 경영 파트너가 일하는 모습을 직접 보여드립니다 — 3/27 금 8시 라이브 (1분 무료 제작)",
+      "link": "",
+      "reactions": "",
+      "notes": "비밀댓글로 제작 신청 받음 (이름/연락처/한의원상호). LiveKlass 참관 신청 별도."
+    }
+  ],
+  "upcoming": [
+    {"date": "2026-03-27", "channel": "LiveKlass", "title": "시연 웨비나 진행 (20:00)", "notes": "랜덤 추첨 → 바로 빌드. 약 2시간."},
+    {"date": "2026-04-09", "channel": "LiveKlass", "title": "2기 워크숍 1주차 시작 (20:00)"}
+  ],
+  "drafts": {
+    "announcement": "docs/internal/workshop-2nd-announcement-draft.md",
+    "live_demo": "docs/internal/workshop-live-demo-draft.md"
+  }
+}
