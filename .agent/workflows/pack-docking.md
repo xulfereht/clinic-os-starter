@@ -1,5 +1,6 @@
 ---
 description: 현재 작업 내용을 도킹 패키지(.zip)로 패키징합니다
+category: dev
 ---
 
 # Docking Package 패키징 워크플로우

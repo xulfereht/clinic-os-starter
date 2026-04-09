@@ -1,19 +1,19 @@
-# Clinic-OS Windows 가이드 (WSL + Agent-First)
+# Clinic-OS Windows 호스트 가이드 (WSL Ubuntu 전용)
 
-Windows에서는 반드시 WSL 안에서 Clinic-OS를 다루세요. 핵심 목적은 두 가지입니다.
+네이티브 Windows 설치는 지원하지 않습니다. Windows에서는 반드시 **WSL Ubuntu** 안에서 Clinic-OS를 다루세요. 핵심 목적은 두 가지입니다.
 
 - 경로/권한/성능 문제를 줄이기
 - 에이전트가 macOS/Linux와 비슷한 전제를 갖고 안정적으로 작업하게 하기
 
 ## 요약
 
-1. Windows에 WSL 설치
-2. WSL 안에 Node.js 20+, Git 설치
+1. Windows에 WSL + Ubuntu 설치
+2. WSL Ubuntu 안에 Node.js 20+, Git 설치
 3. 프로젝트를 `~/clinic-os` 같은 WSL 경로에 배치
 4. 선호하는 에이전트 CLI 실행
 5. 이후 작업은 에이전트와의 대화로 진행
 
-## 1. WSL 설치
+## 1. WSL Ubuntu 설치
 
 관리자 권한 PowerShell 또는 Windows Terminal에서 실행:
 
@@ -23,7 +23,7 @@ wsl --install
 
 설치 후 재부팅하고 Ubuntu 초기 설정을 마칩니다.
 
-## 2. WSL 안에 기본 도구 설치
+## 2. WSL Ubuntu 안에 기본 도구 설치
 
 Ubuntu 터미널에서 실행:
 
@@ -72,11 +72,11 @@ cd ~/clinic-os
 
 ```text
 이 레포를 읽고 현재 상태를 진단해줘.
-AGENTS.md와 .agent/README.md를 먼저 읽고,
+CLAUDE.md와 .agent/README.md를 먼저 읽고,
 설치 또는 이관이 필요하면 안전한 순서로 진행해줘.
 ```
 
-## 5. Windows에서 특히 중요한 원칙
+## 5. Windows 호스트에서 특히 중요한 원칙
 
 ### 1. 사람은 직접 명령어를 많이 치지 않습니다
 
