@@ -1,8 +1,8 @@
 ---
 hq_slug: ai-feature-guide
 hq_title: "AI 기능 활용 가이드"
-hq_category: "10. 고급 기능"
-hq_sort: 1
+hq_category: "02. 에이전트에게 말하기"
+hq_sort: 7
 hq_active: true
 ---
 # AI 기능 활용 가이드

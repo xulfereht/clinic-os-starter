@@ -1,18 +1,19 @@
 ---
 description: 로컬 작업 보호를 위한 소프트게이트 가드레일. 에이전트가 주도적으로 안내합니다.
+category: dev
 ---
 
 # 소프트게이트 가드레일
 
 이 문서는 클라이언트의 로컬 작업(코드, 데이터, 에셋)을 보호하기 위한 에이전트 행동 규칙입니다.
-`npm run setup` 이후, 온보딩 시작 **전에** 이 게이트들을 순서대로 통과합니다.
+`npm run setup:step` 이후, 온보딩 시작 **전에** 이 게이트들을 순서대로 통과합니다.
 
 ---
 
 ## 전체 흐름
 
 ```
-npm run setup 완료
+npm run setup:step 완료
     ↓
 [Gate 0] 클리닉 프로파일링 ← 가장 먼저. "당신의 한의원을 알려주세요"
     ↓
@@ -35,7 +36,7 @@ npm run setup 완료
 ## Gate 0: 클리닉 프로파일링 (First Contact)
 
 > **목적**: 에이전트가 한의원의 맥락을 파악하여 이후 모든 작업의 기반 데이터로 활용
-> **시점**: npm run setup 완료 직후, 온보딩 시작 전
+> **시점**: npm run setup:step 완료 직후, 온보딩 시작 전
 > **저장**: `.agent/clinic-profile.json` (로컬, core:pull 보호)
 
 ### 에이전트 행동
@@ -368,10 +369,15 @@ wrangler d1 export clinic-db --local --output .backups/d1-snapshot-latest.sql
 
 > **목적**: 이미지, 파일 등 에셋을 클라우드에 보관하여 유실 방지
 > **시점**: 에셋 업로드 시점, Cloudflare 미설정 시
+>
+> **CF-First (v1.29+)**: `setup-step.js`의 `cf-login` 단계(Phase 1)에서
+> Cloudflare 로그인 + D1 생성 + R2 버킷 생성이 자동으로 완료됩니다.
+> 셋업을 정상적으로 완료한 경우 Gate 3는 이미 통과된 상태입니다.
+> 📖 [Cloudflare 셋업 가이드](https://clinic-os-hq.pages.dev/guide/cloudflare-setup) (`docs/CLOUDFLARE_SETUP_GUIDE.md`)
 
 ### Cloudflare 설정 확인
 
-`setup-clinic.js`의 Step 9에서 Cloudflare 설정이 이미 진행되지만,
+`setup-step.js`의 `cf-login` 단계에서 Cloudflare 설정이 이미 진행되지만,
 사용자가 건너뛸 수 있습니다. 에이전트는 이를 추적합니다.
 
 ```
@@ -382,16 +388,21 @@ wrangler d1 export clinic-db --local --output .backups/d1-snapshot-latest.sql
 
 ### R2 미설정 시 안내
 
+> 📖 CF 계정이 없는 경우: [Cloudflare 셋업 가이드](https://clinic-os-hq.pages.dev/guide/cloudflare-setup) (`docs/CLOUDFLARE_SETUP_GUIDE.md`)
+
 ```
 에이전트: "이미지를 업로드하려면 Cloudflare 스토리지(R2) 설정이 필요합니다.
-          
+
           Cloudflare 계정이 이미 있으신가요?
-          [A] 있어요 → R2 버킷 생성 안내
-          [B] 없어요 → 가입부터 안내
+          [A] 있어요 → npx wrangler login 후 R2 버킷 자동 생성
+          [B] 없어요 → Cloudflare 셋업 가이드로 안내 (계정 가입 → 로그인 → 자동 설정)
           [C] 나중에 → 로컬 저장만 (유실 위험 안내)"
 ```
 
 #### Cloudflare 설정 원스텝
+
+계정이 있으면 `npx wrangler login` 후, D1/R2가 자동 생성됩니다.
+계정이 없으면 먼저 [Cloudflare 셋업 가이드](https://clinic-os-hq.pages.dev/guide/cloudflare-setup)의 계정 가입 절차를 안내합니다.
 
 ```
 에이전트: "Cloudflare에 로그인합니다."
@@ -400,17 +411,17 @@ wrangler d1 export clinic-db --local --output .backups/d1-snapshot-latest.sql
 
 에이전트: "브라우저에서 로그인을 완료해주세요...
           ✅ 로그인 성공!
-          
+
           이제 자동으로 설정합니다:"
 
 → npx wrangler d1 create {clinic-name}-db
 → npx wrangler r2 bucket create {clinic-name}-uploads
 
 에이전트: "✅ 데이터베이스와 파일 저장소가 생성되었습니다!
-          
+
           📦 DB: {clinic-name}-db (ID: xxxx)
           🗂️ 저장소: {clinic-name}-uploads
-          
+
           wrangler.toml에 자동 반영했습니다."
 ```
 
@@ -446,7 +457,7 @@ wrangler d1 export clinic-db --local --output .backups/d1-snapshot-latest.sql
 [새 컴퓨터]
 
 1. 기본 환경 설치 (Node.js, Git)
-   → Windows: WSL 먼저 설치 (windows-guide 참조)
+   → Windows 호스트: WSL Ubuntu 먼저 설치 (windows-guide 참조)
    → macOS: 바로 진행 가능
 
 2. GitHub에서 코드 가져오기
@@ -459,7 +470,7 @@ wrangler d1 export clinic-db --local --output .backups/d1-snapshot-latest.sql
    → (같은 Cloudflare 계정으로 로그인)
 
 4. HQ 디바이스 등록
-   → npm run setup (기존 clinic.json이 git에 포함)
+   → npm run setup:step (기존 clinic.json이 git에 포함)
    → setup이 기존 설정을 감지하고 최소 단계만 실행
 
 5. DB 복원 (선택)
@@ -486,7 +497,7 @@ wrangler d1 export clinic-db --local --output .backups/d1-snapshot-latest.sql
           npx wrangler login
           
           # 3. 설정 확인
-          npm run setup
+          npm run setup:step
           
           # 4. 로컬 서버 시작
           npm run dev
@@ -530,6 +541,11 @@ function checkSoftgates() {
   // Gate 0: 프로파일
   const profile = readFile('.agent/clinic-profile.json');
   if (!profile) return { gate: 0, action: 'profile_interview' };
+  // 파일이 존재하지만 실질적으로 비어있는 경우 (데모 모드 잔재)
+  const p = JSON.parse(profile);
+  if (!p.contact?.phone && !p.contact?.address && p.source?.type === 'demo_placeholder') {
+    return { gate: 0, action: 'profile_incomplete', hint: '/extract-content 실행 권장' };
+  }
   
   // Gate 1: GitHub
   const remotes = exec('git remote -v');
@@ -553,7 +569,7 @@ function checkSoftgates() {
 ## 통합 예시: 첫 세션 전체 흐름
 
 ```
-[npm run setup 완료 — 로컬 서버 동작 중]
+[npm run setup:step 완료 — 로컬 서버 동작 중]
 
 에이전트: "안녕하세요! 한의원 홈페이지를 함께 만들어보겠습니다.
           먼저 한의원에 대해 알려주세요.

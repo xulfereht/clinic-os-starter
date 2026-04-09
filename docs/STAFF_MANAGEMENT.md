@@ -1,8 +1,8 @@
 ---
 hq_slug: staff-management
 hq_title: "직원 및 권한 관리 가이드"
-hq_category: "09. 시스템 설정"
-hq_sort: 2
+hq_category: "06. 설치와 환경"
+hq_sort: 22
 hq_active: true
 ---
 # 직원 및 권한 관리 가이드

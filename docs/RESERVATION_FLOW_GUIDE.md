@@ -1,8 +1,8 @@
 ---
 hq_slug: reservation-flow-guide
 hq_title: "예약 및 스케줄 관리 가이드"
-hq_category: "05. 환자 & 예약 관리"
-hq_sort: 2
+hq_category: "04. 데이터와 경영"
+hq_sort: 4
 hq_active: true
 ---
 # 예약 및 스케줄 관리 가이드

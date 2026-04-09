@@ -4,6 +4,14 @@ Simulates a `core:pull` update without making any actual changes.
 Analyzes what files would be added, modified, deleted, or merged.
 Primarily for client repos, but also works in master.
 
+## When to Use
+
+- Before running `core:pull` to understand the impact of an update
+- Checking whether an update introduces new migrations or schema changes
+- Identifying potential conflicts with local overrides
+- Evaluating risk before applying a beta or specific version update
+- Verifying that protected and local files will remain untouched
+
 ## Source of Truth
 
 - Core pull engine: `.docking/engine/fetch.js` (--dry-run flag)
@@ -118,6 +126,12 @@ Evaluate the update impact:
 ✅ Overall: Safe to proceed
    Run: npm run core:pull [--beta]
 ```
+
+## Triggers
+
+- "업데이트 시뮬레이션", "코어 업데이트 미리보기"
+- "migration test", "dry run"
+- "업데이트하면 뭐가 바뀌어?"
 
 ## Rules
 
