@@ -38,13 +38,13 @@ function log(message, quiet = false) {
     }
 }
 
-async function runCommand(command, quiet = false) {
+async function runCommand(command, quiet = false, cwd = PROJECT_ROOT) {
     const shell = process.platform === 'win32' ? 'cmd.exe' : 'sh';
     const args = process.platform === 'win32' ? ['/d', '/s', '/c', command] : ['-lc', command];
 
     return await new Promise((resolve) => {
         const proc = spawn(shell, args, {
-            cwd: PROJECT_ROOT,
+            cwd,
             stdio: quiet ? 'ignore' : 'inherit',
         });
 
@@ -117,6 +117,17 @@ async function syncStarterPackageJson(options) {
     return { changed, merged };
 }
 
+export function getDependencyInstallTargets(projectRoot = PROJECT_ROOT) {
+    const targets = [projectRoot];
+    const corePath = path.join(projectRoot, 'core');
+
+    if (fs.existsSync(path.join(corePath, 'package.json'))) {
+        targets.push(corePath);
+    }
+
+    return targets;
+}
+
 async function main() {
     const options = parseArgs(process.argv.slice(2));
     const corePullArgs = [`node .docking/engine/fetch.js --${options.channel}`];
@@ -143,9 +154,13 @@ async function main() {
 
     if (options.install) {
         log('\n4) 의존성 동기화 (npm install)', options.quiet);
-        const installResult = await runCommand(buildNpmCommand('install'), options.quiet);
-        if (!installResult.success) {
-            throw new Error('npm install 실패');
+        for (const installPath of getDependencyInstallTargets(PROJECT_ROOT)) {
+            const label = installPath === PROJECT_ROOT ? 'root' : path.relative(PROJECT_ROOT, installPath);
+            log(`   ↳ ${label} 의존성 설치`, options.quiet);
+            const installResult = await runCommand(buildNpmCommand('install'), options.quiet, installPath);
+            if (!installResult.success) {
+                throw new Error(`${label} npm install 실패`);
+            }
         }
     }
 
@@ -157,7 +172,9 @@ async function main() {
     log('\n✅ Starter + Core 업데이트 완료', options.quiet);
 }
 
-main().catch((error) => {
-    console.error(`\n❌ update-starter-core 실패: ${error.message}`);
-    process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+    main().catch((error) => {
+        console.error(`\n❌ update-starter-core 실패: ${error.message}`);
+        process.exit(1);
+    });
+}

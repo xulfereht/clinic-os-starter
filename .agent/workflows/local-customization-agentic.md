@@ -1,117 +1,138 @@
-# 로컬 커스터마이징 Agent-First 워크플로우
+---
+description: Local customization — choose the right safe workspace for clinic-specific changes
+category: dev
+---
 
-> 목적: 에이전트가 플러그인 외의 safe workspace를 정확히 골라서 로컬 클라이언트 작업을 진행하도록 돕는 실행 문서
+# Local Customization
 
-## 0. 먼저 분류
+Guide for choosing the correct safe workspace (NOT plugins — see `plugin-agentic.md` for that).
 
-코드 수정 요청이 들어오면 아래를 먼저 판단한다.
+## Classify First
 
-1. 기존 퍼블릭 페이지를 병원별로만 바꿔야 하는가
-   - `src/pages/_local/**`
-2. 병원 전용 helper/adapter가 필요한가
-   - `src/lib/local/**`
-3. 정적 이미지/로고/OG 자산이 필요한가
-   - `public/local/**`
-4. 내부 메모/복구 기록/운영 문서가 필요한가
-   - `docs/internal/**`
-5. 새 기능/새 라우트/새 API가 필요한가
-   - 플러그인 또는 survey tool 검토
+| Need | Path | Example |
+|------|------|---------|
+| **Customize AI/SEO endpoint** | **siteSettings DB** | **llms.txt, ai.json content** |
+| Override existing public page | `src/pages/_local/**` | Custom doctors page |
+| Clinic-specific helper/adapter | `src/lib/local/**` | Custom API formatter |
+| Static images/logo/OG | `public/local/**` | Logo, OG image, banner |
+| Internal ops docs | `docs/internal/**` | Recovery records, checklists |
+| New feature/route/API | → Plugin (`plugin-agentic.md`) | |
+| Survey/assessment tool | → Survey tool (`survey-tools-agentic.md`) | |
 
-## 1. 읽을 파일
+## Soft Core — siteSettings Override (⚠️ DO NOT edit core .ts files)
+
+AI/SEO 엔드포인트 커스터마이즈는 **코어 파일 수정이 아닌 DB 설정**으로 합니다.
+코어 파일을 직접 수정하면 core:pull 시 덮어쓰여집니다.
+
+### Available Override Keys
+
+| Endpoint | siteSettings key | Type |
+|----------|-----------------|------|
+| `/llms-full.txt` | `llms_full_txt` | text (full markdown) |
+| `/llms.txt` | `llms_txt` | text (full markdown) |
+| `/ai.txt` | `ai_txt` | text (full plaintext) |
+| `/.well-known/ai.json` | `ai_json` | JSON string |
+| `/.well-known/agent.json` | `agent_json` | JSON string |
+| `/brand.txt` | `brand_txt` | text |
+
+### How to Set (Agent)
+
+**Option 1: wrangler CLI (로컬 DB)**
+```bash
+DB_NAME=$(grep database_name wrangler.toml | sed 's/.*"\(.*\)"/\1/')
+npx wrangler d1 execute "$DB_NAME" --local --command \
+  "INSERT INTO site_settings (category, key, value, updated_at) \
+   VALUES ('siteSettings', 'llms_full_txt', 'YOUR CONTENT HERE', unixepoch()) \
+   ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at"
+```
+
+**Option 2: Admin API (dev server running)**
+```bash
+curl -X PUT http://localhost:4321/api/admin/settings \
+  -H "Content-Type: application/json" \
+  -H "Cookie: admin_session=..." \
+  -d '{"category":"siteSettings","key":"llms_full_txt","value":"# Custom content..."}'
+```
+
+**Option 3: Leave empty** → 코어의 동적 생성 로직이 자동 작동 (기본값)
+
+### Rules
+- 빈 값 = 코어 기본값 사용 (override 비활성)
+- JSON 엔드포인트 (ai.json, agent.json): 값이 유효한 JSON이어야 함. 파싱 실패 시 코어 기본값 fallback.
+- core:pull 후에도 siteSettings 값은 DB에 유지됨 (안전)
+
+## Custom Diagnosis (MiniDiagnosis) — survey_tools DB
+
+프로그램에 커스텀 진단 도구를 추가하려면 **코어의 diagnosis-data.ts를 수정하지 말고** `survey_tools` 테이블에 등록하세요.
+
+### 등록 방법
+
+```bash
+DB_NAME=$(grep database_name wrangler.toml | sed 's/.*"\(.*\)"/\1/')
+npx wrangler d1 execute "$DB_NAME" --local --command \
+  "INSERT INTO survey_tools (id, name, type, disclaimer, questions, mini_config, is_active) \
+   VALUES ('my-program-mini', '커스텀 진단', 'mini', '참고용 자가진단입니다.', \
+   '[{\"id\":\"q1\",\"text\":\"질문1\",\"options\":[{\"label\":\"보기1\",\"score\":0},{\"label\":\"보기2\",\"score\":3}]}]', \
+   '{\"results\":[{\"level\":\"low\",\"title\":\"양호\",\"description\":\"설명\",\"minScore\":0,\"maxScore\":5}]}', 1)"
+```
+
+### 연결 규칙
+- survey_tools.id = `{programId}-mini` 형식 (예: program slug가 "immunity"면 → "immunity-mini")
+- 또는 프로그램 섹션에서 `toolId`를 직접 지정: `{"type":"MiniDiagnosis","data":{"toolId":"my-custom-tool"}}`
+- DB에 없으면 → 코어 기본 진단(있는 경우만) 사용, 없으면 진단 섹션 미표시
+
+### ClinicId 제한 없음
+코어에 내장된 진단(diet, skin, digestive 등)은 하위호환용. 새 프로그램은 자유롭게 만들 수 있으며, survey_tools DB에 진단을 등록하면 됩니다.
+
+## Read Before Starting
 
 1. `.agent/runtime-context.json`
 2. `.agent/manifests/change-strategy.json`
 3. `.agent/manifests/local-workspaces.json`
 4. `docs/CUSTOMIZATION_GUIDE.md`
-5. 필요하면 `docs/R2_STORAGE_GUIDE.md`
 
-## 2. 페이지 오버라이드
+## Page Override (`_local/`)
 
-기존 공개 페이지를 병원별로 바꾸는 요청이면 원본과 같은 상대 경로로 `_local` 복사본을 만든다.
-
-예:
-
-```text
-src/pages/doctors/index.astro
-→ src/pages/_local/doctors/index.astro
+Copy original to same relative path under `_local/`:
+```
+src/pages/doctors/index.astro → src/pages/_local/doctors/index.astro
 ```
 
-규칙:
+Rules:
+- Import paths: use ORIGINAL file position (virtual mapping via Vite plugin)
+- Check locale paths if i18n applies
+- If admin values feed into the page, verify the data loader first
 
-- import 경로는 원본 페이지 위치 기준으로 유지
-- locale 경로가 있으면 기본 경로와 같이 확인
-- 관리자 값이 반영되는 페이지면 저장 경로와 공용 loader를 먼저 확인
+Verify: `npm run build` → check public URL → check locale variant.
 
-검증:
+## Local Lib (`src/lib/local/`)
 
-1. `npm run build`
-2. 대상 공개 경로 확인
-3. locale 경로가 있으면 같이 확인
+For: clinic-specific utils, external API formatters, shared service between `_local` pages and local plugins.
+NOT for: hiding core bugs, duplicating core loaders.
 
-## 3. local lib
+## Public Assets (`public/local/`)
 
-`src/lib/local/**` 는 병원 전용 유틸, adapter, bridge에만 쓴다.
+For: git-tracked static files referenced in code (logo, OG image, banner).
+NOT for: admin-uploaded images (→ R2), blog attachments (→ R2).
 
-적합한 예:
+Verify: `npm run build` → check dist/ for asset path → verify page rendering.
 
-- 병원 전용 문구 생성 helper
-- 외부 API payload formatter
-- `_local` 페이지와 로컬 플러그인이 함께 쓰는 작은 service
+## Internal Docs (`docs/internal/`)
 
-부적합한 예:
+For: recovery records, migration memos, clinic-specific checklists.
+NOT for: user-facing content, secrets/tokens/keys.
 
-- 공용 세그먼트/인증/페이지 엔진 버그를 local helper로 숨김
-- 코어 loader를 local helper에서 우회 복제
+## NOT Local Workspace
 
-## 4. public/local 자산
+These need central patches, not local overrides:
+- Auth/security/core loader bugs
+- Admin→public reflection contract issues
+- Bugs affecting all clients
 
-코드가 직접 참조하는 정적 파일은 `public/local/**` 에 둔다.
+## Completion Checklist
 
-적합한 예:
-
-- `public/local/logo.png`
-- `public/local/og-image.jpg`
-- `public/local/images/banner.jpg`
-
-주의:
-
-- 관리자 업로드 이미지, 블로그 첨부, 의료진 사진 업로드는 R2 영역이다
-- `public/local` 은 Git 추적 대상 정적 파일이다
-
-검증:
-
-1. `npm run build`
-2. 빌드 후 dist 루트에서 자산 경로 확인
-3. 페이지에서 실제 노출 확인
-
-## 5. docs/internal
-
-`docs/internal/**` 는 에이전트와 운영자용 문서 공간이다.
-
-적합한 예:
-
-- 복구 기록
-- 마이그레이션 메모
-- 운영 런북
-- 병원별 확인사항 체크리스트
-
-부적합한 예:
-
-- 사용자에게 공개될 카피/콘텐츠 저장
-- 비밀번호, 토큰, 라이선스 키 원문 보관
-
-## 6. 이 경우는 local workspace가 아님
-
-- 보안/인증/공용 loader 버그
-- 관리자 변경이 퍼블릭에 안 반영되는 공용 계약 문제
-- 모든 클라이언트가 겪는 플로우 버그
-
-이 경우는 중앙 패치로 분류한다.
-
-## 7. 작업 완료 전 체크
-
-- [ ] local workspace 선택이 요청과 맞는가
-- [ ] 공용 버그를 clinic-specific override로 숨기지 않았는가
-- [ ] `npm run build` 또는 필요한 검증을 수행했는가
-- [ ] 관리자 값과 퍼블릭 반영이 관련되면 실제 렌더 결과를 확인했는가
-- [ ] 정적 자산과 R2 업로드를 혼동하지 않았는가
+- [ ] Correct workspace chosen for the request
+- [ ] Not hiding a core bug behind clinic-specific override
+- [ ] `npm run build` passes
+- [ ] Admin value → public rendering verified (if applicable)
+- [ ] Static assets vs R2 uploads not confused

@@ -1,141 +1,75 @@
 ---
-description: 도킹 패키지(.zip)를 프로젝트에 적용합니다
+description: Apply docking package (.zip) to project with conflict resolution
+category: dev
 ---
 
-# 패키지 적용 워크플로우
+# Package Apply (Unpack Docking)
 
-이 워크플로우는 다운로드된 패키지를 지능적으로 적용합니다.
-**중요**: 단순 덮어쓰기가 아닌, 클라이언트 커스터마이징을 고려한 융합입니다.
+Apply downloaded `.zip` package with intelligent merge — not blind overwrite.
 
----
+## Quick Start
 
-## 빠른 시작
-
-대부분의 경우 다음 명령어만으로 충분합니다:
-
-// turbo
 ```bash
 npm run upgrade
 ```
 
-이 명령은 `scripts/unpack-docking.js`를 실행하여:
-1. 프로젝트 루트의 `.zip` 파일 자동 감지
-2. 스테이징 영역에 압축 해제
-3. 충돌 분석 및 사용자 확인
-4. 안전한 파일 적용
-5. 적용 기록 저장
+Auto: detect .zip → staging → conflict analysis → backup → apply → migrate → record.
 
----
+## Process
 
-## 상세 프로세스
+### 1. Package Detection
+Scans project root and `.docking/incoming/` for `.zip` files. No package → guide to `npm run core:pull` or manual placement.
 
-### 1단계: 패키지 확인
+### 2. Staging
+Extract to `.docking/staging/`.
 
-프로젝트 루트 또는 `.docking/incoming/`에서 `.zip` 파일을 찾습니다.
+### 3. Manifest Analysis
+Read `staging/manifest.yaml`: version info, package type (full/patch), changed file list.
 
-패키지가 없으면:
-```
-패키지가 없습니다. 먼저 다운로드하세요:
-- HQ에서: npm run core:pull
-- 또는 zip 파일을 프로젝트 루트에 배치
-```
+### 4. Conflict Analysis
 
-### 2단계: 스테이징
+| Conflict | Action |
+|----------|--------|
+| No local changes | Auto-apply |
+| Local file modified | User choice: A) merge (recommended), B) package version, C) keep local |
 
-패키지를 `.docking/staging/`에 압축 해제합니다.
-
-### 3단계: 매니페스트 분석
-
-`staging/manifest.yaml`을 읽어서 다음을 파악합니다:
-- **버전 정보**: 현재 버전과 새 버전
-- **패키지 유형**: full 또는 patch
-- **변경된 파일 목록**
-
-### 4단계: 충돌 분석
-
-패키지의 변경된 파일과 로컬에서 수정한 파일을 비교합니다.
-
-**충돌 없는 경우**
-→ 자동으로 패키지 적용
-
-**충돌 있는 경우**
-→ 사용자에게 선택 요청:
-```
-⚠️ 다음 파일에서 충돌이 감지되었습니다:
-
-1. src/pages/index.astro
-   - 로컬 변경: [변경 내용 요약]
-   - 패키지 변경: [변경 내용 요약]
-
-해결 방법:
-A) 두 변경을 병합 (권장)
-B) 패키지 버전으로 교체 (로컬 변경 손실)
-C) 로컬 버전 유지 (패키지 변경 무시)
-```
-
-### 5단계: 백업 생성
-
-적용 전 현재 상태를 백업합니다:
+### 5. Backup
 ```bash
 git add -A && git commit -m "Backup before package apply"
 ```
 
-### 6단계: 패키지 적용
+### 6. Apply
+- New files → copy
+- Changed files → replace or merge (per step 4 decision)
+- Deleted files → user confirmation before removal
 
-- **새 파일**: 복사
-- **변경된 파일**: 교체 또는 머지 (4단계 결정에 따라)
-- **삭제된 파일**: 사용자 확인 후 삭제
-
-### 7단계: 마이그레이션 확인
-
-새 마이그레이션이 있으면:
+### 7. Migration
 ```bash
-npm run db:migrate
+npm run db:migrate    # If new migrations included
 ```
+Failure → `.agent/last-error.json` generated. See `troubleshooting.md` scenario 6.
 
-> v1.24.3부터 `db:migrate`는 root 엔진을 직접 실행합니다.
-> wrangler.toml이 없으면 에러와 함께 `.agent/last-error.json`에 보고서가 저장됩니다.
-> 마이그레이션 실패 시 seeds 실행을 자동으로 건너뜁니다.
-> 에러 복구: `.agent/workflows/troubleshooting.md` 참조 (시나리오 6)
+### 8. Record
+Append to `.docking/.applied`: `[date] v[version] [type] applied`
 
-### 8단계: 기록 업데이트
-
-`.docking/.applied`에 적용 기록 추가:
-```
-[날짜] v[버전] [유형] 적용 완료
-```
-
-### 9단계: 정리 & 완료
-
-```
-✅ v[버전]으로 업데이트되었습니다!
-
-다음 단계:
-- npm install (의존성이 변경된 경우)
-- npm run dev (로컬 테스트)
-- npm run deploy (프로덕션 반영)
-```
-
----
-
-## 업데이트 방법 비교
-
-| 방법 | 명령어 | 용도 |
-|------|--------|------|
-| **Core 업데이트** | `npm run core:pull` | HQ에서 최신 앱 패키지 |
-| **Starter 업데이트** | `npm run update:starter` | Git에서 인프라 업데이트 |
-| **수동 패키지** | `npm run upgrade` | zip 파일 직접 적용 |
-
----
-
-## 롤백
-
-문제 발생 시:
+### 9. Complete
 ```bash
-git checkout HEAD~1
+npm install    # If dependencies changed
+npm run dev    # Local test
+npm run deploy # Production (if ready)
 ```
 
-또는 백업 브랜치로:
+## Update Methods Comparison
+
+| Method | Command | Source |
+|--------|---------|--------|
+| Core update | `npm run core:pull` | HQ app package |
+| Starter update | `npm run update:starter` | HQ infra files |
+| Manual package | `npm run upgrade` | Local .zip file |
+
+## Rollback
+
 ```bash
-git checkout backup-[날짜]
+git checkout HEAD~1           # Undo last apply
+git checkout backup-{date}    # Restore from backup branch
 ```

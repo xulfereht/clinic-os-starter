@@ -1,218 +1,102 @@
 ---
-description: Clinic-OS 버전 업그레이드 (Core/Starter 업데이트)
+description: Version upgrade — Core + Starter update procedure with post-upgrade checks
+category: dev
 ---
 
-# Clinic-OS 버전 업그레이드
+# Version Upgrade
 
-새 버전의 기능을 기존 시스템에 안전하게 적용합니다.
+Safe upgrade procedure for Core (app code) and Starter (infra) updates.
+For agent-first guided flow, see `core-update-agentic.md`.
 
----
-
-## 업데이트 유형
-
-### 1. Core 업데이트 (앱 기능)
-HQ 서버에서 최신 앱 패키지를 가져옵니다.
-- 새로운 페이지/컴포넌트
-- 버그 수정
-- 기능 개선
-
-### 2. Starter 업데이트 (인프라)
-Starter Kit 저장소에서 최신 설정을 가져옵니다.
-- 빌드 설정 변경
-- 스크립트 업데이트
-- 의존성 변경
-
-## 시작 전 시나리오 판별
-
-먼저 현재 설치본이 안전한 인플레이스 업데이트 대상인지 확인합니다.
+## Pre-Check
 
 ```bash
 npm run agent:lifecycle -- --json
 ```
+- `safe_update_in_place` → snapshot then update
+- `legacy_reinstall_migration` → fresh starter-kit install + snapshot transfer
+- `production_binding_drift` → review wrangler bindings before proceeding
 
-- `safe_update_in_place` → snapshot 후 일반 업데이트
-- `legacy_reinstall_migration` → 신규 starter-kit 설치 + snapshot 이관 우선
-- `production_binding_drift` → wrangler 연결 변경 검토 전까지 업데이트/배포 보류
+## Upgrade Phases
 
----
-
-## Phase 1: 백업 생성
-
-// turbo
-1. Git 상태 확인 및 현재 상태 저장
+### 1. Backup
 ```bash
 npm run agent:snapshot -- --reason=pre-update
-git status
 git add -A && git commit -m "Backup before upgrade"
-git branch backup-$(date +%Y%m%d)
 ```
 
----
-
-## Phase 2: Core 업데이트
-
-HQ에서 최신 앱 패키지를 가져옵니다.
-
-// turbo
+### 2. Core Update
 ```bash
-npm run core:pull -- --auto
+npm run core:pull -- --auto    # HQ → latest app package → auto-apply
 ```
 
-또는
-
+### 3. Starter Update (if needed)
 ```bash
-npm run fetch
+npm run update:starter         # Re-download infra (scripts/, .docking/engine/)
 ```
 
-이 명령은:
-- HQ 서버에서 최신 버전 확인
-- 앱 패키지 다운로드
-- `.docking/staging/`에 압축 해제
-- 자동 적용
-
----
-
-## Phase 3: Starter 업데이트 (필요시)
-
-Starter Kit 인프라 변경이 있을 때 실행합니다.
-
-// turbo
+### 4. Docking Package (manual ZIP)
 ```bash
-npm run update:starter
+npm run upgrade                # Apply external .zip package
 ```
 
-이 명령은:
-- Git에서 최신 변경사항 pull
-- npm install 자동 실행
+### 5. DB Migration
+core:pull auto-applies DDL migrations to local DB (v1.29.7+).
+- `migrations/` = DDL only. Auto-applied locally + on deploy (deploy-guard).
+- `seeds/` = DML only. Initial setup only. Production data protected.
+- Remote DB: deploy-guard applies gap migrations at deploy time. core:pull does NOT touch remote.
+- Manual: `npm run db:migrate`
 
----
+Note: fetch.js fixes apply on NEXT core:pull (chicken-and-egg). Emergency: `npm run update:starter && npm run core:pull`.
 
-## Phase 4: 도킹 패키지 적용 (수동 패키지)
-
-외부에서 받은 `.zip` 패키지를 적용할 때:
-
-// turbo
-```bash
-npm run upgrade
-```
-
----
-
-## Phase 5: DB 마이그레이션
-
-새 버전에 DB 변경이 있는지 확인합니다.
-
-```bash
-ls migrations/    # 마스터 구조
-ls core/migrations/  # 스타터킷 구조
-```
-
-새 마이그레이션이 있으면:
-// turbo
-```bash
-npm run db:migrate
-```
-
-> v1.24.3부터:
-> - `db:migrate`는 root의 `.docking/engine/migrate.js`를 직접 실행 (core:pull로 항상 최신 유지)
-> - wrangler.toml 존재를 먼저 확인하며, 없으면 `npm run setup` 안내
-> - `findProjectRoot()`가 `core/package.json`도 감지하여 스타터킷 구조 자동 지원
-> - 마이그레이션 실패 시 seeds 실행을 자동으로 건너뜀
-> - 에러 발생 시 `.agent/last-error.json`에 구조화된 보고서 저장
->
-> v1.24.4부터:
-> - DB 바인딩 기본 이름 통일 (`clinic-os-db`, wrangler.toml 있으면 그곳에서 읽음)
->
-> ⚠️ fetch.js 수정사항은 **다음** core:pull부터 적용됩니다.
-> 긴급 수정: `npm run update:starter && npm run core:pull`
-
----
-
-## Phase 6: 테스트
-
-// turbo
+### 6. Test
 ```bash
 npm run dev
 ```
+Check: homepage loads, admin login, existing customizations intact, new features work.
 
-주요 기능 테스트:
-- [ ] 홈페이지 로드
-- [ ] 관리자 로그인
-- [ ] 기존 커스터마이징 유지 확인
-- [ ] 새 기능 작동 확인
+### 6.5. Post-Upgrade Auto-Check
 
----
+**Custom homepage data contamination (v1.31.4)**:
+Master-specific data (바로한의원) may have leaked into client homepages in versions <v1.31.3. PROTECTED_PREFIXES prevents core:pull from auto-fixing.
 
-## Phase 7: 완료 처리
+```bash
+# Detect contamination
+grep -l "안태석\|문지현\|RDMS\|RMSK\|lystKvO0_q8\|국가대표 진료" \
+  src/plugins/custom-homepage/pages/index.astro \
+  src/plugins/local/custom-homepage/pages/index.astro 2>/dev/null
+```
 
-// turbo
+If found:
+- **Not customized yet**: `cp src/plugins/custom-homepage/presets/editorial.astro src/plugins/custom-homepage/pages/index.astro`
+- **Already customized**: Replace 바로한의원 data (names, credentials, papers, YouTube, badges) with clinic-specific data or empty arrays/strings
+- **Best practice**: Move to `src/plugins/local/custom-homepage/` for full core:pull protection
+
+### 7. Complete
 ```bash
 git add -A && git commit -m "Upgrade to v[VERSION]"
+npm run deploy    # If deployment needed
 ```
 
-배포가 필요하면:
+## Rollback
 ```bash
-npm run deploy
+npm run core:rollback    # Restore from .core-backup/
+# Or: git checkout backup-{date}
 ```
 
----
+## Command Summary
 
-## 롤백 (문제 발생 시)
+| Command | Purpose |
+|---------|---------|
+| `npm run core:pull -- --auto` | App code update from HQ |
+| `npm run update:starter` | Infra files update |
+| `npm run upgrade` | Manual docking package |
+| `npm run db:migrate` | DB schema migration |
+| `npm run doctor` | DB validation + repair |
+| `npm run health` | Environment health (0-100) |
+| `npm run core:rollback` | Restore previous core |
 
-```bash
-git checkout backup-[날짜]
-git checkout -b main --force
-```
-
----
-
-## 명령어 요약
-
-| 명령어 | 용도 |
-|--------|------|
-| `npm run core:pull` | HQ에서 앱 패키지 업데이트 |
-| `npm run update:starter` | Starter Kit 업데이트 |
-| `npm run upgrade` | 수동 도킹 패키지 적용 |
-| `npm run setup` | 초기 설정 재실행 |
-| `npm run db:init` | DB 스키마 마이그레이션 (root 엔진) |
-| `npm run db:seed` | 샘플 데이터 삽입 |
-| `npm run doctor` | DB 스키마 검증 + 자동 복구 |
-| `npm run health` | 환경 건강 점수 (0-100) |
-
----
-
-## 트러블슈팅
-
-> 에러 발생 시 `.agent/last-error.json`이 자동 생성됩니다.
-> 에이전트는 이 파일을 감지하면 `.agent/workflows/troubleshooting.md`를 참조하여 자동 복구하세요.
-
-### core:pull 시 "깃 저장소가 아닙니다" 오류
-스타터킷 구조에서 루트에 `.git`이 없을 때 발생합니다.
-```bash
-git init          # 루트에 .git 생성
-npm run core:pull # 다시 시도
-```
-> v1.24.0부터 `update:starter`와 `fetch.js`가 자동으로 `git init`을 실행합니다.
-> v1.24.3부터 git fetch 에러 메시지가 원인별로 구분됩니다 (not a git repo / No such remote / 네트워크).
-
-### 디바이스 등록 한도 초과
-v1.24.0부터 클라이언트당 최대 5대까지 등록 가능합니다.
-기존 3대 제한에 걸렸다면 HQ에서 자동 상향되었습니다.
-
----
-
-## 주의사항
-
-- 업그레이드 전 **반드시 백업**
-- 프로덕션 배포 전 **로컬 테스트 필수**
-- 충돌 발생 시 **사용자에게 설명 후 결정**
-
----
-
-## 관련 문서
-
-| 상황 | 다음 문서 |
-|------|-----------|
-| 업데이트 중 오류 발생 | `.agent/workflows/troubleshooting.md` |
-| 보호 규칙 확인 | `.claude/rules/clinic-os-safety.md` |
-| 전체 문서 인덱스 | `.agent/README.md` |
+## Related
+- Error recovery: `troubleshooting.md`
+- Agent-first guided flow: `core-update-agentic.md`
+- Smart migration (preserve work): `smart-migration.md`

@@ -1,7 +1,14 @@
 # /survey-tool — Survey Tool Manager
 
-Collaboratively create, test, and publish survey tools (검사도구) with the client.
+Collaboratively create, test, and publish survey tools (health questionnaires) with the client.
 Designed for non-developers who want custom health questionnaires for their clinic.
+
+## When to Use
+
+- When the clinic wants to create a new patient self-assessment tool
+- When managing existing survey tools (list, edit, test, publish)
+- When publishing a local survey tool to HQ for other clinics
+- Onboarding Tier 3 (patient services) — survey tool setup
 
 ## Source of Truth
 
@@ -27,32 +34,32 @@ Detect user intent and route to the appropriate mode:
 
 If unclear, ask:
 ```
-어떤 작업을 하시겠어요?
-[A] 새 검사도구 만들기
-[B] 기존 검사도구 보기/수정
-[C] HQ에 공개하기
+What would you like to do?
+[A] Create a new survey tool
+[B] View/edit existing survey tools
+[C] Publish to HQ
 ```
 
 ---
 
 ## Mode: create
 
-### Step 1 — Discovery (대화)
+### Step 1 — Discovery (conversation)
 
 DO NOT immediately generate files. First, have a conversation:
 
 ```
-어떤 종류의 검사를 만들고 싶으신가요?
+What kind of assessment would you like to create?
 
-예시:
-• 스트레스 자가진단
-• 소화기 건강 체크
-• 수면 품질 평가
-• 통증 자가평가 (NRS)
-• 체질 분류 설문
-• 생활습관 진단
+Examples:
+• Stress self-assessment
+• Digestive health check
+• Sleep quality evaluation
+• Pain self-assessment (NRS)
+• Constitutional classification survey
+• Lifestyle diagnosis
 
-자유롭게 설명해주세요. 대상, 목적, 문항 수 등을 알려주시면 맞춤 설계합니다.
+Describe freely. Tell me about the target audience, purpose, question count, etc. and I'll design it.
 ```
 
 Gather at minimum:
@@ -67,26 +74,26 @@ Gather at minimum:
 Present the design before generating:
 
 ```
-📋 검사도구 설계안
+📋 Survey Tool Design
 ━━━━━━━━━━━━━━━━━
 
-이름: {name}
+Name: {name}
 ID: {tool-id}
-문항 수: {N}개
-예상 소요: {time}
-채점 방식: {scoringType}
+Questions: {N}
+Estimated time: {time}
+Scoring method: {scoringType}
 
-📝 문항 구성:
+📝 Question structure:
   Q1. {question text} [{type}]
   Q2. {question text} [{type}]
   ...
 
-📊 결과 해석:
-  0-{n}점: {label} — {description}
-  {n}-{m}점: {label} — {description}
+📊 Result interpretation:
+  0-{n} points: {label} — {description}
+  {n}-{m} points: {label} — {description}
   ...
 
-이대로 진행할까요? 수정할 부분이 있으면 말씀해주세요.
+Shall we proceed? Let me know if anything needs to be changed.
 ```
 
 Iterate until the user approves.
@@ -129,7 +136,7 @@ Create files in `src/survey-tools/local/{tool-id}/`:
 
 **Custom renderers** (only if the user wants special UI):
 
-Ask: "기본 UI로 충분한데, 혹시 특별한 디자인이 필요하신가요?"
+Ask: "The default UI should be sufficient — do you need any special design?"
 
 If yes, generate `survey.astro` and/or `result.astro`:
 - Use `BaseLayout` or `IntakeLayout` from the project
@@ -147,24 +154,24 @@ npm run build
 If build succeeds:
 
 ```
-✅ 검사도구 생성 완료!
+✅ Survey tool created!
 
-📂 위치: src/survey-tools/local/{tool-id}/
-🔗 검사 URL: /ext/survey-tools/{tool-id}
-🔗 관리 페이지: /admin/surveys/tools
+📂 Location: src/survey-tools/local/{tool-id}/
+🔗 Survey URL: /ext/survey-tools/{tool-id}
+🔗 Admin page: /admin/surveys/tools
 
-다음 단계:
-  1. npm run dev 로 로컬에서 테스트
-  2. 배포 후 /ext/survey-tools/{tool-id} 에서 확인
-  3. 원하시면 HQ에 공개하여 다른 병원과 공유 가능
+Next steps:
+  1. Test locally with npm run dev
+  2. Verify at /ext/survey-tools/{tool-id} after deploy
+  3. Optionally publish to HQ for sharing with other clinics
 ```
 
 ### Step 5 — Deploy Offer
 
 ```
-검사도구를 배포하시겠습니까?
-[A] 로컬만 (우리 병원에서만 사용)
-[B] HQ에 공개 (다른 병원도 사용 가능)
+Would you like to deploy the survey tool?
+[A] Local only (use at our clinic only)
+[B] Publish to HQ (available to other clinics)
 ```
 
 If A: Run deploy per onboarding deploy guardrails.
@@ -186,19 +193,19 @@ ls src/survey-tools/store/*/manifest.json
 Present:
 
 ```
-📋 등록된 검사도구
+📋 Registered Survey Tools
 ━━━━━━━━━━━━━━━━━
 
-🔵 코어 (core:pull로 관리)
-  • stress-check — 스트레스 자가진단 (10문항)
+🔵 Core (managed via core:pull)
+  • stress-check — Stress Self-Assessment (10 questions)
 
-🟢 로컬 (우리 병원 전용)
-  • {tool-id} — {name} ({N}문항)
+🟢 Local (clinic-specific)
+  • {tool-id} — {name} ({N} questions)
 
-🟣 스토어 (HQ에서 설치)
-  • (없음)
+🟣 Store (installed from HQ)
+  • (none)
 
-총 {N}개 검사도구
+Total: {N} survey tools
 ```
 
 ---
@@ -209,8 +216,8 @@ Present:
 2. User selects a tool to edit
 3. Read the manifest.json
 4. Only edit tools in `local/` — core tools require override:
-   - "코어 도구는 직접 수정하면 core:pull 시 덮어쓰기됩니다."
-   - "local/에 같은 ID로 복사하여 수정할까요?" (local overrides core)
+   - "Core tools will be overwritten on core:pull if modified directly."
+   - "Copy to local/ with the same ID to modify?" (local overrides core)
 5. Present current design, apply changes, rebuild
 
 ---
@@ -225,20 +232,20 @@ Run a simulated walkthrough of the survey:
 4. Show the result interpretation
 
 ```
-🧪 검사 시뮬레이션: {name}
+🧪 Survey Simulation: {name}
 ━━━━━━━━━━━━━━━━━━━━━━━━
 
 Q1. {question} [radio]
-  → 시뮬레이션 응답: {option} (3점)
+  → Simulated answer: {option} (3 points)
 
 Q2. {question} [radio]
-  → 시뮬레이션 응답: {option} (2점)
+  → Simulated answer: {option} (2 points)
   ...
 
-📊 시뮬레이션 결과:
-  총점: 15 / 40
-  판정: 경미한 수준
-  해석: "약간의 스트레스가 감지되지만..."
+📊 Simulation Result:
+  Total score: 15 / 40
+  Assessment: Mild level
+  Interpretation: "Some stress detected but..."
 ```
 
 Also verify:
@@ -262,20 +269,20 @@ Publish a local tool to HQ for other clinics to use.
 ### Procedure
 
 ```
-📦 HQ 공개 준비
+📦 HQ Publication Preparation
 ━━━━━━━━━━━━━━
 
-도구: {name} v{version}
-문항: {N}개
-채점: {scoringType}
+Tool: {name} v{version}
+Questions: {N}
+Scoring: {scoringType}
 
-HQ에 공개하면 다른 Clinic-OS 사용자가 설치할 수 있습니다.
-공개하시겠습니까? [Y/n]
+Publishing to HQ makes this available for other Clinic-OS users to install.
+Proceed? [Y/n]
 ```
 
 If yes:
 - Ensure `npm run dev` is running (HQ submit requires dev mode for filesystem access)
-- Guide through the admin UI: `/admin/surveys/tools` → 해당 도구 → "HQ에 공개"
+- Guide through the admin UI: `/admin/surveys/tools` → select the tool → "Publish to HQ"
 - Or if API is available, use direct submission
 
 ---
@@ -315,5 +322,16 @@ npm run build
 ## Triggers
 
 User says: "검사도구", "검사 만들기", "자가진단", "설문", "survey tool", "questionnaire"
+
+## Onboarding State Sync
+
+After survey tool is created and verified, mark the onboarding feature as done.
+This runs regardless of entry point (demo, delegated, onboarding, standalone).
+
+```bash
+npm run onboarding:done -- --feature=survey-tools --note="survey-tool completed"
+```
+
+> Skip silently if onboarding-state.json doesn't exist.
 
 ## All user-facing output in Korean

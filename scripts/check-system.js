@@ -34,6 +34,21 @@ function isWSL() {
     }
 }
 
+function readOsRelease() {
+    try {
+        const content = fs.readFileSync('/etc/os-release', 'utf8');
+        const values = {};
+        for (const line of content.split('\n')) {
+            const match = line.match(/^([A-Z_]+)=(.*)$/);
+            if (!match) continue;
+            values[match[1]] = match[2].replace(/^"/, '').replace(/"$/, '');
+        }
+        return values;
+    } catch {
+        return {};
+    }
+}
+
 function checkPathConflict() {
     // Check if the current node executable is actually a Windows path
     // In WSL, process.execPath should be something like /usr/bin/node
@@ -46,6 +61,21 @@ function checkPathConflict() {
 }
 
 async function askToInstall(question, command) {
+    const isAgent = !!process.env.CLAUDE_CODE || !!process.env.CURSOR_SESSION || !!process.env.CI;
+
+    // Agent/CI mode: auto-install missing dependencies
+    if (isAgent) {
+        console.log(`\n🤖 Auto-install: ${command}`);
+        try {
+            const { stdout } = await execAsync(command);
+            if (stdout) console.log(stdout);
+            return true;
+        } catch (e) {
+            console.error(`   ❌ 설치 실패: ${e.message}`);
+            return false;
+        }
+    }
+
     const rl = (await import('readline')).createInterface({
         input: process.stdin,
         output: process.stdout
@@ -75,13 +105,25 @@ async function runCheck() {
 
     const platform = os.platform();
     const inWSL = isWSL();
+    const osRelease = inWSL ? readOsRelease() : {};
+    const wslDistro = osRelease.ID || osRelease.NAME || 'unknown';
+    const isUbuntuWSL = inWSL && /ubuntu/i.test(`${osRelease.ID || ''} ${osRelease.NAME || ''}`);
+
+    if (platform === 'win32') {
+        console.log('🪟 Windows Native 환경은 더 이상 지원하지 않습니다.');
+        console.log('💡 공식 설치 기준은 macOS 또는 WSL Ubuntu 입니다.');
+        console.log('💡 Windows에서는 PowerShell/CMD 대신 Ubuntu WSL 터미널에서 다시 실행하세요.\n');
+        return false;
+    }
 
     // 1. Platform Identification
-    if (platform === 'win32' && !inWSL) {
-        console.log('🪟 Windows Native 환경 확인됨.');
-        console.log('💡 Antigravity의 원활한 동작을 위해 네이티브 환경(CMD/PowerShell) 사용을 권장합니다.\n');
-    } else if (inWSL) {
-        console.log('🐧 WSL(Linux) 환경 확인됨.');
+    if (inWSL) {
+        console.log(`🐧 WSL 환경 확인됨. (distro: ${wslDistro})`);
+        if (!isUbuntuWSL) {
+            console.log('❌ 공식 지원 WSL 배포판은 Ubuntu 입니다.');
+            console.log('💡 Ubuntu WSL을 설치한 뒤 그 환경에서 다시 실행하세요.\n');
+            return false;
+        }
     } else {
         console.log(`🍎 Native ${platform === 'darwin' ? 'macOS' : 'Linux'} 확인됨.`);
     }
@@ -92,7 +134,8 @@ async function runCheck() {
         git: await checkCommand('git'),
         wrangler: await checkCommand('npx wrangler', '--version'),
         os: platform,
-        isWSL: inWSL
+        isWSL: inWSL,
+        isUbuntuWSL,
     };
 
     if (inWSL) {
@@ -119,9 +162,6 @@ async function runCheck() {
         const versionMajor = versionMatch ? parseInt(versionMatch[1]) : 0;
         if (versionMajor < 18) {
             console.log('❌ Node.js 버전이 낮습니다 (18+ 필요). 현재:', results.node.version);
-            if (platform === 'win32') {
-                console.log('   👉 해결 방법: https://nodejs.org 에서 최신 LTS 버전을 설치하거나, fnm/nvm-windows를 사용하세요.');
-            }
             hasError = true;
         } else {
             console.log('✅ Node.js:', results.node.version);
@@ -130,12 +170,10 @@ async function runCheck() {
         console.log('❌ Node.js가 설치되어 있지 않습니다.');
         if (inWSL) {
             const ok = await askToInstall(
-                'WSL 내부에 Node.js를 설치하시겠습니까?',
+                'WSL Ubuntu 내부에 Node.js를 설치하시겠습니까?',
                 'curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - && sudo apt install -y nodejs'
             );
             if (ok) return runCheck(); // Re-run check
-        } else if (platform === 'win32') {
-            console.log('   👉 해결 방법: https://nodejs.org 에서 최신 LTS 버전을 설치하세요.');
         }
         hasError = true;
     }
@@ -146,10 +184,8 @@ async function runCheck() {
     } else {
         console.log('❌ Git이 설치되어 있지 않습니다.');
         if (inWSL) {
-            const ok = await askToInstall('WSL 내부에 Git을 설치하시겠습니까?', 'sudo apt update && sudo apt install -y git');
+            const ok = await askToInstall('WSL Ubuntu 내부에 Git을 설치하시겠습니까?', 'sudo apt update && sudo apt install -y git');
             if (ok) return runCheck();
-        } else if (platform === 'win32') {
-            console.log('   👉 해결 방법: https://git-scm.com 에서 Git for Windows를 설치하세요.');
         } else if (platform === 'darwin') {
             const ok = await askToInstall('macOS에 Git을 설치하시겠습니까? (Xcode Tools 사용)', 'xcode-select --install');
             if (ok) console.log('💡 설치 창이 떴습니다. 설치를 완료한 후 다시 실행하세요.');
