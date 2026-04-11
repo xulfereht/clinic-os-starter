@@ -19,7 +19,45 @@
 
 import fs from 'fs-extra';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+
+function sha256(filePath) {
+    const content = fs.readFileSync(filePath);
+    return crypto.createHash('sha256').update(content).digest('hex');
+}
+
+function writeManifest(dirPath, label) {
+    const files = fs.readdirSync(dirPath)
+        .filter(f => !f.startsWith('.') && fs.statSync(path.join(dirPath, f)).isFile());
+    const manifest = {
+        label,
+        timestamp: new Date().toISOString(),
+        files: {},
+    };
+    for (const file of files) {
+        const fp = path.join(dirPath, file);
+        manifest.files[file] = { size: fs.statSync(fp).size, sha256: sha256(fp) };
+    }
+    fs.writeJsonSync(path.join(dirPath, '.manifest.json'), manifest, { spaces: 2 });
+    return manifest;
+}
+
+function verifyManifest(dirPath) {
+    const manifestPath = path.join(dirPath, '.manifest.json');
+    if (!fs.existsSync(manifestPath)) return { valid: false, error: 'manifest missing' };
+    const manifest = fs.readJsonSync(manifestPath);
+    const mismatches = [];
+    for (const [file, expected] of Object.entries(manifest.files)) {
+        const fp = path.join(dirPath, file);
+        if (!fs.existsSync(fp)) { mismatches.push(`${file}: missing`); continue; }
+        const actual = sha256(fp);
+        if (actual !== expected.sha256) { mismatches.push(`${file}: hash mismatch`); }
+    }
+    return mismatches.length === 0
+        ? { valid: true, fileCount: Object.keys(manifest.files).length }
+        : { valid: false, mismatches };
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -61,10 +99,29 @@ export async function recoverFromPreviousFailure(runCommand) {
     };
 
     try {
+        const oldEnginePath = path.join(path.dirname(enginePath), '.engine-old');
         const hasStaging = fs.existsSync(stagingPath);
         const hasBackup = fs.existsSync(backupPath);
+        const hasOldEngine = fs.existsSync(oldEnginePath);
         const hasEngine = fs.existsSync(enginePath);
         const engineHasFiles = hasEngine && fs.readdirSync(enginePath).length > 0;
+
+        // Case 0: .engine-old exists but engine/ missing → SIGTERM between rename steps
+        // Restore from .engine-old (the previous working engine)
+        if (hasOldEngine && (!hasEngine || !engineHasFiles)) {
+            console.log('   \u26A0\uFE0F  SIGTERM \uAC10\uC9C0: .engine-old\uC5D0\uC11C \uBCF5\uC6D0 \uC911...');
+            if (hasEngine && !engineHasFiles) {
+                fs.removeSync(enginePath);
+            }
+            fs.renameSync(oldEnginePath, enginePath);
+            result.recovered = true;
+            result.actions.push('.engine-old\uC5D0\uC11C engine \uBCF5\uC6D0 (SIGTERM recovery)');
+            console.log('   \u2705 SIGTERM \uBCF5\uAD6C \uC644\uB8CC');
+        } else if (hasOldEngine && engineHasFiles) {
+            // engine/ exists and has files, .engine-old is stale → clean up
+            fs.removeSync(oldEnginePath);
+            result.actions.push('.engine-old \uC815\uB9AC');
+        }
 
         // Case 1: backup 있고 engine 비어있음 -> 복원 필요
         if (hasBackup && (!hasEngine || !engineHasFiles)) {
@@ -151,6 +208,9 @@ export async function extractToStaging(tag, engineFiles, stagingPath, runCommand
         fs.writeFileSync(deleteMarkerPath, deleted.join('\n'));
     }
 
+    // Write integrity manifest (SHA256 per file)
+    writeManifest(stagingPath, `staging-${tag}`);
+
     console.log(`   \uD83D\uDCE6 Staging \uCD94\uCD9C: ${extracted.length}\uAC1C \uD30C\uC77C${deleted.length > 0 ? `, ${deleted.length}\uAC1C \uC0AD\uC81C \uC608\uC815` : ''}`);
 }
 
@@ -195,10 +255,18 @@ export function validateStaging(stagingPath) {
 // ═══════════════════════════════════════════════════════════════
 
 /**
- * TASK-007: 엔진 디렉토리 Atomic Swap
+ * TASK-007: 엔진 디렉토리 Atomic Swap (rename-based)
  *
- * 1. 기존 engine -> backup 이동
- * 2. staging -> engine 이동
+ * True atomic strategy using fs.renameSync (single syscall per rename):
+ * 1. engine/ → .engine-old/ (rename — atomic)
+ * 2. staging/ → engine/ (rename — atomic)
+ * 3. Process delete-list on new engine
+ * 4. Rename .engine-old → .engine-backup (keeps for rollback)
+ *
+ * SIGTERM safety:
+ * - After step 1 only: .engine-old exists, no engine/ → recoverFromPreviousFailure restores
+ * - After step 2: engine/ = new, .engine-old = old → clean state
+ * - Never a state with MIXED old+new files in engine/
  *
  * @param {string} enginePath - 엔진 디렉토리 경로
  * @param {string} stagingPath - staging 디렉토리 경로
@@ -206,12 +274,9 @@ export function validateStaging(stagingPath) {
  * @returns {Promise<void>}
  */
 export async function atomicSwap(enginePath, stagingPath, backupPath) {
-    // 이전 backup 정리
-    if (fs.existsSync(backupPath)) {
-        fs.removeSync(backupPath);
-    }
+    const oldEnginePath = path.join(path.dirname(enginePath), '.engine-old');
 
-    // 삭제 목록 처리를 위한 준비
+    // 삭제 목록 읽기 (staging에서 미리)
     const deleteMarkerPath = path.join(stagingPath, '.delete-list');
     let filesToDelete = [];
     if (fs.existsSync(deleteMarkerPath)) {
@@ -221,27 +286,27 @@ export async function atomicSwap(enginePath, stagingPath, backupPath) {
         fs.removeSync(deleteMarkerPath);
     }
 
-    // 기존 엔진의 모든 파일을 backup으로 이동하지 않고,
-    // 파일 단위로 교체하여 실행 중인 스크립트 영향 최소화
-    fs.ensureDirSync(backupPath);
-
-    // 1. 기존 파일 백업
-    const existingFiles = fs.readdirSync(enginePath);
-    for (const file of existingFiles) {
-        const srcPath = path.join(enginePath, file);
-        const destPath = path.join(backupPath, file);
-        fs.copySync(srcPath, destPath);
+    // 이전 잔여물 정리
+    if (fs.existsSync(oldEnginePath)) {
+        fs.removeSync(oldEnginePath);
+    }
+    if (fs.existsSync(backupPath)) {
+        fs.removeSync(backupPath);
     }
 
-    // 2. staging에서 engine으로 복사 (덮어쓰기)
-    const stagingFiles = fs.readdirSync(stagingPath);
-    for (const file of stagingFiles) {
-        const srcPath = path.join(stagingPath, file);
-        const destPath = path.join(enginePath, file);
-        fs.copySync(srcPath, destPath);
-    }
+    // ── CRITICAL SECTION (2 renames — each individually atomic) ──
 
-    // 3. 삭제 대상 파일 처리
+    // Step 1: engine/ → .engine-old/ (single rename syscall)
+    fs.renameSync(enginePath, oldEnginePath);
+
+    // Step 2: staging/ → engine/ (single rename syscall)
+    // After this line, engine/ has all new files. Old files in .engine-old/
+    fs.renameSync(stagingPath, enginePath);
+
+    // ── END CRITICAL SECTION ──
+    // From here, any failure is non-catastrophic (new engine is in place)
+
+    // Step 3: Apply deletions (files upstream removed)
     for (const file of filesToDelete) {
         const targetPath = path.join(enginePath, file);
         if (fs.existsSync(targetPath)) {
@@ -249,8 +314,14 @@ export async function atomicSwap(enginePath, stagingPath, backupPath) {
         }
     }
 
-    // 4. staging 정리
-    fs.removeSync(stagingPath);
+    // Step 4: .engine-old → .engine-backup (rollback source, kept for safety)
+    try {
+        fs.renameSync(oldEnginePath, backupPath);
+        // Write integrity manifest for backup (enables verified rollback)
+        writeManifest(backupPath, 'backup-pre-update');
+    } catch (e) {
+        // Non-critical — .engine-old stays, cleaned up on next run
+    }
 
     console.log('   \uD83D\uDD04 Atomic Swap \uC644\uB8CC');
 }
@@ -269,17 +340,29 @@ export async function atomicSwap(enginePath, stagingPath, backupPath) {
  */
 export async function rollbackEngine(enginePath, backupPath, stagingPath) {
     try {
-        // backup에서 engine 복원
+        // Rename-based rollback: engine/ → .engine-failed/, backup/ → engine/
         if (fs.existsSync(backupPath)) {
-            // 현재 engine의 파일을 backup으로 교체
-            const backupFiles = fs.readdirSync(backupPath);
-            for (const file of backupFiles) {
-                const srcPath = path.join(backupPath, file);
-                const destPath = path.join(enginePath, file);
-                fs.copySync(srcPath, destPath);
+            // Verify backup integrity before restoring
+            const integrity = verifyManifest(backupPath);
+            if (!integrity.valid) {
+                const detail = integrity.mismatches ? integrity.mismatches.join(', ') : integrity.error;
+                throw new Error(`backup integrity check failed: ${detail}`);
             }
+            console.log(`   ✅ backup integrity verified (${integrity.fileCount} files)`);
 
-            fs.removeSync(backupPath);
+            const failedPath = path.join(path.dirname(enginePath), '.engine-failed');
+            if (fs.existsSync(failedPath)) fs.removeSync(failedPath);
+
+            // Move failed engine aside, restore backup
+            if (fs.existsSync(enginePath)) {
+                fs.renameSync(enginePath, failedPath);
+            }
+            fs.renameSync(backupPath, enginePath);
+
+            // Clean up failed engine
+            if (fs.existsSync(failedPath)) {
+                fs.removeSync(failedPath);
+            }
             console.log('   \uD83D\uDD04 \uAE30\uC874 \uC5D4\uC9C4 \uBCF5\uC6D0 \uC644\uB8CC');
         }
 
@@ -332,10 +415,8 @@ export async function atomicEngineUpdate(tag, engineFiles, runCommand) {
         // Phase 3: Atomic Swap
         await atomicSwap(enginePath, stagingPath, backupPath);
 
-        // Phase 4: Cleanup (backup 삭제)
-        if (fs.existsSync(backupPath)) {
-            fs.removeSync(backupPath);
-        }
+        // Phase 4: Keep backup for rollback safety (cleaned up on next successful update)
+        // Previously deleted immediately — now retained so manual rollback is possible
 
         console.log('   \u2705 \uC5D4\uC9C4 Atomic Update \uC644\uB8CC');
 

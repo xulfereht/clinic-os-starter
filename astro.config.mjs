@@ -9,6 +9,11 @@ import cloudflare from '@astrojs/cloudflare';
 
 import { pathToFileURL } from 'node:url';
 
+// --- B3: Build-Time Env Validation ---
+// Detect starter kit structure (core/ submodule present)
+const IS_STARTER_KIT = fs.existsSync(path.resolve(process.cwd(), 'core', 'package.json'));
+const srcRoot = IS_STARTER_KIT ? path.resolve(process.cwd(), 'core', 'src') : path.resolve(process.cwd(), 'src');
+
 // Determine wrangler.toml path (Root vs Core/Client structure)
 const getWranglerPath = () => {
   const rootWrangler = path.resolve(process.cwd(), 'wrangler.toml');
@@ -54,6 +59,21 @@ const resolvedSiteUrl = wranglerCloudflareUrl
   || (wranglerProjectName ? `https://${wranglerProjectName}.pages.dev` : null)
   || 'https://sample-clinic.com';
 
+// --- B3: Validate critical config before build ---
+// Warn loudly (not silently fall back) when config is missing/placeholder
+if (!wranglerPath) {
+  console.warn('\n⚠️  wrangler.toml not found. Build will use fallback values.');
+  console.warn('   Run: npm run setup:step -- --next\n');
+}
+const wranglerDbId = readWranglerValue(/database_id\s*=\s*"([^"]+)"/);
+if (wranglerDbId && /placeholder/i.test(wranglerDbId)) {
+  console.warn('\n⚠️  wrangler.toml database_id is a placeholder. Deploy will fail.');
+  console.warn('   Run: npm run setup:step -- --next\n');
+}
+if (resolvedSiteUrl === 'https://sample-clinic.com') {
+  console.warn('\n⚠️  Site URL resolved to sample-clinic.com (fallback). Check wrangler.toml CLOUDFLARE_URL.\n');
+}
+
 // Local page overrides: when src/pages/_local/{path} exists,
 // its content replaces the core page at src/pages/{path} during build/dev.
 // Astro's underscore convention excludes _local/ from routing.
@@ -62,6 +82,22 @@ const resolvedSiteUrl = wranglerCloudflareUrl
 function clinicLocalOverrides() {
   const pagesDir = path.resolve(process.cwd(), 'src', 'pages');
   const localDir = path.join(pagesDir, '_local');
+  const warnedIgnoredOverrides = new Set();
+
+  // Supported page file extensions for _local overrides
+  const pageExtensions = ['.astro', '.ts', '.tsx'];
+
+  const isAdminPath = (relative) => (
+    relative === 'admin.astro'
+    || relative === 'admin.ts'
+    || relative.startsWith(`admin${path.sep}`)
+  );
+
+  const warnIgnoredOverride = (relative) => {
+    if (warnedIgnoredOverrides.has(relative)) return;
+    warnedIgnoredOverrides.add(relative);
+    console.warn(`  ⚠️ Ignoring _local admin override: ${relative} (admin pages are core/plugin-only)`);
+  };
 
   return {
     name: 'clinic-local-overrides',
@@ -69,10 +105,17 @@ function clinicLocalOverrides() {
     load(id) {
       // Strip query parameters (Astro adds ?astro&type=script internally)
       const cleanId = id.split('?')[0];
-      if (!cleanId.endsWith('.astro') || !cleanId.startsWith(pagesDir + path.sep)) return null;
+      if (!pageExtensions.some(ext => cleanId.endsWith(ext)) || !cleanId.startsWith(pagesDir + path.sep)) return null;
       // Skip files already inside _local/ to avoid self-referencing
       if (cleanId.startsWith(localDir + path.sep)) return null;
       const relative = path.relative(pagesDir, cleanId);
+      if (isAdminPath(relative)) {
+        const ignoredOverridePath = path.join(localDir, relative);
+        if (fs.existsSync(ignoredOverridePath)) {
+          warnIgnoredOverride(relative);
+        }
+        return null;
+      }
       const overridePath = path.join(localDir, relative);
       if (fs.existsSync(overridePath)) {
         console.log(`  🔀 Local override: ${relative}`);
@@ -87,6 +130,10 @@ function clinicLocalOverrides() {
       server.watcher.on('change', (file) => {
         if (file.startsWith(localDir + path.sep)) {
           const relative = path.relative(localDir, file);
+          if (isAdminPath(relative)) {
+            warnIgnoredOverride(relative);
+            return;
+          }
           const coreFile = path.join(pagesDir, relative);
           const mod = server.moduleGraph.getModuleById(coreFile);
           if (mod) {
@@ -107,7 +154,7 @@ export default defineConfig({
   // i18n Configuration
   i18n: {
     defaultLocale: 'ko',
-    locales: ['ko', 'en', 'ja', 'zh-hans', 'vi'],
+    locales: ['ko', 'en', 'ja', 'zh-hans', 'zh-hant', 'vi'],
     routing: {
       prefixDefaultLocale: false,
     }
@@ -122,12 +169,13 @@ export default defineConfig({
     optimizeDeps: {
       include: ['react', 'react-dom']
     },
+    // A3: Dynamic alias resolution — starter kit uses core/src/, master uses src/
     resolve: {
       alias: {
-        '@': '/src',
-        '@components': '/src/components',
-        '@lib': '/src/lib',
-        '@layouts': '/src/layouts'
+        '@': IS_STARTER_KIT ? path.resolve(process.cwd(), 'core/src') : '/src',
+        '@components': IS_STARTER_KIT ? path.resolve(process.cwd(), 'core/src/components') : '/src/components',
+        '@lib': IS_STARTER_KIT ? path.resolve(process.cwd(), 'core/src/lib') : '/src/lib',
+        '@layouts': IS_STARTER_KIT ? path.resolve(process.cwd(), 'core/src/layouts') : '/src/layouts'
       }
     }
   },
